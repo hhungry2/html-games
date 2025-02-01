@@ -68,23 +68,27 @@
     }
     
     // 敵をスパイキーに描くラッパー関数
-	function drawSpikyEnemy(x, y, size) {
-	  // フォントサイズを size に合わせて設定
-	  ctx.font = size + "px serif";
-	  ctx.textAlign = "center";
-	  ctx.textBaseline = "middle";
-	  // 絵文字「👾」を描画する
-	  ctx.fillText("👾", x + size / 2, y + size / 2);
-	}
+    function drawSpikyEnemy(x, y, size) {
+      // フォントサイズを size に合わせて設定
+      ctx.font = size + "px serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      // 絵文字「👾」を描画する
+      ctx.fillText("👾", x + size / 2, y + size / 2);
+    }
     
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
     const canvasWidth = canvas.width;
     const canvasHeight = canvas.height;
     
+    // ▼ エフェクト用の配列（アイテム取得時のエフェクト管理）
+    let effects = [];
+    
     // ▼ ゲーム状態
     let gameOver = false;
     let startTime, score = 0;
+    let bonusScore = 0;  // アイテム取得によるボーナススコアを保持する変数
     // カメラオフセット（世界座標から引く値）
     let cameraOffset = 0;
     const baseScrollSpeed = 1; // 初期スクロール速度
@@ -257,8 +261,10 @@
       cameraOffset = 0;
       startTime = Date.now();
       score = 0;
+      bonusScore = 0; // ボーナススコアのリセット
       barTransparentTimer = 0;
       hasUpdatedHighScore = false;
+      effects = [];  // エフェクトも初期化
       // プレイヤー初期化（最大ライフに合わせる）
       player.x = canvasWidth / 2 - player.width / 2;
       player.y = 100;
@@ -293,7 +299,8 @@
       if (gameOver) return;
       
       let elapsed = (Date.now() - startTime) / 1000;
-      score = Math.floor(elapsed * 10);
+      // 時間に基づくスコアにボーナススコアを加算
+      score = Math.floor(elapsed * 10) + bonusScore;
       
       // 落下速度・重力は時間経過で漸増
       let currentScrollSpeed = baseScrollSpeed + elapsed * 0.05;
@@ -426,8 +433,27 @@
         let item = items[i];
         if (rectsIntersect(player.x, player.y, player.width, player.height,
                            item.x, item.y, item.size, item.size)) {
-          score += 100;
+          bonusScore += 100;  // アイテム取得時はボーナススコアに100加算
+          // エフェクトを発生させる（アイテム取得時の表示）
+          effects.push({
+            x: item.x + item.size/2,
+            y: item.y,
+            alpha: 1,
+            timer: 30,
+            text: "✨"
+          });
           items.splice(i, 1);
+        }
+      }
+      
+      // ▼ エフェクトの更新（フェードアウト＆上昇）
+      for (let i = effects.length - 1; i >= 0; i--) {
+        let eff = effects[i];
+        eff.timer--;
+        eff.y -= 0.5; // 上方向に移動
+        eff.alpha = eff.timer / 30;
+        if (eff.timer <= 0) {
+          effects.splice(i, 1);
         }
       }
       
@@ -491,7 +517,7 @@
       ctx.globalAlpha = 1;
       
       // ▼ 絵文字アイテム描画
-      ctx.font = "24px serif";
+      ctx.font = "24px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       for (let item of items) {
@@ -506,49 +532,65 @@
       if (player.invincible) {
         ctx.globalAlpha = 0.5;
       }
-      ctx.fillStyle = "#FFCCCC";
-      ctx.beginPath();
-      ctx.arc(player.x + player.width/2, playerScreenY + player.height/2, player.width/2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "black";
-      // 目
-      ctx.beginPath();
-      ctx.arc(player.x + player.width/2 - 5, playerScreenY + player.height/2 - 3, 2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(player.x + player.width/2 + 5, playerScreenY + player.height/2 - 3, 2, 0, Math.PI * 2);
-      ctx.fill();
-      // にっこり笑った口
-      ctx.beginPath();
-      ctx.arc(player.x + player.width/2, playerScreenY + player.height/2 + 2, 6, 0, Math.PI, false);
-      ctx.stroke();
+      // プレイヤーをペンギン絵文字で描画
+      ctx.font = "30px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("🐧", player.x + player.width/2, playerScreenY + player.height/2);
       ctx.globalAlpha = 1;
       
-      // スコア表示（左上）
+      // スコア、ハイスコア、ライフ表示
       ctx.fillStyle = "black";
       ctx.font = "20px sans-serif";
+      // ハイスコアを画面上部中央に表示
+      ctx.textAlign = "center";
+      ctx.fillText("High Score: " + highScore, canvasWidth/2, 20);
+      // 現在のスコアを左上に表示
       ctx.textAlign = "left";
-      ctx.fillText("Score: " + score, 10, 30);
-      ctx.fillText("High Score: " + highScore, 10, 60);
+      ctx.fillText("Score: " + score, 10, 50);
       
-      // ライフゲージ描画（右上）
-      const gaugeX = canvasWidth - 120;
-      const gaugeY = 10;
-      const gaugeWidth = 100;
-      const gaugeHeight = 20;
-      ctx.strokeStyle = "black";
-      ctx.strokeRect(gaugeX, gaugeY, gaugeWidth, gaugeHeight);
-      let lifeRatio = player.lives / player.maxLives;
-      ctx.fillStyle = "red";
-      ctx.fillRect(gaugeX, gaugeY, gaugeWidth * lifeRatio, gaugeHeight);
+      // リッチなライフ表示：ペンギン絵文字を使い、残っているライフは通常、不足分は半透明で描画
+      let lifeIconSize = 24;
+      let spacing = 30; // 1つあたりの横幅
+      let startX = canvasWidth - (player.maxLives * spacing) - 10;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.shadowColor = "rgba(0,0,0,0.3)";
+      ctx.shadowBlur = 4;
+      for (let i = 0; i < player.maxLives; i++) {
+          if (i < player.lives) {
+             ctx.globalAlpha = 1;
+          } else {
+             ctx.globalAlpha = 0.3;
+          }
+          ctx.font = lifeIconSize + "px sans-serif";
+          ctx.fillText("🐧", startX + i * spacing + spacing/2, 50);
+      }
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
       
-      // ゲームオーバー時オーバーレイ
+      // エフェクト描画
+      ctx.save();
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      for (let eff of effects) {
+        ctx.globalAlpha = eff.alpha;
+        ctx.font = "30px sans-serif";
+        // エフェクトの位置はワールド座標なので、カメラオフセットを引いて表示
+        ctx.fillText(eff.text, eff.x, eff.y - cameraOffset);
+      }
+      ctx.restore();
+      ctx.globalAlpha = 1;
+      
+      // ゲームオーバー時オーバーレイ（中央寄せで表示）
       if (gameOver) {
         ctx.fillStyle = "rgba(0,0,0,0.6)";
         ctx.fillRect(0, 0, canvasWidth, canvasHeight);
         ctx.fillStyle = "white";
         ctx.font = "40px sans-serif";
-        ctx.fillText("GAME OVER", canvasWidth/2 - 120, canvasHeight/2);
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("GAME OVER", canvasWidth/2, canvasHeight/2);
       }
     }
     
