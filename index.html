@@ -68,12 +68,14 @@
     }
     
     // 敵をスパイキーに描くラッパー関数
-    function drawSpikyEnemy(x, y, size) {
-      const cx = x + size / 2;
-      const cy = y + size / 2;
-      ctx.fillStyle = "black";
-      drawStar(ctx, cx, cy, 5, size / 2, size / 4);
-    }
+	function drawSpikyEnemy(x, y, size) {
+	  // フォントサイズを size に合わせて設定
+	  ctx.font = size + "px serif";
+	  ctx.textAlign = "center";
+	  ctx.textBaseline = "middle";
+	  // 絵文字「👾」を描画する
+	  ctx.fillText("👾", x + size / 2, y + size / 2);
+	}
     
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
@@ -122,6 +124,15 @@
     
     // ▼ 追加仕様：天井衝突時にバーを透過状態にするためのタイマー（フレーム数）
     let barTransparentTimer = 0;
+    
+    // ▼ 絵文字アイテム用の変数
+    let items = [];
+    let nextItemY = 200;  // アイテム生成の基準となるY座標
+    const itemSize = 20;  // アイテムのサイズ（判定用）
+    
+    // ▼ ハイスコア用の変数（localStorageから取得）
+    let highScore = parseInt(localStorage.getItem("highScore")) || 0;
+    let hasUpdatedHighScore = false;
     
     // ▼ キーボード入力管理
     const keys = {};
@@ -223,6 +234,20 @@
       }
     }
     
+    // ▼ 絵文字アイテム生成関数
+    function spawnItems() {
+      while (nextItemY < cameraOffset + canvasHeight + 200) {
+        let itemX = random(0, canvasWidth - itemSize);
+        let item = {
+          x: itemX,
+          y: nextItemY,
+          size: itemSize
+        };
+        items.push(item);
+        nextItemY += random(200, 300);
+      }
+    }
+    
     // 初期バー生成
     spawnBars();
     
@@ -233,6 +258,7 @@
       startTime = Date.now();
       score = 0;
       barTransparentTimer = 0;
+      hasUpdatedHighScore = false;
       // プレイヤー初期化（最大ライフに合わせる）
       player.x = canvasWidth / 2 - player.width / 2;
       player.y = 100;
@@ -246,6 +272,10 @@
       bars = [];
       nextBarY = 150;
       spawnBars();
+      // アイテム初期化
+      items = [];
+      nextItemY = 200;
+      spawnItems();
       resetBtn.style.display = "none";
       gameLoop();
     }
@@ -263,7 +293,7 @@
       if (gameOver) return;
       
       let elapsed = (Date.now() - startTime) / 1000;
-      score = elapsed.toFixed(1);
+      score = Math.floor(elapsed * 10);
       
       // 落下速度・重力は時間経過で漸増
       let currentScrollSpeed = baseScrollSpeed + elapsed * 0.05;
@@ -341,6 +371,9 @@
       // ▼ バー生成
       spawnBars();
       
+      // ▼ アイテム生成
+      spawnItems();
+      
       // ▼ バーとの衝突判定（透過状態中は判定しない）
       if (barTransparentTimer <= 0) {
         player.onBar = false;
@@ -388,6 +421,16 @@
         }
       }
       
+      // ▼ 絵文字アイテムとの衝突判定
+      for (let i = items.length - 1; i >= 0; i--) {
+        let item = items[i];
+        if (rectsIntersect(player.x, player.y, player.width, player.height,
+                           item.x, item.y, item.size, item.size)) {
+          score += 100;
+          items.splice(i, 1);
+        }
+      }
+      
       // ▼ 無敵タイマー更新
       if (player.invincible) {
         player.invincibleTimer--;
@@ -405,6 +448,15 @@
     
     // ▼ 描画処理
     function draw() {
+      // ゲームオーバー時、まだハイスコアが更新されていなければ更新する
+      if (gameOver && !hasUpdatedHighScore) {
+        if (score > highScore) {
+          highScore = score;
+          localStorage.setItem("highScore", highScore);
+        }
+        hasUpdatedHighScore = true;
+      }
+      
       ctx.clearRect(0, 0, canvasWidth, canvasHeight);
       
       // 背景
@@ -438,6 +490,17 @@
       }
       ctx.globalAlpha = 1;
       
+      // ▼ 絵文字アイテム描画
+      ctx.font = "24px serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      for (let item of items) {
+        let itemScreenY = item.y - cameraOffset;
+        if (itemScreenY > -20 && itemScreenY < canvasHeight + 20) {
+          ctx.fillText("🍰", item.x + item.size/2, itemScreenY + item.size/2);
+        }
+      }
+      
       // プレイヤー描画（無敵時は半透明）
       let playerScreenY = player.y - cameraOffset;
       if (player.invincible) {
@@ -464,7 +527,9 @@
       // スコア表示（左上）
       ctx.fillStyle = "black";
       ctx.font = "20px sans-serif";
+      ctx.textAlign = "left";
       ctx.fillText("Score: " + score, 10, 30);
+      ctx.fillText("High Score: " + highScore, 10, 60);
       
       // ライフゲージ描画（右上）
       const gaugeX = canvasWidth - 120;
@@ -484,7 +549,6 @@
         ctx.fillStyle = "white";
         ctx.font = "40px sans-serif";
         ctx.fillText("GAME OVER", canvasWidth/2 - 120, canvasHeight/2);
-        resetBtn.style.display = "inline-block";
       }
     }
     
