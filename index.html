@@ -16,7 +16,7 @@
       display: block;
       background-color: #87CEEB;
     }
-    /* 画面下部のコントロールゾーン：左右ボタンのみ、左右に広がる */
+    /* 画面下部のコントロールゾーン：ジャンプボタンのみ */
     #controls {
       position: fixed;
       bottom: 0;
@@ -24,22 +24,17 @@
       width: 100%;
       height: 100px; /* CONTROL_ZONE_HEIGHT */
       display: flex;
+      justify-content: center;
+      align-items: center;
       margin: 0;
       padding: 0;
     }
     #controls button {
-      flex: 1;
       font-size: 24px;
       border: none;
       background-color: #fff;
-      /* ボタン間の余白をなくす */
-      margin: 0;
-      /* 画面端まで伸ばす */
-      border-right: 1px solid #ccc;
-    }
-    /* 右側のボタンは右端に余白が無いように */
-    #controls button:last-child {
-      border-right: none;
+      padding: 15px 30px;
+      border-radius: 10px;
     }
     /* 画面中央に配置するスタートボタン */
     #startBtn {
@@ -61,8 +56,7 @@
 <body>
   <canvas id="gameCanvas"></canvas>
   <div id="controls">
-    <button id="leftBtn">←</button>
-    <button id="rightBtn">→</button>
+    <button id="jumpBtn">ジャンプ</button>
   </div>
   <button id="startBtn">スタート</button>
   
@@ -82,13 +76,13 @@
       window.addEventListener("resize", resizeCanvas);
       resizeCanvas();
       
-      // 定数（※canvasサイズは動的なので、canvas.width/height をその都度参照）
+      // サイズ調整のための定数変更（オブジェクトが大きくなるように変更）
       let BASE_SCROLL_SPEED = 1;
       let BASE_GRAVITY = 0.3;
-      const BAR_MIN_WIDTH = 50, BAR_MAX_WIDTH = 150, BAR_HEIGHT = 10;
-      const ENEMY_PROBABILITY = 0.3, ENEMY_SIZE = 15;
-      const ITEM_SIZE = 20;
-      const LIFE_ICON_SIZE = 24, LIFE_SPACING = 30;
+      const BAR_MIN_WIDTH = 70, BAR_MAX_WIDTH = 210, BAR_HEIGHT = 15;
+      const ENEMY_PROBABILITY = 0.3, ENEMY_SIZE = 22;
+      const ITEM_SIZE = 30;
+      const LIFE_ICON_SIZE = 36, LIFE_SPACING = 45;
       
       // ゲーム状態管理："start" / "playing" / "gameover"
       let gameState = "start";
@@ -96,14 +90,14 @@
       let bars, items, effects, nextBarY, nextItemY;
       
       const player = {
-        x: canvas.width/2 - 15,
+        x: canvas.width/2 - 25,
         y: 100,
-        width: 30,
-        height: 30,
+        width: 50,
+        height: 50,
         vx: 0,
         vy: 0,
         speed: 3,
-        jumpStrength: -10,
+        jumpStrength: -12,
         onBar: false,
         lives: 3,
         maxLives: 3,
@@ -135,53 +129,57 @@
       });
       document.addEventListener("keyup", (e) => { keys[e.code] = false; });
       
-      // 画面下部の左右ボタン（スマホ・PC共通）
-      const leftBtn = document.getElementById("leftBtn");
-      const rightBtn = document.getElementById("rightBtn");
+      // ジャンプボタン（スマホ・PC共通）による操作
+      const jumpBtn = document.getElementById("jumpBtn");
+      jumpBtn.addEventListener("touchstart", (e)=>{
+          e.preventDefault();
+          if(gameState === "playing" && player.onBar) {
+              player.vy = player.jumpStrength;
+              player.onBar = false;
+          }
+      });
+      jumpBtn.addEventListener("mousedown", (e)=>{
+          e.preventDefault();
+          if(gameState === "playing" && player.onBar) {
+              player.vy = player.jumpStrength;
+              player.onBar = false;
+          }
+      });
+      
+      // スタートボタン
       const startBtn = document.getElementById("startBtn");
-      
-      // 左ボタン
-      leftBtn.addEventListener("touchstart", (e)=>{
-          e.preventDefault();
-          keys["ArrowLeft"] = true;
-      });
-      leftBtn.addEventListener("touchend", (e)=>{
-          e.preventDefault();
-          keys["ArrowLeft"] = false;
-      });
-      leftBtn.addEventListener("mousedown", (e)=>{
-          e.preventDefault();
-          keys["ArrowLeft"] = true;
-      });
-      leftBtn.addEventListener("mouseup", (e)=>{
-          e.preventDefault();
-          keys["ArrowLeft"] = false;
-      });
-      
-      // 右ボタン
-      rightBtn.addEventListener("touchstart", (e)=>{
-          e.preventDefault();
-          keys["ArrowRight"] = true;
-      });
-      rightBtn.addEventListener("touchend", (e)=>{
-          e.preventDefault();
-          keys["ArrowRight"] = false;
-      });
-      rightBtn.addEventListener("mousedown", (e)=>{
-          e.preventDefault();
-          keys["ArrowRight"] = true;
-      });
-      rightBtn.addEventListener("mouseup", (e)=>{
-          e.preventDefault();
-          keys["ArrowRight"] = false;
-      });
-      
-      // ※スタートボタンは #startBtn で操作（スペースキーもスタートに対応）
       startBtn.addEventListener("click", (e)=>{
           e.preventDefault();
           initGame();
           startBtn.style.display = "none";
       });
+      
+      // タッチ操作で左右移動（キャンバス領域）
+      function handleTouch(e) {
+          // タッチ位置に応じて左右の移動キーを設定
+          keys["ArrowLeft"] = false;
+          keys["ArrowRight"] = false;
+          for(let i = 0; i < e.touches.length; i++){
+              const touch = e.touches[i];
+              const touchX = touch.clientX;
+              if(touchX < window.innerWidth / 2){
+                  keys["ArrowLeft"] = true;
+              } else {
+                  keys["ArrowRight"] = true;
+              }
+          }
+      }
+      function handleTouchEnd(e) {
+          if(e.touches.length === 0){
+              keys["ArrowLeft"] = false;
+              keys["ArrowRight"] = false;
+          } else {
+              handleTouch(e);
+          }
+      }
+      canvas.addEventListener("touchstart", handleTouch);
+      canvas.addEventListener("touchmove", handleTouch);
+      canvas.addEventListener("touchend", handleTouchEnd);
       
       // バー生成
       function spawnBars() {
@@ -223,11 +221,12 @@
           const currentGravity = BASE_GRAVITY + elapsed * 0.02;
           cameraOffset += currentScrollSpeed;
           
-          // プレイヤーの移動（PCの左右キーとボタンで操作）
+          // プレイヤーの移動（PCの左右キーおよびキャンバスのタッチ操作）
           if(keys["ArrowLeft"]) player.x -= player.speed;
           if(keys["ArrowRight"]) player.x += player.speed;
           player.x = Math.max(0, Math.min(player.x, canvas.width - player.width));
-          // PCでのジャンプはスペースキーを利用（ゲーム中は既にスタート済み）
+          
+          // PCでのジャンプはスペースキー（ゲーム中は既にスタート済み）
           if(keys["Space"] && player.onBar && gameState === "playing") {
               player.vy = player.jumpStrength;
               player.onBar = false;
@@ -377,7 +376,7 @@
           ctx.globalAlpha = 1;
           
           // アイテム描画
-          ctx.font = "24px sans-serif";
+          ctx.font = "36px sans-serif";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
           for(let item of items) {
@@ -390,7 +389,7 @@
           // プレイヤー描画（ペンギン🐧）
           const playerScreenY = player.y - cameraOffset;
           if(player.invincible) ctx.globalAlpha = 0.5;
-          ctx.font = "30px sans-serif";
+          ctx.font = "50px sans-serif";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
           ctx.fillText("🐧", player.x + player.width/2, playerScreenY + player.height/2);
@@ -424,7 +423,7 @@
           ctx.textBaseline = "middle";
           for(let eff of effects) {
               ctx.globalAlpha = eff.alpha;
-              ctx.font = "30px sans-serif";
+              ctx.font = "50px sans-serif";
               ctx.fillText(eff.text, eff.x, eff.y - cameraOffset);
           }
           ctx.restore();
