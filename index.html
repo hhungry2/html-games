@@ -2,68 +2,76 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>エンドレス落下ゲーム（最適化＆修正版）</title>
+  <title>エンドレス落下ゲーム</title>
   <style>
     body {
-      background-color: #eee;
       margin: 0;
       padding: 0;
-      text-align: center;
+      background: #eee;
       font-family: sans-serif;
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
       user-select: none;
     }
+    /* キャンバスは画面いっぱいに表示 */
     canvas {
-      background-color: #87CEEB;
       display: block;
-      margin: 20px auto;
-      border: 2px solid #333;
-      touch-action: none;
+      background-color: #87CEEB;
     }
-    #resetBtn {
-      font-size: 16px;
+    /* 下部中央に操作ボタンを配置 */
+    #controls {
+      position: fixed;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+      z-index: 100;
+    }
+    #controls button {
+      font-size: 20px;
       padding: 10px 20px;
-      margin: 10px;
-      display: none;
+      border: none;
+      border-radius: 5px;
+      background-color: #fff;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
     }
   </style>
 </head>
 <body>
-  <h1>エンドレス落下ゲーム（最適化＆修正版）</h1>
-  <p>スペースキー／タップでジャンプ、左右キーまたは画面タップで横移動</p>
-  <canvas id="gameCanvas" width="400" height="600"></canvas>
-  <br>
-  <button id="resetBtn">Reset</button>
+  <canvas id="gameCanvas"></canvas>
+  <div id="controls">
+    <button id="leftBtn">←</button>
+    <button id="jumpBtn">ジャンプ</button>
+    <button id="rightBtn">→</button>
+  </div>
   
   <script>
-    (function () {
+    (function(){
       "use strict";
-      // 定数の定義
-      const CANVAS_WIDTH = 400;
-      const CANVAS_HEIGHT = 600;
-      const BASE_SCROLL_SPEED = 1;
-      const BASE_GRAVITY = 0.3;
+      // キャンバスを画面いっぱいにリサイズ
+      const canvas = document.getElementById("gameCanvas");
+      const ctx = canvas.getContext("2d");
+      const resizeCanvas = () => {
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+      }
+      window.addEventListener("resize", resizeCanvas);
+      resizeCanvas();
+      
+      // 定数（※canvasサイズは動的なので、canvas.width/height をその都度参照）
+      let BASE_SCROLL_SPEED = 1;
+      let BASE_GRAVITY = 0.3;
       const BAR_MIN_WIDTH = 50, BAR_MAX_WIDTH = 150, BAR_HEIGHT = 10;
       const ENEMY_PROBABILITY = 0.3, ENEMY_SIZE = 15;
       const ITEM_SIZE = 20;
       const LIFE_ICON_SIZE = 24, LIFE_SPACING = 30;
       
-      // Canvas 関連
-      const canvas = document.getElementById("gameCanvas");
-      const ctx = canvas.getContext("2d");
-      const resetBtn = document.getElementById("resetBtn");
-      
-      // ゲーム状態・変数
-      // gameState: "start" / "playing" / "gameover"
+      // ゲーム状態管理："start" / "playing" / "gameover"
       let gameState = "start";
       let startTime, score, bonusScore, cameraOffset, barTransparentTimer, hasUpdatedHighScore;
       let bars, items, effects, nextBarY, nextItemY;
       
-      // プレイヤー設定
       const player = {
-        x: CANVAS_WIDTH / 2 - 15,
+        x: canvas.width/2 - 15,
         y: 100,
         width: 30,
         height: 30,
@@ -79,354 +87,378 @@
       };
       
       let highScore = parseInt(localStorage.getItem("highScore")) || 0;
-      const keys = {};
+      const keys = {}; // キーボード操作用（必要なら）
       
       // ヘルパー関数
-      const random = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+      const random = (min, max) => Math.floor(Math.random()*(max-min+1)) + min;
       function rectsIntersect(ax, ay, aw, ah, bx, by, bw, bh) {
-        return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+          return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
       }
       
-      // イベントリスナー（キーボード／タッチ／マウス）
+      // キーボードイベント（PC用）※スマホでは画面ボタンで操作するので、タップによるジャンプは行わない
       document.addEventListener("keydown", (e) => {
-        if (["ArrowLeft", "ArrowRight", "Space"].includes(e.code)) e.preventDefault();
-        keys[e.code] = true;
-        // スタート画面状態でキー入力があればゲーム開始
-        if(gameState === "start") initGame();
+         if(["ArrowLeft", "ArrowRight", "Space"].includes(e.code)) {
+             e.preventDefault();
+         }
+         keys[e.code] = true;
       });
       document.addEventListener("keyup", (e) => { keys[e.code] = false; });
       
-      const handleInputStart = (e) => {
-        e.preventDefault();
-        const x = e.touches ? e.touches[0].clientX - canvas.getBoundingClientRect().left : e.clientX - canvas.getBoundingClientRect().left;
-        if (x < CANVAS_WIDTH / 2) { keys["ArrowLeft"] = true; keys["ArrowRight"] = false; }
-        else { keys["ArrowRight"] = true; keys["ArrowLeft"] = false; }
-        // スタート画面ならゲーム開始
-        if(gameState === "start") {
-          initGame();
-          return;
-        }
-        if (player.onBar) {
-          player.vy = player.jumpStrength;
-          player.onBar = false;
-        }
-      };
-      const handleInputEnd = (e) => {
-        e.preventDefault();
-        keys["ArrowLeft"] = keys["ArrowRight"] = false;
-      };
-      canvas.addEventListener("touchstart", handleInputStart, false);
-      canvas.addEventListener("touchend", handleInputEnd, false);
-      canvas.addEventListener("mousedown", handleInputStart, false);
-      canvas.addEventListener("mouseup", handleInputEnd, false);
+      // スマホ用・画面下のボタンによる操作
+      const leftBtn = document.getElementById("leftBtn");
+      const jumpBtn = document.getElementById("jumpBtn");
+      const rightBtn = document.getElementById("rightBtn");
       
-      // クリックでスタート画面もリセット（ゲームオーバー時も）
-      canvas.addEventListener("click", () => {
-        if(gameState === "start" || gameState === "gameover") {
-          initGame();
-        }
+      // 左ボタンの操作
+      leftBtn.addEventListener("touchstart", (e)=>{
+          e.preventDefault();
+          keys["ArrowLeft"] = true;
       });
-      resetBtn.addEventListener("click", resetGame);
+      leftBtn.addEventListener("touchend", (e)=>{
+          e.preventDefault();
+          keys["ArrowLeft"] = false;
+      });
+      leftBtn.addEventListener("mousedown", (e)=>{
+          e.preventDefault();
+          keys["ArrowLeft"] = true;
+      });
+      leftBtn.addEventListener("mouseup", (e)=>{
+          e.preventDefault();
+          keys["ArrowLeft"] = false;
+      });
       
-      // バー生成
+      // 右ボタンの操作
+      rightBtn.addEventListener("touchstart", (e)=>{
+          e.preventDefault();
+          keys["ArrowRight"] = true;
+      });
+      rightBtn.addEventListener("touchend", (e)=>{
+          e.preventDefault();
+          keys["ArrowRight"] = false;
+      });
+      rightBtn.addEventListener("mousedown", (e)=>{
+          e.preventDefault();
+          keys["ArrowRight"] = true;
+      });
+      rightBtn.addEventListener("mouseup", (e)=>{
+          e.preventDefault();
+          keys["ArrowRight"] = false;
+      });
+      
+      // ジャンプボタンの操作
+      jumpBtn.addEventListener("touchstart", (e)=>{
+          e.preventDefault();
+          if(player.onBar) {
+              player.vy = player.jumpStrength;
+              player.onBar = false;
+          }
+      });
+      jumpBtn.addEventListener("mousedown", (e)=>{
+          e.preventDefault();
+          if(player.onBar) {
+              player.vy = player.jumpStrength;
+              player.onBar = false;
+          }
+      });
+      
+      // ※キャンバスへのタップ（従来のジャンプ用）は削除し、画面操作はボタンのみとする
+      
+      // バー生成関数
       function spawnBars() {
-        while (nextBarY < cameraOffset + CANVAS_HEIGHT + 200) {
-          const barWidth = random(BAR_MIN_WIDTH, BAR_MAX_WIDTH);
-          const barX = random(0, CANVAS_WIDTH - barWidth);
-          let type = "normal";
-          const r = Math.random();
-          if (r >= 0.7 && r < 0.85) type = "green";
-          else if (r >= 0.85) type = "blue";
-          const bar = { x: barX, y: nextBarY, width: barWidth, height: BAR_HEIGHT, type, enemy: null };
-          if (type === "blue") {
-            bar.vx = (Math.random() < 0.5 ? -1 : 1) * (Math.random() * 1 + 0.5);
-          }
-          if (Math.random() < ENEMY_PROBABILITY) {
-            const enemyX = random(barX, barX + barWidth - ENEMY_SIZE);
-            bar.enemy = { x: enemyX, y: nextBarY - ENEMY_SIZE, size: ENEMY_SIZE, vx: (Math.random() < 0.5 ? -1 : 1) * (Math.random() * 0.5 + 0.5) };
-          }
-          bars.push(bar);
-          nextBarY += random(80, 150);
-        }
+         while(nextBarY < cameraOffset + canvas.height + 200) {
+             const barWidth = random(BAR_MIN_WIDTH, BAR_MAX_WIDTH);
+             const barX = random(0, canvas.width - barWidth);
+             let type = "normal";
+             const r = Math.random();
+             if(r >= 0.7 && r < 0.85) type = "green";
+             else if(r >= 0.85) type = "blue";
+             const bar = { x: barX, y: nextBarY, width: barWidth, height: BAR_HEIGHT, type, enemy: null };
+             if(type === "blue") {
+                bar.vx = (Math.random() < 0.5 ? -1 : 1) * (Math.random()*1 + 0.5);
+             }
+             if(Math.random() < ENEMY_PROBABILITY) {
+                const enemyX = random(barX, barX + barWidth - ENEMY_SIZE);
+                bar.enemy = { x: enemyX, y: nextBarY - ENEMY_SIZE, size: ENEMY_SIZE, vx: (Math.random() < 0.5 ? -1 : 1) * (Math.random()*0.5 + 0.5) };
+             }
+             bars.push(bar);
+             nextBarY += random(80,150);
+         }
       }
       
-      // アイテム生成
+      // アイテム生成関数
       function spawnItems() {
-        while (nextItemY < cameraOffset + CANVAS_HEIGHT + 200) {
-          const itemX = random(0, CANVAS_WIDTH - ITEM_SIZE);
-          items.push({ x: itemX, y: nextItemY, size: ITEM_SIZE });
-          nextItemY += random(200, 300);
-        }
+         while(nextItemY < cameraOffset + canvas.height + 200) {
+            const itemX = random(0, canvas.width - ITEM_SIZE);
+            items.push({ x: itemX, y: nextItemY, size: ITEM_SIZE });
+            nextItemY += random(200,300);
+         }
       }
       
-      // 更新処理（ゲーム中のみ）
+      // 更新処理（"playing" 状態のみ）
       function update() {
-        if (gameState !== "playing") return;
-        const elapsed = (Date.now() - startTime) / 1000;
-        score = Math.floor(elapsed * 10) + bonusScore;
-        const currentScrollSpeed = BASE_SCROLL_SPEED + elapsed * 0.05;
-        const currentGravity = BASE_GRAVITY + elapsed * 0.02;
-        cameraOffset += currentScrollSpeed;
-        
-        // プレイヤー移動
-        if (keys["ArrowLeft"]) player.x -= player.speed;
-        if (keys["ArrowRight"]) player.x += player.speed;
-        player.x = Math.max(0, Math.min(player.x, CANVAS_WIDTH - player.width));
-        if (keys["Space"] && player.onBar) {
-          player.vy = player.jumpStrength;
-          player.onBar = false;
-        }
-        player.vy += currentGravity;
-        player.y += player.vy;
-        
-        // 青バーの左右移動更新
-        for (let bar of bars) {
-          if (bar.type === "blue") {
-            bar.x += bar.vx;
-            if (bar.x < 0) { bar.x = 0; bar.vx = -bar.vx; }
-            if (bar.x + bar.width > CANVAS_WIDTH) { bar.x = CANVAS_WIDTH - bar.width; bar.vx = -bar.vx; }
+          if(gameState !== "playing") return;
+          const elapsed = (Date.now() - startTime) / 1000;
+          score = Math.floor(elapsed * 10) + bonusScore;
+          const currentScrollSpeed = BASE_SCROLL_SPEED + elapsed * 0.05;
+          const currentGravity = BASE_GRAVITY + elapsed * 0.02;
+          cameraOffset += currentScrollSpeed;
+          
+          // プレイヤーの移動
+          if(keys["ArrowLeft"]) player.x -= player.speed;
+          if(keys["ArrowRight"]) player.x += player.speed;
+          player.x = Math.max(0, Math.min(player.x, canvas.width - player.width));
+          if(keys["Space"] && player.onBar) {
+              player.vy = player.jumpStrength;
+              player.onBar = false;
           }
-        }
-        // 敵の移動更新
-        for (let bar of bars) {
-          if (bar.enemy) {
-            bar.enemy.x += bar.enemy.vx;
-            if (bar.enemy.x < bar.x) { bar.enemy.x = bar.x; bar.enemy.vx = -bar.enemy.vx; }
-            if (bar.enemy.x + bar.enemy.size > bar.x + bar.width) { bar.enemy.x = bar.x + bar.width - bar.enemy.size; bar.enemy.vx = -bar.enemy.vx; }
-          }
-        }
-        
-        // 天井衝突処理
-        const playerScreenY = player.y - cameraOffset;
-        if (playerScreenY < 0 && barTransparentTimer <= 0) {
-          player.lives--;
-          if (player.lives <= 0) gameState = "gameover";
-          barTransparentTimer = 10;
-          player.vy = 5;
-        }
-        if (barTransparentTimer > 0) barTransparentTimer--;
-        
-        spawnBars();
-        spawnItems();
-        
-        // バーとの衝突判定
-        if (barTransparentTimer <= 0) {
-          player.onBar = false;
-          for (let bar of bars) {
-            if (player.x < bar.x + bar.width && player.x + player.width > bar.x) {
-              if (player.vy >= 0 &&
-                  player.y + player.height >= bar.y &&
-                  player.y + player.height <= bar.y + bar.height + player.vy) {
-                if (bar.type === "green") {
-                  player.y = bar.y - player.height;
-                  player.vy = player.jumpStrength;
-                  player.onBar = true;
-                } else if (bar.type === "blue") {
-                  player.y = bar.y - player.height;
-                  player.vy = 0;
-                  player.onBar = true;
-                  player.x += bar.vx;
-                } else {
-                  player.y = bar.y - player.height;
-                  player.vy = 0;
-                  player.onBar = true;
-                }
-                break;
+          player.vy += currentGravity;
+          player.y += player.vy;
+          
+          // 青いバーの左右移動
+          for(let bar of bars) {
+              if(bar.type === "blue") {
+                  bar.x += bar.vx;
+                  if(bar.x < 0) { bar.x = 0; bar.vx = -bar.vx; }
+                  if(bar.x + bar.width > canvas.width) { bar.x = canvas.width - bar.width; bar.vx = -bar.vx; }
               }
-            }
           }
-        }
-        
-        // 敵との衝突判定
-        for (let bar of bars) {
-          if (bar.enemy && rectsIntersect(player.x, player.y, player.width, player.height,
-                                          bar.enemy.x, bar.enemy.y, bar.enemy.size, bar.enemy.size)) {
-            if (!player.invincible) {
+          // 敵の移動更新
+          for(let bar of bars) {
+              if(bar.enemy) {
+                  bar.enemy.x += bar.enemy.vx;
+                  if(bar.enemy.x < bar.x) { bar.enemy.x = bar.x; bar.enemy.vx = -bar.enemy.vx; }
+                  if(bar.enemy.x + bar.enemy.size > bar.x + bar.width) { bar.enemy.x = bar.x + bar.width - bar.enemy.size; bar.enemy.vx = -bar.enemy.vx; }
+              }
+          }
+          
+          // 上部衝突処理
+          const playerScreenY = player.y - cameraOffset;
+          if(playerScreenY < 0 && barTransparentTimer <= 0) {
               player.lives--;
-              if (player.lives <= 0) gameState = "gameover";
-              player.invincible = true;
-              player.invincibleTimer = 60;
-            }
+              if(player.lives <= 0) gameState = "gameover";
+              barTransparentTimer = 10;
+              player.vy = 5;
           }
-        }
-        
-        // アイテムとの衝突判定
-        for (let i = items.length - 1; i >= 0; i--) {
-          const item = items[i];
-          if (rectsIntersect(player.x, player.y, player.width, player.height,
-                             item.x, item.y, item.size, item.size)) {
-            bonusScore += 100;
-            effects.push({ x: item.x + item.size / 2, y: item.y, alpha: 1, timer: 30, text: "✨" });
-            items.splice(i, 1);
+          if(barTransparentTimer > 0) barTransparentTimer--;
+          
+          spawnBars();
+          spawnItems();
+          
+          // バーとの衝突判定
+          if(barTransparentTimer <= 0) {
+             player.onBar = false;
+             for(let bar of bars) {
+                if(player.x < bar.x + bar.width && player.x + player.width > bar.x) {
+                   if(player.vy >= 0 &&
+                      player.y + player.height >= bar.y &&
+                      player.y + player.height <= bar.y + BAR_HEIGHT + player.vy) {
+                         if(bar.type === "green") {
+                             player.y = bar.y - player.height;
+                             player.vy = player.jumpStrength;
+                             player.onBar = true;
+                         } else if(bar.type === "blue") {
+                             player.y = bar.y - player.height;
+                             player.vy = 0;
+                             player.onBar = true;
+                             player.x += bar.vx;
+                         } else {
+                             player.y = bar.y - player.height;
+                             player.vy = 0;
+                             player.onBar = true;
+                         }
+                         break;
+                   }
+                }
+             }
           }
-        }
-        
-        // エフェクト更新
-        for (let i = effects.length - 1; i >= 0; i--) {
-          const eff = effects[i];
-          eff.timer--;
-          eff.y -= 0.5;
-          eff.alpha = eff.timer / 30;
-          if (eff.timer <= 0) effects.splice(i, 1);
-        }
-        
-        if (player.invincible) {
-          player.invincibleTimer--;
-          if (player.invincibleTimer <= 0) player.invincible = false;
-        }
-        
-        // 画面下部衝突判定
-        if (player.y - cameraOffset + player.height > CANVAS_HEIGHT) gameState = "gameover";
+          
+          // 敵との衝突判定
+          for(let bar of bars) {
+              if(bar.enemy && rectsIntersect(player.x, player.y, player.width, player.height,
+                                              bar.enemy.x, bar.enemy.y, bar.enemy.size, bar.enemy.size)) {
+                 if(!player.invincible) {
+                     player.lives--;
+                     if(player.lives <= 0) gameState = "gameover";
+                     player.invincible = true;
+                     player.invincibleTimer = 60;
+                 }
+              }
+          }
+          
+          // アイテムとの衝突判定
+          for(let i = items.length - 1; i >= 0; i--) {
+              const item = items[i];
+              if(rectsIntersect(player.x, player.y, player.width, player.height,
+                                item.x, item.y, item.size, item.size)) {
+                 bonusScore += 100;
+                 effects.push({ x: item.x + item.size/2, y: item.y, alpha: 1, timer: 30, text: "✨" });
+                 items.splice(i,1);
+              }
+          }
+          
+          // エフェクト更新
+          for(let i = effects.length - 1; i >= 0; i--) {
+              const eff = effects[i];
+              eff.timer--;
+              eff.y -= 0.5;
+              eff.alpha = eff.timer / 30;
+              if(eff.timer <= 0) effects.splice(i,1);
+          }
+          
+          if(player.invincible) {
+              player.invincibleTimer--;
+              if(player.invincibleTimer <= 0) player.invincible = false;
+          }
+          
+          // 下部衝突判定
+          if(player.y - cameraOffset + player.height > canvas.height) gameState = "gameover";
       }
       
       // 描画処理
       function draw() {
-        // ハイスコア更新（ゲームオーバー時のみ）
-        if (gameState === "gameover" && !hasUpdatedHighScore) {
-          if (score > highScore) {
-            highScore = score;
-            localStorage.setItem("highScore", highScore);
+          if(gameState === "gameover" && !hasUpdatedHighScore) {
+              if(score > highScore) {
+                  highScore = score;
+                  localStorage.setItem("highScore", highScore);
+              }
+              hasUpdatedHighScore = true;
           }
-          hasUpdatedHighScore = true;
-        }
-        ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-        // 背景描画
-        ctx.fillStyle = "#87CEEB";
-        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-        
-        // スタート画面の描画
-        if (gameState === "start") {
-          ctx.fillStyle = "black";
-          ctx.font = "30px sans-serif";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText("Tap to Start", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
-          return;  // 以降は描画せずに終了
-        }
-        
-        // バーおよび敵の描画
-        ctx.globalAlpha = (barTransparentTimer > 0 ? 0.3 : 1);
-        for (let bar of bars) {
-          const barScreenY = bar.y - cameraOffset;
-          if (barScreenY + bar.height >= -20 && barScreenY <= CANVAS_HEIGHT + 20) {
-            ctx.fillStyle = bar.type === "green" ? "green" : (bar.type === "blue" ? "blue" : "#654321");
-            ctx.fillRect(bar.x, barScreenY, bar.width, BAR_HEIGHT);
-            if (bar.enemy) {
-              const enemyScreenY = bar.enemy.y - cameraOffset;
-              ctx.font = bar.enemy.size + "px sans-serif";
+          ctx.clearRect(0,0, canvas.width, canvas.height);
+          ctx.fillStyle = "#87CEEB";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          
+          // スタート画面表示（"start" 状態）
+          if(gameState === "start") {
+              ctx.fillStyle = "black";
+              ctx.font = "30px sans-serif";
               ctx.textAlign = "center";
               ctx.textBaseline = "middle";
-              ctx.fillText("👾", bar.enemy.x + bar.enemy.size / 2, enemyScreenY + bar.enemy.size / 2);
-            }
+              ctx.fillText("Press 'ジャンプ' to Start", canvas.width/2, canvas.height/2);
+              return;
           }
-        }
-        ctx.globalAlpha = 1;
-        
-        // アイテム描画
-        ctx.font = "24px sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        for (let item of items) {
-          const itemScreenY = item.y - cameraOffset;
-          if (itemScreenY > -20 && itemScreenY < CANVAS_HEIGHT + 20) {
-            ctx.fillText("🍰", item.x + item.size / 2, itemScreenY + item.size / 2);
+          
+          // バー・敵の描画
+          ctx.globalAlpha = (barTransparentTimer > 0 ? 0.3 : 1);
+          for(let bar of bars) {
+              const barScreenY = bar.y - cameraOffset;
+              if(barScreenY + bar.height >= -20 && barScreenY <= canvas.height + 20) {
+                  ctx.fillStyle = (bar.type === "green" ? "green" : (bar.type === "blue" ? "blue" : "#654321"));
+                  ctx.fillRect(bar.x, barScreenY, bar.width, BAR_HEIGHT);
+                  if(bar.enemy) {
+                      const enemyScreenY = bar.enemy.y - cameraOffset;
+                      ctx.font = bar.enemy.size + "px sans-serif";
+                      ctx.textAlign = "center";
+                      ctx.textBaseline = "middle";
+                      ctx.fillText("👾", bar.enemy.x + bar.enemy.size/2, enemyScreenY + bar.enemy.size/2);
+                  }
+              }
           }
-        }
-        
-        // プレイヤー描画（ペンギン🐧）
-        const playerScreenY = player.y - cameraOffset;
-        if (player.invincible) ctx.globalAlpha = 0.5;
-        ctx.font = "30px sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText("🐧", player.x + player.width / 2, playerScreenY + player.height / 2);
-        ctx.globalAlpha = 1;
-        
-        // スコア・ハイスコア表示
-        ctx.fillStyle = "black";
-        ctx.font = "20px sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText("High Score: " + highScore, CANVAS_WIDTH / 2, 20);
-        ctx.textAlign = "left";
-        ctx.fillText("Score: " + score, 10, 50);
-        
-        // リッチなライフ表示（ペンギンアイコン）
-        const startX = CANVAS_WIDTH - (player.maxLives * LIFE_SPACING) - 10;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.shadowColor = "rgba(0,0,0,0.3)";
-        ctx.shadowBlur = 4;
-        for (let i = 0; i < player.maxLives; i++) {
-          ctx.globalAlpha = i < player.lives ? 1 : 0.3;
-          ctx.font = LIFE_ICON_SIZE + "px sans-serif";
-          ctx.fillText("🐧", startX + i * LIFE_SPACING + LIFE_SPACING / 2, 50);
-        }
-        ctx.globalAlpha = 1;
-        ctx.shadowBlur = 0;
-        
-        // エフェクト描画
-        ctx.save();
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        for (let eff of effects) {
-          ctx.globalAlpha = eff.alpha;
-          ctx.font = "30px sans-serif";
-          ctx.fillText(eff.text, eff.x, eff.y - cameraOffset);
-        }
-        ctx.restore();
-        ctx.globalAlpha = 1;
-        
-        // ゲームオーバーオーバーレイ（ゲームオーバー状態なら表示）
-        if (gameState === "gameover") {
-          ctx.fillStyle = "rgba(0,0,0,0.6)";
-          ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-          ctx.fillStyle = "white";
-          ctx.font = "40px sans-serif";
+          ctx.globalAlpha = 1;
+          
+          // アイテム描画
+          ctx.font = "24px sans-serif";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
-          ctx.fillText("GAME OVER", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
-        }
+          for(let item of items) {
+              const itemScreenY = item.y - cameraOffset;
+              if(itemScreenY > -20 && itemScreenY < canvas.height + 20) {
+                  ctx.fillText("🍰", item.x + item.size/2, itemScreenY + item.size/2);
+              }
+          }
+          
+          // プレイヤー描画（ペンギン🐧）
+          const playerScreenY = player.y - cameraOffset;
+          if(player.invincible) ctx.globalAlpha = 0.5;
+          ctx.font = "30px sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("🐧", player.x + player.width/2, playerScreenY + player.height/2);
+          ctx.globalAlpha = 1;
+          
+          // スコア・ハイスコア表示
+          ctx.fillStyle = "black";
+          ctx.font = "20px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText("High Score: " + highScore, canvas.width/2, 20);
+          ctx.textAlign = "left";
+          ctx.fillText("Score: " + score, 10, 50);
+          
+          // リッチなライフ表示（ペンギンアイコン）
+          const startX = canvas.width - (player.maxLives * LIFE_SPACING) - 10;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.shadowColor = "rgba(0,0,0,0.3)";
+          ctx.shadowBlur = 4;
+          for(let i = 0; i < player.maxLives; i++) {
+              ctx.globalAlpha = i < player.lives ? 1 : 0.3;
+              ctx.font = LIFE_ICON_SIZE + "px sans-serif";
+              ctx.fillText("🐧", startX + i * LIFE_SPACING + LIFE_SPACING/2, 50);
+          }
+          ctx.globalAlpha = 1;
+          ctx.shadowBlur = 0;
+          
+          // エフェクト描画
+          ctx.save();
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          for(let eff of effects) {
+              ctx.globalAlpha = eff.alpha;
+              ctx.font = "30px sans-serif";
+              ctx.fillText(eff.text, eff.x, eff.y - cameraOffset);
+          }
+          ctx.restore();
+          ctx.globalAlpha = 1;
+          
+          // ゲームオーバーオーバーレイ
+          if(gameState === "gameover") {
+              ctx.fillStyle = "rgba(0,0,0,0.6)";
+              ctx.fillRect(0,0, canvas.width, canvas.height);
+              ctx.fillStyle = "white";
+              ctx.font = "40px sans-serif";
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2);
+          }
       }
       
-      // メインループ（ゲーム状態に関わらず描画は継続）
+      // メインループ（描画は常に実行）
       function gameLoop() {
-        if (gameState === "playing") update();
-        draw();
-        requestAnimationFrame(gameLoop);
+          if(gameState === "playing") update();
+          draw();
+          requestAnimationFrame(gameLoop);
       }
       
-      // resetGame 関数（ゲーム再開用）
       function resetGame() {
-        initGame();
+          initGame();
       }
       
-      // ゲーム初期化
       function initGame() {
-        gameState = "playing";
-        cameraOffset = 0;
-        startTime = Date.now();
-        score = bonusScore = 0;
-        barTransparentTimer = 0;
-        hasUpdatedHighScore = false;
-        effects = [];
-        nextBarY = 150;
-        nextItemY = 200;
-        player.x = CANVAS_WIDTH / 2 - player.width / 2;
-        player.y = 100;
-        player.vx = player.vy = 0;
-        player.onBar = false;
-        player.lives = player.maxLives;
-        player.invincible = false;
-        player.invincibleTimer = 0;
-        bars = [];
-        items = [];
-        spawnBars();
-        spawnItems();
-        resetBtn.style.display = "none";
+          gameState = "playing";
+          cameraOffset = 0;
+          startTime = Date.now();
+          score = bonusScore = 0;
+          barTransparentTimer = 0;
+          hasUpdatedHighScore = false;
+          effects = [];
+          nextBarY = 150;
+          nextItemY = 200;
+          player.x = canvas.width/2 - player.width/2;
+          player.y = 100;
+          player.vx = player.vy = 0;
+          player.onBar = false;
+          player.lives = player.maxLives;
+          player.invincible = false;
+          player.invincibleTimer = 0;
+          bars = [];
+          items = [];
+          spawnBars();
+          spawnItems();
       }
       
-      // 初回はスタート画面を表示
+      // 初回はスタート画面状態にする
+      gameState = "start";
       gameLoop();
+      
     })();
   </script>
 </body>
