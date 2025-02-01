@@ -11,28 +11,50 @@
       font-family: sans-serif;
       user-select: none;
     }
-    /* キャンバスは画面いっぱいに表示 */
+    /* キャンバスは画面いっぱいの横幅、かつコントロールゾーン分の高さを除く */
     canvas {
       display: block;
       background-color: #87CEEB;
     }
-    /* 下部中央に操作ボタンを配置 */
+    /* 画面下部のコントロールゾーン：左右ボタンのみ、左右に広がる */
     #controls {
       position: fixed;
-      bottom: 10px;
-      left: 50%;
-      transform: translateX(-50%);
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 100px; /* CONTROL_ZONE_HEIGHT */
       display: flex;
-      gap: 10px;
-      z-index: 100;
+      margin: 0;
+      padding: 0;
     }
     #controls button {
-      font-size: 20px;
-      padding: 10px 20px;
+      flex: 1;
+      font-size: 24px;
       border: none;
-      border-radius: 5px;
       background-color: #fff;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+      /* ボタン間の余白をなくす */
+      margin: 0;
+      /* 画面端まで伸ばす */
+      border-right: 1px solid #ccc;
+    }
+    /* 右側のボタンは右端に余白が無いように */
+    #controls button:last-child {
+      border-right: none;
+    }
+    /* 画面中央に配置するスタートボタン */
+    #startBtn {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 30px;
+      padding: 15px 30px;
+      border: none;
+      border-radius: 10px;
+      background-color: #fff;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+      z-index: 200;
+      display: none; /* ゲーム開始後は非表示 */
     }
   </style>
 </head>
@@ -40,20 +62,23 @@
   <canvas id="gameCanvas"></canvas>
   <div id="controls">
     <button id="leftBtn">←</button>
-    <button id="jumpBtn">ジャンプ</button>
     <button id="rightBtn">→</button>
   </div>
+  <button id="startBtn">スタート</button>
   
   <script>
     (function(){
       "use strict";
-      // キャンバスを画面いっぱいにリサイズ
+      // 定数（コントロールゾーンの高さ）
+      const CONTROL_ZONE_HEIGHT = 100;
+      
+      // キャンバスのリサイズ：画面横幅全体、縦は (window.innerHeight - CONTROL_ZONE_HEIGHT)
       const canvas = document.getElementById("gameCanvas");
       const ctx = canvas.getContext("2d");
       const resizeCanvas = () => {
           canvas.width = window.innerWidth;
-          canvas.height = window.innerHeight;
-      }
+          canvas.height = window.innerHeight - CONTROL_ZONE_HEIGHT;
+      };
       window.addEventListener("resize", resizeCanvas);
       resizeCanvas();
       
@@ -87,7 +112,7 @@
       };
       
       let highScore = parseInt(localStorage.getItem("highScore")) || 0;
-      const keys = {}; // キーボード操作用（必要なら）
+      const keys = {}; // PC用キーボード操作
       
       // ヘルパー関数
       const random = (min, max) => Math.floor(Math.random()*(max-min+1)) + min;
@@ -95,21 +120,27 @@
           return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
       }
       
-      // キーボードイベント（PC用）※スマホでは画面ボタンで操作するので、タップによるジャンプは行わない
+      // PC用キーボードイベント
       document.addEventListener("keydown", (e) => {
-         if(["ArrowLeft", "ArrowRight", "Space"].includes(e.code)) {
-             e.preventDefault();
+         if(["ArrowLeft", "ArrowRight", "Space"].includes(e.code)) e.preventDefault();
+         // スペースキーでスタート（"start" または "gameover" 状態の場合）
+         if(e.code === "Space") {
+             if(gameState === "start" || gameState === "gameover") {
+                 initGame();
+                 document.getElementById("startBtn").style.display = "none";
+                 return;
+             }
          }
          keys[e.code] = true;
       });
       document.addEventListener("keyup", (e) => { keys[e.code] = false; });
       
-      // スマホ用・画面下のボタンによる操作
+      // 画面下部の左右ボタン（スマホ・PC共通）
       const leftBtn = document.getElementById("leftBtn");
-      const jumpBtn = document.getElementById("jumpBtn");
       const rightBtn = document.getElementById("rightBtn");
+      const startBtn = document.getElementById("startBtn");
       
-      // 左ボタンの操作
+      // 左ボタン
       leftBtn.addEventListener("touchstart", (e)=>{
           e.preventDefault();
           keys["ArrowLeft"] = true;
@@ -127,7 +158,7 @@
           keys["ArrowLeft"] = false;
       });
       
-      // 右ボタンの操作
+      // 右ボタン
       rightBtn.addEventListener("touchstart", (e)=>{
           e.preventDefault();
           keys["ArrowRight"] = true;
@@ -145,25 +176,14 @@
           keys["ArrowRight"] = false;
       });
       
-      // ジャンプボタンの操作
-      jumpBtn.addEventListener("touchstart", (e)=>{
+      // ※スタートボタンは #startBtn で操作（スペースキーもスタートに対応）
+      startBtn.addEventListener("click", (e)=>{
           e.preventDefault();
-          if(player.onBar) {
-              player.vy = player.jumpStrength;
-              player.onBar = false;
-          }
-      });
-      jumpBtn.addEventListener("mousedown", (e)=>{
-          e.preventDefault();
-          if(player.onBar) {
-              player.vy = player.jumpStrength;
-              player.onBar = false;
-          }
+          initGame();
+          startBtn.style.display = "none";
       });
       
-      // ※キャンバスへのタップ（従来のジャンプ用）は削除し、画面操作はボタンのみとする
-      
-      // バー生成関数
+      // バー生成
       function spawnBars() {
          while(nextBarY < cameraOffset + canvas.height + 200) {
              const barWidth = random(BAR_MIN_WIDTH, BAR_MAX_WIDTH);
@@ -185,7 +205,7 @@
          }
       }
       
-      // アイテム生成関数
+      // アイテム生成
       function spawnItems() {
          while(nextItemY < cameraOffset + canvas.height + 200) {
             const itemX = random(0, canvas.width - ITEM_SIZE);
@@ -203,18 +223,19 @@
           const currentGravity = BASE_GRAVITY + elapsed * 0.02;
           cameraOffset += currentScrollSpeed;
           
-          // プレイヤーの移動
+          // プレイヤーの移動（PCの左右キーとボタンで操作）
           if(keys["ArrowLeft"]) player.x -= player.speed;
           if(keys["ArrowRight"]) player.x += player.speed;
           player.x = Math.max(0, Math.min(player.x, canvas.width - player.width));
-          if(keys["Space"] && player.onBar) {
+          // PCでのジャンプはスペースキーを利用（ゲーム中は既にスタート済み）
+          if(keys["Space"] && player.onBar && gameState === "playing") {
               player.vy = player.jumpStrength;
               player.onBar = false;
           }
           player.vy += currentGravity;
           player.y += player.vy;
           
-          // 青いバーの左右移動
+          // 青バーの左右移動
           for(let bar of bars) {
               if(bar.type === "blue") {
                   bar.x += bar.vx;
@@ -222,7 +243,7 @@
                   if(bar.x + bar.width > canvas.width) { bar.x = canvas.width - bar.width; bar.vx = -bar.vx; }
               }
           }
-          // 敵の移動更新
+          // 敵の移動
           for(let bar of bars) {
               if(bar.enemy) {
                   bar.enemy.x += bar.enemy.vx;
@@ -272,7 +293,7 @@
              }
           }
           
-          // 敵との衝突判定
+          // 敵との衝突
           for(let bar of bars) {
               if(bar.enemy && rectsIntersect(player.x, player.y, player.width, player.height,
                                               bar.enemy.x, bar.enemy.y, bar.enemy.size, bar.enemy.size)) {
@@ -285,7 +306,7 @@
               }
           }
           
-          // アイテムとの衝突判定
+          // アイテムとの衝突
           for(let i = items.length - 1; i >= 0; i--) {
               const item = items[i];
               if(rectsIntersect(player.x, player.y, player.width, player.height,
@@ -333,7 +354,7 @@
               ctx.font = "30px sans-serif";
               ctx.textAlign = "center";
               ctx.textBaseline = "middle";
-              ctx.fillText("Press 'ジャンプ' to Start", canvas.width/2, canvas.height/2);
+              ctx.fillText("スタートボタンかスペースキーで開始", canvas.width/2, canvas.height/2);
               return;
           }
           
@@ -418,6 +439,8 @@
               ctx.textAlign = "center";
               ctx.textBaseline = "middle";
               ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2);
+              // スタートボタンを再表示
+              startBtn.style.display = "block";
           }
       }
       
@@ -426,10 +449,6 @@
           if(gameState === "playing") update();
           draw();
           requestAnimationFrame(gameLoop);
-      }
-      
-      function resetGame() {
-          initGame();
       }
       
       function initGame() {
@@ -455,8 +474,9 @@
           spawnItems();
       }
       
-      // 初回はスタート画面状態にする
+      // 初回はスタート状態にする
       gameState = "start";
+      startBtn.style.display = "block";
       gameLoop();
       
     })();
