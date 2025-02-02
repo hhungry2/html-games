@@ -16,7 +16,6 @@
       padding: 0;
       background: #eee;
       font-family: sans-serif;
-      /* すでに全体指定しているので重複しても問題ありません */
     }
     /* キャンバスはウィンドウ全体のサイズ */
     canvas {
@@ -90,7 +89,7 @@
       const ctx = canvas.getContext("2d");
       const resizeCanvas = () => {
          canvas.width = window.innerWidth;
-         canvas.height = window.innerHeight; // ウィンドウ全体の高さ
+         canvas.height = window.innerHeight;
       };
       window.addEventListener("resize", () => {
          resizeCanvas();
@@ -131,15 +130,18 @@
          jumpStrength: -10,  // ジャンプ力
          onBar: false,
          lives: 3,
-         maxLives: 3,
+         // 通常の無敵（初動2秒や敵衝突後の一時無敵）
          invincible: false,
-         invincibleTimer: 0
+         invincibleTimer: 0,
+         // 筋肉アイテムによる無敵モード
+         muscleInvincible: false,
+         muscleInvincibleTimer: 0
       };
       
       let highScore = parseInt(localStorage.getItem("highScore")) || 0;
       const keys = {};
       
-      // ★ キー入力が残らないように、ウィンドウのフォーカスが外れた時にキー状態をリセット
+      // キー入力のリセット
       window.addEventListener("blur", () => {
          keys["ArrowLeft"] = false;
          keys["ArrowRight"] = false;
@@ -155,7 +157,6 @@
       // キーボード操作
       document.addEventListener("keydown", (e) => {
          if(["ArrowLeft", "ArrowRight", "Space"].includes(e.code)) e.preventDefault();
-         // スペースキーでスタート（"start"または"gameover"状態の場合）
          if(e.code === "Space") {
             if(gameState === "start" || gameState === "gameover") {
                initGame();
@@ -167,7 +168,7 @@
       });
       document.addEventListener("keyup", (e) => { keys[e.code] = false; });
       
-      // ジャンプボタン（コントロールゾーン全体）の操作
+      // ジャンプボタン操作
       const jumpBtn = document.getElementById("jumpBtn");
       jumpBtn.addEventListener("touchstart", (e)=>{
          e.preventDefault();
@@ -192,7 +193,7 @@
          startBtn.style.display = "none";
       });
       
-      // キャンバス上のタッチ操作（左右移動）
+      // タッチ操作
       function handleTouch(e) {
          keys["ArrowLeft"] = false;
          keys["ArrowRight"] = false;
@@ -252,11 +253,19 @@
          }
       }
       
-      // アイテム生成
+      // アイテム生成（マッスルアイテムの出現率を増加）
       function spawnItems() {
          while(nextItemY < cameraOffset + gameAreaHeight + 200) {
             const itemX = random(0, canvas.width - ITEM_SIZE);
-            let type = Math.random() < 0.3 ? "heart" : "cake";
+            let r = Math.random();
+            let type;
+            if(r < 0.2) {
+              type = "heart";
+            } else if(r < 0.5) { // 筋肉アイテムの出現率を増やす
+              type = "muscle";
+            } else {
+              type = "cake";
+            }
             items.push({ x: itemX, y: nextItemY, size: ITEM_SIZE, type: type });
             nextItemY += random(200,300);
          }
@@ -267,11 +276,17 @@
          if(gameState !== "playing") return;
          const elapsed = (Date.now() - startTime) / 1000;
          score = Math.floor(elapsed * 10) + bonusScore;
+         // 現在のスコアがハイスコアを上回ったら更新
+         if(score > highScore) {
+           highScore = score;
+           localStorage.setItem("highScore", highScore);
+         }
+         
          const currentScrollSpeed = BASE_SCROLL_SPEED + elapsed * 0.05;
          const currentGravity = BASE_GRAVITY;
          cameraOffset += currentScrollSpeed;
          
-         // スタート直後2秒間は無敵状態にする
+         // 初期無敵（最初2秒）
          if(elapsed < 2) {
             player.invincible = true;
          }
@@ -288,7 +303,7 @@
          player.vy += currentGravity;
          player.y += player.vy;
          
-         // 青バーの左右移動や敵の移動
+         // 青バーの左右移動および敵の移動
          for(let bar of bars) {
             if(bar.type === "blue") {
                bar.x += bar.vx;
@@ -296,9 +311,18 @@
                if(bar.x + bar.width > canvas.width) { bar.x = canvas.width - bar.width; bar.vx = -bar.vx; }
             }
             if(bar.enemy) {
-               bar.enemy.x += bar.enemy.vx;
-               if(bar.enemy.x < bar.x) { bar.enemy.x = bar.x; bar.enemy.vx = -bar.enemy.vx; }
-               if(bar.enemy.x + bar.enemy.size > bar.x + bar.width) { bar.enemy.x = bar.x + bar.width - bar.enemy.size; bar.enemy.vx = -bar.enemy.vx; }
+               if(bar.enemy.ejected) {
+                  bar.enemy.x += bar.enemy.vx;
+                  bar.enemy.y += bar.enemy.vy;
+                  bar.enemy.vy += 0.5;
+                  if(bar.enemy.y - cameraOffset > gameAreaHeight || bar.enemy.x < -50 || bar.enemy.x > canvas.width + 50) {
+                     bar.enemy = null;
+                  }
+               } else {
+                  bar.enemy.x += bar.enemy.vx;
+                  if(bar.enemy.x < bar.x) { bar.enemy.x = bar.x; bar.enemy.vx = -bar.enemy.vx; }
+                  if(bar.enemy.x + bar.enemy.size > bar.x + bar.width) { bar.enemy.x = bar.x + bar.width - bar.enemy.size; bar.enemy.vx = -bar.enemy.vx; }
+               }
             }
          }
          
@@ -359,11 +383,22 @@
             }
          }
          
-         // 敵との衝突判定（ノックバック付き）
+         // 敵との衝突判定
          for(let bar of bars) {
             if(bar.enemy && rectsIntersect(player.x, player.y, player.width, player.height,
                                             bar.enemy.x, bar.enemy.y, bar.enemy.size, bar.enemy.size)) {
-               if(!player.invincible) {
+               if(player.muscleInvincible) {
+                  if(!bar.enemy.hit) {
+                     bonusScore += 200;
+                     effects.push({ x: bar.enemy.x + bar.enemy.size/2, y: bar.enemy.y, alpha: 1, timer: 30, text: "+200" });
+                     bar.enemy.hit = true;
+                  }
+                  bar.enemy.vx = (Math.random() < 0.5 ? -10 : 10);
+                  bar.enemy.vy = -10;
+                  bar.enemy.ejected = true;
+               } else if(elapsed < 2 || player.invincible) {
+                  continue;
+               } else {
                   player.lives--;
                   if(player.lives <= 0) {
                      gameState = "gameover";
@@ -376,33 +411,29 @@
                   
                   player.invincible = true;
                   player.invincibleTimer = 60;
-                  break;
                }
             }
          }
          
-		// アイテムとの衝突判定
-		for(let i = items.length - 1; i >= 0; i--) {
-		  const item = items[i];
-		  if(rectsIntersect(player.x, player.y, player.width, player.height,
-		                    item.x, item.y, item.size, item.size)) {
-		    if(item.type === "heart") {
-		     // ハート取得時の処理
-		      if(player.lives < player.maxLives) {
-		         player.lives++;
-		      } else {
-		         player.lives++;
-		         player.maxLives++;
-		      }
-		      effects.push({ x: item.x + item.size/2, y: item.y, alpha: 1, timer: 30, text: "💖" });
-		    } else {
-		      bonusScore += 100;
-		      effects.push({ x: item.x + item.size/2, y: item.y, alpha: 1, timer: 30, text: "+100" });
-		    }
-		    items.splice(i, 1);
-		  }
-		}
-
+         // アイテムとの衝突判定
+         for(let i = items.length - 1; i >= 0; i--) {
+           const item = items[i];
+           if(rectsIntersect(player.x, player.y, player.width, player.height,
+                              item.x, item.y, item.size, item.size)) {
+             if(item.type === "heart") {
+              player.lives++;
+              effects.push({ x: item.x + item.size/2, y: item.y, alpha: 1, timer: 30, text: "💖" });
+             } else if(item.type === "muscle") {
+              player.muscleInvincible = true;
+              player.muscleInvincibleTimer = 600; // 10秒
+              effects.push({ x: item.x + item.size/2, y: item.y, alpha: 1, timer: 30, text: "💪" });
+             } else {
+              bonusScore += 100;
+              effects.push({ x: item.x + item.size/2, y: item.y, alpha: 1, timer: 30, text: "+100" });
+             }
+             items.splice(i, 1);
+           }
+         }
          
          // エフェクトの更新
          for(let i = effects.length - 1; i >= 0; i--) {
@@ -413,12 +444,21 @@
             if(eff.timer <= 0) effects.splice(i, 1);
          }
          
-         // 2秒経過後のみ、無敵タイマーをカウントダウン
+         // 無敵タイマーの更新
          if(elapsed >= 2 && player.invincible) {
             if(player.invincibleTimer > 0) {
                 player.invincibleTimer--;
             } else {
                 player.invincible = false;
+            }
+         }
+         
+         // 筋肉モードの更新
+         if(player.muscleInvincible) {
+            if(player.muscleInvincibleTimer > 0) {
+                player.muscleInvincibleTimer--;
+            } else {
+                player.muscleInvincible = false;
             }
          }
          
@@ -428,7 +468,6 @@
       
       // 描画処理
       function draw() {
-         // ゲーム開始画面のとき、左上にリポジトリリンクを表示
          if(gameState === "start") {
             repoLink.style.display = "block";
          } else {
@@ -484,6 +523,7 @@
             }
          }
          
+         // アイテムの描画（💖、🍰、💪）
          ctx.font = "48px sans-serif";
          ctx.textAlign = "center";
          ctx.textBaseline = "middle";
@@ -492,12 +532,15 @@
             if(itemScreenY > -20 && itemScreenY < gameAreaHeight + 20) {
                if(item.type === "heart") {
                   ctx.fillText("💖", item.x + item.size/2, itemScreenY + item.size/2);
+               } else if(item.type === "muscle") {
+                  ctx.fillText("💪", item.x + item.size/2, itemScreenY + item.size/2);
                } else {
                   ctx.fillText("🍰", item.x + item.size/2, itemScreenY + item.size/2);
                }
             }
          }
          
+         // プレイヤーの描画（無敵時は半透明）
          const playerScreenY = player.y - cameraOffset;
          if(player.invincible) ctx.globalAlpha = 0.5;
          ctx.font = "70px sans-serif";
@@ -506,6 +549,13 @@
          ctx.fillText("🐧", player.x + player.width/2, playerScreenY + player.height/2);
          ctx.globalAlpha = 1;
          
+         // 筋肉モード中のマーク表示（50px、プレイヤーに近い位置）
+         if(player.muscleInvincible) {
+            ctx.font = "50px sans-serif";
+            ctx.fillText("💪", player.x - 10, playerScreenY + player.height/2);
+         }
+         
+         // スコアとハイスコアの表示
          ctx.fillStyle = "black";
          ctx.font = "30px sans-serif";
          ctx.textAlign = "center";
@@ -513,18 +563,15 @@
          ctx.textAlign = "left";
          ctx.fillText("Score: " + score, 10, 70);
          
-         const startX = canvas.width - (player.maxLives * LIFE_SPACING) - 10;
+         // ライフゲージ（現在のライフ数分のみ表示）
+         const livesCount = player.lives;
+         const startX = canvas.width - (livesCount * LIFE_SPACING) - 10;
          ctx.textAlign = "center";
          ctx.textBaseline = "middle";
-         ctx.shadowColor = "rgba(0,0,0,0.3)";
-         ctx.shadowBlur = 4;
-         for(let i = 0; i < player.maxLives; i++) {
-            ctx.globalAlpha = i < player.lives ? 1 : 0.3;
+         for(let i = 0; i < livesCount; i++) {
             ctx.font = LIFE_ICON_SIZE + "px sans-serif";
             ctx.fillText("🐧", startX + i * LIFE_SPACING + LIFE_ICON_SIZE/2, 70);
          }
-         ctx.globalAlpha = 1;
-         ctx.shadowBlur = 0;
          
          ctx.save();
          ctx.textAlign = "center";
@@ -550,7 +597,6 @@
          }
       }
       
-      // メインループ
       function gameLoop() {
          if(gameState === "playing") update();
          draw();
@@ -571,17 +617,17 @@
          player.y = 100;
          player.vx = player.vy = 0;
          player.onBar = false;
-         // 初期ライフは3に設定
-         player.lives = player.maxLives = 3;
+         player.lives = 3;
          player.invincible = false;
          player.invincibleTimer = 0;
+         player.muscleInvincible = false;
+         player.muscleInvincibleTimer = 0;
          bars = [];
          items = [];
          spawnBars();
          spawnItems();
       }
       
-      // 初回はスタート状態
       gameState = "start";
       startBtn.style.display = "block";
       gameLoop();
