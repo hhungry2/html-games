@@ -9,5 +9,6 @@ NS-Shaft風ゲーム
 ミスタードリラー風ゲーム  
 [**driller.html**](https://hhungry2.github.io/html-games/driller.html)
 
-Deepth_anithing デモ
+Deepth_anithing デモ  
 [**depth_anithing_demo.html.html**](https://hhungry2.github.io/html-games/depth_anithing_demo.html.html)
+
