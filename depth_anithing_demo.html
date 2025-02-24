@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Depth Anything with WebGPU and Transformers.js</title>
+    <style>
+        canvas { border: 1px solid black; margin: 10px; }
+        #container { display: flex; flex-direction: row; }
+        #status { margin: 10px; font-family: Arial, sans-serif; color: #333; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>Depth Anything Demo</h1>
+    <input type="file" id="imageInput" accept="image/*">
+    <div id="status">画像を選択してください（JPG、PNGなど）</div>
+    <div id="container">
+        <canvas id="inputCanvas" width="512" height="512"></canvas>
+        <canvas id="depthCanvas" width="512" height="512"></canvas>
+    </div>
+
+    <script type="module">
+        // Transformers.jsをインポート
+        import { pipeline } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@3.0.0-alpha.0';
+
+        // キャンバスとコンテキストの取得
+        const inputCanvas = document.getElementById('inputCanvas');
+        const depthCanvas = document.getElementById('depthCanvas');
+        const inputCtx = inputCanvas.getContext('2d');
+        const depthCtx = depthCanvas.getContext('2d');
+        const status = document.getElementById('status');
+
+        // ステータス更新関数
+        function updateStatus(message, isError = false) {
+            status.textContent = message;
+            status.className = isError ? 'error' : '';
+        }
+
+        // 画像入力の処理
+        document.getElementById('imageInput').addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            if (!file) {
+                updateStatus('ファイルが選択されていません。');
+                return;
+            }
+
+            updateStatus('画像を読み込んでいます...');
+
+            // 画像を読み込んでキャンバスに描画
+            const img = new Image();
+            img.onload = async () => {
+                inputCtx.drawImage(img, 0, 0, 512, 512);
+                updateStatus('モデルをロード中...');
+
+                try {
+                    // Depth Anythingモデルのロード（WebGPUを使用）
+                    const depthEstimator = await pipeline(
+                        'depth-estimation',
+                        'Xenova/depth-anything-small-hf',
+                        { device: 'webgpu' }
+                    );
+
+                    updateStatus('深度推定を実行中...');
+
+                    // 深度推定の実行
+                    const output = await depthEstimator(inputCanvas.toDataURL());
+
+                    // 深度マップをキャンバスに描画
+                    const depthMap = output.depth; // 深度データ
+                    const depthImg = new ImageData(
+                        new Uint8ClampedArray(depthMap.data),
+                        depthMap.width,
+                        depthMap.height
+                    );
+                    depthCtx.putImageData(depthImg, 0, 0);
+
+                    updateStatus('深度推定が完了しました！');
+                } catch (error) {
+                    updateStatus(`エラーが発生しました: ${error.message}`, true);
+                    console.error(error);
+                }
+            };
+            img.onerror = () => {
+                updateStatus('画像の読み込みに失敗しました。', true);
+            };
+            img.src = URL.createObjectURL(file);
+        });
+    </script>
+</body>
+</html>
