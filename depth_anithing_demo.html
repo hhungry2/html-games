@@ -2,88 +2,222 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Depth Anything with WebGPU and Transformers.js</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Depth Anything in Browser</title>
+    <!-- WASMバックエンドを使用するためにort.wasm.min.jsを読み込み -->
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.wasm.min.js"></script>
     <style>
-        canvas { border: 1px solid black; margin: 10px; }
-        #container { display: flex; flex-direction: row; }
-        #status { margin: 10px; font-family: Arial, sans-serif; color: #333; }
-        .error { color: red; }
+        body { font-family: Arial, sans-serif; text-align: center; }
+        canvas, img { max-width: 518px; border: 1px solid #ccc; margin: 10px; }
+        #loadingOverlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.8); display: none; justify-content: center;
+            align-items: center; flex-direction: column; color: white; z-index: 1000;
+        }
+        .loadingSpinner {
+            border: 8px solid rgba(255, 255, 255, 0.3); border-top: 8px solid white;
+            border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
-    <h1>Depth Anything Demo</h1>
+    <h1>画像の深度推定とパララックス効果</h1>
     <input type="file" id="imageInput" accept="image/*">
-    <div id="status">画像を選択してください（JPG、PNGなど）</div>
-    <div id="container">
-        <canvas id="inputCanvas" width="512" height="512"></canvas>
-        <canvas id="depthCanvas" width="512" height="512"></canvas>
+    <div>
+        <h3>入力画像</h3>
+        <canvas id="inputCanvas"></canvas>
+    </div>
+    <div>
+        <h3>深度マップ</h3>
+        <canvas id="depthCanvas"></canvas>
+    </div>
+    <div>
+        <h3>パララックス画像（マウスを動かして効果を確認）</h3>
+        <canvas id="parallaxCanvas" width="518" height="518"></canvas>
+    </div>
+    <div id="loadingOverlay">
+        <div class="loadingSpinner"></div>
+        <div>処理中...</div>
     </div>
 
-    <script type="module">
-        // Transformers.jsをインポート
-        import { pipeline } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@3.0.0-alpha.0';
-
-        // キャンバスとコンテキストの取得
+    <script>
         const inputCanvas = document.getElementById('inputCanvas');
         const depthCanvas = document.getElementById('depthCanvas');
-        const inputCtx = inputCanvas.getContext('2d');
-        const depthCtx = depthCanvas.getContext('2d');
-        const status = document.getElementById('status');
+        const parallaxCanvas = document.getElementById('parallaxCanvas');
+        const parallaxCtx = parallaxCanvas.getContext('2d');
+        const imageInput = document.getElementById('imageInput');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const size = 518;
 
-        // ステータス更新関数
-        function updateStatus(message, isError = false) {
-            status.textContent = message;
-            status.className = isError ? 'error' : '';
+        // グローバル変数に正規化済み深度データ（0～1）を保存
+        let globalDepthArray = null;  
+        // オフスクリーンキャンバス（元画像の保存用）
+        let offscreenCanvas = document.createElement('canvas');
+        offscreenCanvas.width = size;
+        offscreenCanvas.height = size;
+        let offscreenCtx = offscreenCanvas.getContext('2d');
+
+        const showLoading = () => loadingOverlay.style.display = 'flex';
+        const hideLoading = () => loadingOverlay.style.display = 'none';
+
+        function preprocess(imageData, width, height) {
+            console.log('前処理開始');
+            const floatArr = new Float32Array(width * height * 3);
+            let j = 0;
+            for (let i = 0; i < imageData.data.length; i += 4) {
+                floatArr[j] = imageData.data[i] / 255;     // R
+                floatArr[j + width * height] = imageData.data[i + 1] / 255; // G
+                floatArr[j + 2 * width * height] = imageData.data[i + 2] / 255; // B
+                j++;
+            }
+            console.log('前処理完了', floatArr);
+            return floatArr;
         }
 
-        // 画像入力の処理
-        document.getElementById('imageInput').addEventListener('change', async (event) => {
-            const file = event.target.files[0];
-            if (!file) {
-                updateStatus('ファイルが選択されていません。');
-                return;
+        function postprocess(tensor) {
+            console.log('後処理開始', tensor);
+            const [_, height, width] = tensor.dims;
+            const imageData = new ImageData(width, height);
+            const data = imageData.data;
+            const tensorData = tensor.data;
+
+            let minDepth = Infinity, maxDepth = -Infinity;
+            for (let i = 0; i < tensorData.length; i++) {
+                if (tensorData[i] < minDepth) minDepth = tensorData[i];
+                if (tensorData[i] > maxDepth) maxDepth = tensorData[i];
             }
 
-            updateStatus('画像を読み込んでいます...');
+            // 正規化した深度値（0～1）を計算
+            const normalizedDepthArray = new Float32Array(tensorData.length);
+            for (let i = 0; i < tensorData.length; i++) {
+                normalizedDepthArray[i] = (tensorData[i] - minDepth) / (maxDepth - minDepth);
+            }
+            globalDepthArray = normalizedDepthArray;
 
-            // 画像を読み込んでキャンバスに描画
-            const img = new Image();
-            img.onload = async () => {
-                inputCtx.drawImage(img, 0, 0, 512, 512);
-                updateStatus('モデルをロード中...');
+            for (let i = 0; i < tensorData.length; i++) {
+                const value = normalizedDepthArray[i] * 255;
+                const idx = i * 4;
+                data[idx] = data[idx + 1] = data[idx + 2] = value;
+                data[idx + 3] = 255;
+            }
+            console.log('後処理完了', imageData);
+            return imageData;
+        }
 
-                try {
-                    // Depth Anythingモデルのロード（WebGPUを使用）
-                    const depthEstimator = await pipeline(
-                        'depth-estimation',
-                        'Xenova/depth-anything-small-hf',
-                        { device: 'webgpu' }
+        async function processImage(file) {
+            showLoading();
+            console.log('画像処理開始');
+
+            try {
+                const img = new Image();
+                img.src = URL.createObjectURL(file);
+                await new Promise(resolve => img.onload = resolve);
+                console.log('画像ロード完了');
+
+                // 入力画像を各キャンバスに描画
+                const ctx = inputCanvas.getContext('2d');
+                inputCanvas.width = size;
+                inputCanvas.height = size;
+                ctx.drawImage(img, 0, 0, size, size);
+
+                // オフスクリーンキャンバスに元画像を保存
+                offscreenCtx.drawImage(img, 0, 0, size, size);
+
+                const inputData = ctx.getImageData(0, 0, size, size);
+                console.log('入力データ取得完了', inputData);
+
+                console.log('モデルロード開始');
+                const session = await ort.InferenceSession.create(
+                    'https://cdn.glitch.me/0f5359e2-6022-421b-88f7-13e276d0fb33/depthanythingv2-vits-dynamic-quant.onnx',
+                    { executionProviders: ['wasm'] } // WASMバックエンドを指定
+                );
+                console.log('モデルロード完了');
+
+                const inputTensor = new ort.Tensor('float32', preprocess(inputData, size, size), [1, 3, size, size]);
+                console.log('入力テンソル作成', inputTensor);
+                const feeds = { image: inputTensor };
+                const results = await session.run(feeds);
+                console.log('推論結果', results);
+                const depthTensor = results.depth;
+
+                const depthCtx = depthCanvas.getContext('2d');
+                depthCanvas.width = size;
+                depthCanvas.height = size;
+                depthCtx.putImageData(postprocess(depthTensor), 0, 0);
+                console.log('深度マップ描画完了');
+
+                // パララックスキャンバスに元画像を初期描画
+                parallaxCanvas.width = size;
+                parallaxCanvas.height = size;
+                parallaxCtx.drawImage(offscreenCanvas, 0, 0);
+
+                hideLoading();
+            } catch (err) {
+                console.error('エラー詳細:', err);
+                alert('処理中にエラーが発生しました。詳細はコンソールを確認してください。');
+                hideLoading();
+            }
+        }
+
+        // パララックス効果を更新する関数
+        function updateParallax(mouseX, mouseY) {
+            parallaxCtx.clearRect(0, 0, size, size);
+            const maxDisplacement = 30; // 最大移動量（ピクセル）
+            // マウスの位置をキャンバス中心からの相対座標（-1～1）に変換
+            const normX = (mouseX - size / 2) / (size / 2);
+            const normY = (mouseY - size / 2) / (size / 2);
+
+            const gridCount = 20; // グリッドの分割数
+            const blockW = size / gridCount;
+            const blockH = size / gridCount;
+
+            for (let i = 0; i < gridCount; i++) {
+                for (let j = 0; j < gridCount; j++) {
+                    const srcX = j * blockW;
+                    const srcY = i * blockH;
+                    // ブロック内の平均深度を計算
+                    let sum = 0;
+                    let count = 0;
+                    for (let y = Math.floor(srcY); y < Math.floor(srcY + blockH); y++) {
+                        for (let x = Math.floor(srcX); x < Math.floor(srcX + blockW); x++) {
+                            const idx = y * size + x;
+                            if (globalDepthArray && idx < globalDepthArray.length) {
+                                sum += globalDepthArray[idx];
+                                count++;
+                            }
+                        }
+                    }
+                    const avgDepth = count ? (sum / count) : 0;
+                    // 近い部分ほど大きく動かす（深度が低い＝近いと仮定）
+                    const factor = 1 - avgDepth;
+                    const dx = maxDisplacement * normX * factor;
+                    const dy = maxDisplacement * normY * factor;
+                    parallaxCtx.drawImage(
+                        offscreenCanvas,
+                        srcX, srcY, blockW, blockH,
+                        srcX + dx, srcY + dy, blockW, blockH
                     );
-
-                    updateStatus('深度推定を実行中...');
-
-                    // 深度推定の実行
-                    const output = await depthEstimator(inputCanvas.toDataURL());
-
-                    // 深度マップをキャンバスに描画
-                    const depthMap = output.depth; // 深度データ
-                    const depthImg = new ImageData(
-                        new Uint8ClampedArray(depthMap.data),
-                        depthMap.width,
-                        depthMap.height
-                    );
-                    depthCtx.putImageData(depthImg, 0, 0);
-
-                    updateStatus('深度推定が完了しました！');
-                } catch (error) {
-                    updateStatus(`エラーが発生しました: ${error.message}`, true);
-                    console.error(error);
                 }
-            };
-            img.onerror = () => {
-                updateStatus('画像の読み込みに失敗しました。', true);
-            };
-            img.src = URL.createObjectURL(file);
+            }
+        }
+
+        // パララックスキャンバスに対するマウス移動イベント
+        parallaxCanvas.addEventListener('mousemove', (e) => {
+            const rect = parallaxCanvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            updateParallax(mouseX, mouseY);
+        });
+
+        // マウスがキャンバスから離れたときは元画像に戻す
+        parallaxCanvas.addEventListener('mouseleave', () => {
+            parallaxCtx.drawImage(offscreenCanvas, 0, 0);
+        });
+
+        imageInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) processImage(file);
         });
     </script>
 </body>
