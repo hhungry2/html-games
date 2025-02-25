@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>動画姿勢検出 - カメラ切替・部位選択・モザイクモード</title>
+  <!-- MediaPipe Poseと描画用ユーティリティの読み込み -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+      height: 100%;
+      overflow: auto;
+    }
+    #loadingStatus {
+      margin: 10px;
+      font-size: 18px;
+      color: #333;
+    }
+    #controls, #rightButtons {
+      display: none;
+    }
+    #controls {
+      margin: 10px;
+    }
+    #controls input {
+      font-size: 18px;
+      padding: 10px 15px;
+    }
+    #rightButtons {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      display: flex;
+      gap: 15px;
+      z-index: 100;
+    }
+    #rightButtons button, #mosaicToggleButton {
+      background: #007bff;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      padding: 10px 15px;
+      font-size: 18px;
+      cursor: pointer;
+    }
+    @media (orientation: portrait) {
+      #rightButtons button, #mosaicToggleButton {
+        font-size: 24px;
+        padding: 15px 25px;
+      }
+      #controls input {
+        font-size: 24px;
+        padding: 15px 20px;
+      }
+      #loadingStatus {
+        font-size: 24px;
+      }
+    }
+    #videoContainer {
+      position: relative;
+      width: 100vw;
+      height: calc(100vh - 20vh);
+      margin: 0 0 10vh 0;
+      overflow: hidden;
+    }
+    #video, #canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    #canvas {
+      pointer-events: none;
+    }
+    /* 部位選択チェックボックス（下部配置） */
+    #checkboxes {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255,255,255,0.8);
+      padding: 10px;
+      border-radius: 5px;
+      z-index: 100;
+      font-size: 18px;
+    }
+    #checkboxes label {
+      margin-right: 10px;
+    }
+    /* モザイク制御（上部中央配置） */
+    #mosaicControl {
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255,255,255,0.8);
+      padding: 10px;
+      border-radius: 5px;
+      z-index: 100;
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+  </style>
+</head>
+<body>
+  <div id="loadingStatus">モデル読み込み中(Now Loading)</div>
+  
+  <div id="controls">
+    <input type="file" id="videoFile" accept="video/*">
+  </div>
+  <div id="rightButtons">
+    <button id="startCamera">カメラ起動</button>
+    <button id="switchCamera">カメラ切替</button>
+  </div>
+
+  <div id="videoContainer">
+    <video id="video" autoplay muted playsinline controls></video>
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <!-- 部位選択チェックボックス -->
+  <div id="checkboxes">
+    <label><input type="checkbox" id="face" checked> 顔 (face)</label>
+    <label><input type="checkbox" id="eye" checked> 目 (eye)</label>
+    <label><input type="checkbox" id="mouth" checked> 口 (mouth)</label>
+    <label><input type="checkbox" id="nose" checked> 鼻 (nose)</label>
+    <label><input type="checkbox" id="ear" checked> 耳 (ear)</label>
+    <label><input type="checkbox" id="hand" checked> 手 (Hand)</label>
+    <label><input type="checkbox" id="foot" checked> 足 (foot)</label>
+  </div>
+  <!-- モザイク制御 -->
+  <div id="mosaicControl">
+    <button id="mosaicToggleButton">モザイクモード OFF</button>
+    <label>モザイク量: <input type="range" id="mosaicSlider" min="5" max="50" value="30"></label>
+  </div>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const videoContainer = document.getElementById('videoContainer');
+    const videoFile = document.getElementById('videoFile');
+    const startCameraButton = document.getElementById('startCamera');
+    const switchCameraButton = document.getElementById('switchCamera');
+    const loadingStatus = document.getElementById('loadingStatus');
+    const controls = document.getElementById('controls');
+    const rightButtons = document.getElementById('rightButtons');
+    const mosaicToggleButton = document.getElementById('mosaicToggleButton');
+    const mosaicSlider = document.getElementById('mosaicSlider');
+    let currentFacingMode = 'user';
+    let pose; // MediaPipe Poseのインスタンス
+    let mosaicMode = false; // モザイクモードの状態
+
+    // オフスクリーンCanvas（モザイク用）
+    const offCanvas = document.createElement('canvas');
+    const offCtx = offCanvas.getContext('2d');
+
+    // 画面サイズに合わせたcanvasのリサイズ
+    function updateVideoCanvasSize() {
+      const containerWidth = videoContainer.clientWidth;
+      const containerHeight = videoContainer.clientHeight;
+      const videoWidth = video.videoWidth;
+      const videoHeight = video.videoHeight;
+      if (!videoWidth || !videoHeight) return;
+      const scale = Math.min(containerWidth / videoWidth, containerHeight / videoHeight);
+      const scaledWidth = videoWidth * scale;
+      const scaledHeight = videoHeight * scale;
+      canvas.width = videoWidth;
+      canvas.height = videoHeight;
+      canvas.style.width = `${scaledWidth}px`;
+      canvas.style.height = `${scaledHeight}px`;
+      canvas.style.left = `${(containerWidth - scaledWidth) / 2}px`;
+      canvas.style.top = `${(containerHeight - scaledHeight) / 2}px`;
+    }
+
+    // 指定領域の平均色を計算する関数
+    function getAverageColor(x, y, size) {
+      // オフスクリーンCanvasはvideoフレームと同じサイズ
+      const imageData = offCtx.getImageData(x, y, size, size).data;
+      let r = 0, g = 0, b = 0;
+      const count = imageData.length / 4;
+      for (let i = 0; i < imageData.length; i += 4) {
+        r += imageData[i];
+        g += imageData[i + 1];
+        b += imageData[i + 2];
+      }
+      r = Math.round(r / count);
+      g = Math.round(g / count);
+      b = Math.round(b / count);
+      return `rgb(${r},${g},${b})`;
+    }
+
+    // onResults: MediaPipe Poseの検出結果を描画
+    function onResults(results) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // チェックボックスの状態を取得
+      const checkFace = document.getElementById('face').checked;
+      const checkEye = document.getElementById('eye').checked;
+      const checkMouth = document.getElementById('mouth').checked;
+      const checkNose = document.getElementById('nose').checked;
+      const checkEar = document.getElementById('ear').checked;
+      const checkHand = document.getElementById('hand').checked;
+      const checkFoot = document.getElementById('foot').checked;
+      const mosaicSize = Number(mosaicSlider.value);
+
+      // モザイク処理をする場合、現在のvideoフレームをoffCanvasに描画
+      if (mosaicMode) {
+        offCanvas.width = video.videoWidth;
+        offCanvas.height = video.videoHeight;
+        offCtx.drawImage(video, 0, 0, offCanvas.width, offCanvas.height);
+      }
+
+      if (results.poseLandmarks) {
+        // 各検出部位に対応するランドマークのインデックス（代表例）
+        const mapping = {
+          face: [0, 1, 2, 3, 4, 5, 6, 7, 8],
+          eye: [2, 5],
+          mouth: [9, 10],
+          nose: [0],
+          ear: [7, 8],
+          hand: [15, 16],
+          foot: [27, 28]
+        };
+
+        // 各部位ごとに描画するかどうかチェックし、描画
+        for (const [category, indices] of Object.entries(mapping)) {
+          let shouldDraw = false;
+          if (category === 'face' && checkFace) shouldDraw = true;
+          if (category === 'eye' && checkEye) shouldDraw = true;
+          if (category === 'mouth' && checkMouth) shouldDraw = true;
+          if (category === 'nose' && checkNose) shouldDraw = true;
+          if (category === 'ear' && checkEar) shouldDraw = true;
+          if (category === 'hand' && checkHand) shouldDraw = true;
+          if (category === 'foot' && checkFoot) shouldDraw = true;
+          if (!shouldDraw) continue;
+
+          indices.forEach(index => {
+            const landmark = results.poseLandmarks[index];
+            if (landmark) {
+              const x = landmark.x * canvas.width;
+              const y = landmark.y * canvas.height;
+              if (mosaicMode) {
+                // モザイク処理：ブロックを分割し、各サブブロックごとに平均色を取得して透過処理を適用
+                const splitFactor = 2; // 例として2×2の分割
+                const subSize = mosaicSize / splitFactor;
+                for (let i = 0; i < splitFactor; i++) {
+                  for (let j = 0; j < splitFactor; j++) {
+                    // 各サブブロックの描画開始座標
+                    let blockX = x - mosaicSize / 2 + i * subSize;
+                    let blockY = y - mosaicSize / 2 + j * subSize;
+                    // ブロックが範囲外にならないように調整
+                    blockX = Math.max(0, blockX);
+                    blockY = Math.max(0, blockY);
+                    // サブブロックの平均色を取得
+                    const avgColor = getAverageColor(blockX, blockY, subSize);
+                    // 透過処理（例として0.9の透明度）
+                    ctx.globalAlpha = 0.9;
+                    ctx.fillStyle = avgColor;
+                    ctx.fillRect(blockX, blockY, subSize, subSize);
+                    ctx.globalAlpha = 1.0;
+                  }
+                }
+              } else {
+                // 通常の描画：赤い円
+                ctx.beginPath();
+                ctx.arc(x, y, 5, 0, 2 * Math.PI);
+                ctx.fillStyle = 'red';
+                ctx.fill();
+              }
+            }
+          });
+        }
+      }
+    }
+
+    // 各フレームごとにPose検出を実行
+    async function processFrame() {
+      if (video.readyState >= 2 && pose) {
+        await pose.send({image: video});
+      }
+      requestAnimationFrame(processFrame);
+    }
+
+    async function setup() {
+      // MediaPipe Poseの初期化
+      pose = new Pose({
+        locateFile: (file) => {
+          return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
+        }
+      });
+      pose.setOptions({
+        modelComplexity: 1,
+        smoothLandmarks: true,
+        enableSegmentation: false,
+        smoothSegmentation: false,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+      });
+      pose.onResults(onResults);
+      loadingStatus.textContent = "読み込み完了(Complete)";
+      console.log("MediaPipe Pose loaded successfully");
+      controls.style.display = "block";
+      rightButtons.style.display = "flex";
+
+      // 動画ファイルの読み込み
+      videoFile.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+          if (video.srcObject) {
+            video.srcObject.getTracks().forEach(track => track.stop());
+            video.srcObject = null;
+          }
+          const url = URL.createObjectURL(file);
+          video.src = url;
+          video.load();
+        }
+      });
+
+      // カメラ起動
+      startCameraButton.addEventListener('click', async function() {
+        if (video.src) {
+          video.pause();
+          video.src = "";
+        }
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: currentFacingMode } 
+          });
+          video.srcObject = stream;
+          video.play();
+        } catch (error) {
+          console.error("カメラの起動に失敗しました:", error);
+        }
+      });
+
+      // カメラ切替
+      switchCameraButton.addEventListener('click', async function() {
+        currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+        if (video.srcObject) {
+          video.srcObject.getTracks().forEach(track => track.stop());
+          video.srcObject = null;
+        }
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: currentFacingMode } 
+          });
+          video.srcObject = stream;
+          video.play();
+        } catch (error) {
+          console.error("カメラ切替に失敗しました:", error);
+        }
+      });
+
+      // モザイクモードトグルボタンのイベントリスナー
+      mosaicToggleButton.addEventListener('click', function() {
+        mosaicMode = !mosaicMode;
+        mosaicToggleButton.textContent = mosaicMode ? "モザイクモード ON" : "モザイクモード OFF";
+      });
+
+      video.onloadedmetadata = () => {
+        updateVideoCanvasSize();
+      };
+
+      video.onplay = () => {
+        processFrame();
+      };
+
+      window.addEventListener('resize', updateVideoCanvasSize);
+    }
+
+    setup();
+  </script>
+</body>
+</html>
