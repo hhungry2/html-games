@@ -1,56 +1,94 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>動画物体検出 - カメラモード追加</title>
+  <title>動画物体検出 - カメラ切替と検出リスト</title>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
   <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+    }
     #video, #canvas {
       position: absolute;
-      top: 80px;
+      top: 100px;
       left: 10px;
     }
     #canvas {
       pointer-events: none;
     }
     #controls {
-      margin: 10px;
+      position: absolute;
+      top: 40px; /* ロード状態の下に移動 */
+      left: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      visibility: hidden;
     }
-    #urlInput {
-      width: 500px;
+    #controls.visible {
+      visibility: visible;
+    }
+    #controls button, #controls input {
+      font-size: 18px;
+      padding: 10px 15px;
+    }
+    #objectList {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      background: rgba(255, 255, 255, 0.8);
+      padding: 10px;
+      border-radius: 5px;
+      max-height: 30%;
+      overflow-y: auto;
+      font-size: 16px;
+    }
+    #loadingStatus {
+      position: absolute;
+      top: 10px; /* 一番上に配置 */
+      left: 10px;
+      font-size: 18px;
+      color: #333;
     }
   </style>
 </head>
 <body>
   <div id="controls">
     <input type="file" id="videoFile" accept="video/*">
-    <input type="text" id="urlInput" placeholder="Enter YouTube or direct video URL">
-    <button id="loadUrl">Load URL</button>
     <button id="startCamera">カメラ起動</button>
+    <button id="switchCamera">カメラ切替</button>
   </div>
   <video id="video" autoplay muted playsinline controls></video>
   <canvas id="canvas"></canvas>
+  <div id="loadingStatus">モデル読み込み中(Now Loading)</div>
+  <div id="objectList">
+    <strong>検出物体一覧:</strong>
+    <ul id="list"></ul>
+  </div>
   <script>
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const videoFile = document.getElementById('videoFile');
-    const urlInput = document.getElementById('urlInput');
-    const loadUrlButton = document.getElementById('loadUrl');
     const startCameraButton = document.getElementById('startCamera');
+    const switchCameraButton = document.getElementById('switchCamera');
+    const listContainer = document.getElementById('list');
+    const loadingStatus = document.getElementById('loadingStatus');
+    const controls = document.getElementById('controls');
     let model;
-    // クラスごとの色を保持する辞書
+    let currentFacingMode = 'user';
+
     const classColorMap = {};
 
-    // ランダムな色を生成する関数
     function getRandomColor() {
-      const r = Math.floor(Math.random() * 156) + 100; // 100~255
+      const r = Math.floor(Math.random() * 156) + 100;
       const g = Math.floor(Math.random() * 156) + 100;
       const b = Math.floor(Math.random() * 156) + 100;
       return `rgb(${r}, ${g}, ${b})`;
     }
 
-    // 動画サイズに合わせてcanvasとvideoのサイズを更新
     function updateVideoCanvasSize() {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
@@ -58,20 +96,20 @@
       video.height = video.videoHeight;
     }
 
-    // COCO-SSDモデルの読み込みとイベント設定
     async function setup() {
       try {
         model = await cocoSsd.load();
+        loadingStatus.textContent = "読み込み完了(Complete)";
+        controls.classList.add('visible');
         console.log("Model loaded successfully");
       } catch (error) {
+        loadingStatus.textContent = "モデル読み込みに失敗しました(Failed)";
         console.error("Error loading model:", error);
       }
 
-      // ローカルファイルアップロードの処理
       videoFile.addEventListener('change', function(e) {
         const file = e.target.files[0];
         if (file) {
-          // カメラモード以外の場合は停止してから設定
           if(video.srcObject) {
             video.srcObject.getTracks().forEach(track => track.stop());
             video.srcObject = null;
@@ -82,29 +120,15 @@
         }
       });
 
-      // URL入力の処理
-      loadUrlButton.addEventListener('click', function() {
-        // カメラモード以外の場合は停止してから設定
-        if(video.srcObject) {
-          video.srcObject.getTracks().forEach(track => track.stop());
-          video.srcObject = null;
-        }
-        const url = urlInput.value.trim();
-        if (url) {
-          video.src = url;
-          video.load();
-        }
-      });
-
-      // カメラ起動の処理
       startCameraButton.addEventListener('click', async function() {
-        // 他のソースがある場合は一度停止
         if(video.src) {
           video.pause();
           video.src = "";
         }
         try {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: currentFacingMode } 
+          });
           video.srcObject = stream;
           video.play();
         } catch (error) {
@@ -112,19 +136,33 @@
         }
       });
 
-      // 動画のメタデータが読み込まれたらサイズ調整し、再生開始
+      switchCameraButton.addEventListener('click', async function() {
+        currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+        if(video.srcObject) {
+          video.srcObject.getTracks().forEach(track => track.stop());
+          video.srcObject = null;
+        }
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: currentFacingMode } 
+          });
+          video.srcObject = stream;
+          video.play();
+        } catch (error) {
+          console.error("カメラ切替に失敗しました:", error);
+        }
+      });
+
       video.onloadedmetadata = () => {
         updateVideoCanvasSize();
         video.play().catch(err => console.error("Error playing video:", err));
       };
 
-      // 再生開始で検出処理開始
       video.onplay = () => {
         detect();
       };
     }
 
-    // 物体検出関数
     async function detect() {
       if (video.paused || video.ended || !model) {
         requestAnimationFrame(detect);
@@ -135,14 +173,14 @@
         const predictions = await model.detect(video);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+        const detectedObjects = [];
+
         predictions.forEach(prediction => {
-          // 既に色が割り当てられていない場合はランダムな色を生成
           if (!classColorMap[prediction.class]) {
             classColorMap[prediction.class] = getRandomColor();
           }
           const color = classColorMap[prediction.class];
 
-          // バウンディングボックスの描画
           ctx.beginPath();
           ctx.rect(...prediction.bbox);
           ctx.lineWidth = 2;
@@ -151,13 +189,23 @@
           ctx.fillRect(...prediction.bbox);
           ctx.stroke();
 
-          // テキストの描画（クラス名と信頼度）
           ctx.fillStyle = color;
           ctx.font = '16px Arial';
           const text = `${prediction.class} (${(prediction.score * 100).toFixed(1)}%)`;
           const textX = prediction.bbox[0];
           const textY = prediction.bbox[1] - 10 > 0 ? prediction.bbox[1] - 10 : prediction.bbox[1] + 20;
           ctx.fillText(text, textX, textY);
+
+          if (!detectedObjects.find(item => item.class === prediction.class)) {
+            detectedObjects.push({ class: prediction.class, score: prediction.score });
+          }
+        });
+
+        listContainer.innerHTML = "";
+        detectedObjects.forEach(item => {
+          const li = document.createElement("li");
+          li.textContent = `${item.class} (${(item.score * 100).toFixed(1)}%)`;
+          listContainer.appendChild(li);
         });
       } catch (error) {
         console.error("Error during detection:", error);
@@ -165,7 +213,6 @@
       requestAnimationFrame(detect);
     }
 
-    // 初期化
     setup();
   </script>
 </body>
