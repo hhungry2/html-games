@@ -14,5 +14,5 @@ NS-Shaft風ゲーム
 Deepth_anything デモ  
 [**depth_anything.html**](https://hhungry2.github.io/html-games/tools/depth_anything.html)
 
-coco-ssd デモ
+coco-ssd デモ  
 [**coco-ssd.html**](https://hhungry2.github.io/html-games/tools/coco-ssd.html)
