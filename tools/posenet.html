@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>動画姿勢検出 - カメラ切替と検出リスト</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/posenet@2.2.2"></script>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+      height: 100%;
+      overflow: auto;
+    }
+    #loadingStatus {
+      margin: 10px;
+      font-size: 18px;
+      color: #333;
+    }
+    #controls, #rightButtons {
+      display: none;
+    }
+    #controls {
+      margin: 10px;
+    }
+    #controls input {
+      font-size: 18px;
+      padding: 10px 15px;
+    }
+    #rightButtons {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      display: flex;
+      gap: 15px;
+      z-index: 100;
+    }
+    #rightButtons button {
+      background: #007bff;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      padding: 10px 15px;
+      font-size: 18px;
+      cursor: pointer;
+    }
+    @media (orientation: portrait) {
+      #rightButtons button {
+        font-size: 24px;
+        padding: 15px 25px;
+      }
+      #controls input {
+        font-size: 24px;
+        padding: 15px 20px;
+      }
+      #loadingStatus {
+        font-size: 24px;
+      }
+    }
+    #videoContainer {
+      position: relative;
+      width: 100vw;
+      height: calc(100vh - 10vh - 80px);
+      margin: 0 0 10vh 0;
+      overflow: hidden;
+    }
+    #video, #canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    #canvas {
+      pointer-events: none;
+    }
+    #objectList {
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 255, 255, 0.8);
+      padding: 10px;
+      border-radius: 5px;
+      max-height: 30%;
+      overflow-y: auto;
+      font-size: 20px;
+      z-index: 100;
+    }
+  </style>
+</head>
+<body>
+  <div id="loadingStatus">モデル読み込み中(Now Loading)</div>
+  
+  <div id="controls">
+    <input type="file" id="videoFile" accept="video/*">
+  </div>
+  <div id="rightButtons">
+    <button id="startCamera">カメラ起動</button>
+    <button id="switchCamera">カメラ切替</button>
+  </div>
+
+  <div id="videoContainer">
+    <video id="video" autoplay muted playsinline controls></video>
+    <canvas id="canvas"></canvas>
+  </div>
+  <div id="objectList">
+    <strong>検出姿勢一覧</strong>
+    <ul id="list"></ul>
+  </div>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const videoContainer = document.getElementById('videoContainer');
+    const videoFile = document.getElementById('videoFile');
+    const startCameraButton = document.getElementById('startCamera');
+    const switchCameraButton = document.getElementById('switchCamera');
+    const listContainer = document.getElementById('list');
+    const loadingStatus = document.getElementById('loadingStatus');
+    const controls = document.getElementById('controls');
+    const rightButtons = document.getElementById('rightButtons');
+    let net;
+    let currentFacingMode = 'user';
+
+    function updateVideoCanvasSize() {
+      const containerWidth = videoContainer.clientWidth;
+      const containerHeight = videoContainer.clientHeight;
+      const videoWidth = video.videoWidth;
+      const videoHeight = video.videoHeight;
+
+      if (!videoWidth || !videoHeight) return;
+
+      const scale = Math.min(containerWidth / videoWidth, containerHeight / videoHeight);
+      const scaledWidth = videoWidth * scale;
+      const scaledHeight = videoHeight * scale;
+
+      canvas.width = videoWidth;
+      canvas.height = videoHeight;
+      canvas.style.width = `${scaledWidth}px`;
+      canvas.style.height = `${scaledHeight}px`;
+      canvas.style.left = `${(containerWidth - scaledWidth) / 2}px`;
+      canvas.style.top = `${(containerHeight - scaledHeight) / 2}px`;
+    }
+
+    async function setup() {
+      try {
+        net = await posenet.load({
+          architecture: 'MobileNetV1',
+          outputStride: 16,
+          inputResolution: { width: 640, height: 480 },
+          multiplier: 0.75
+        });
+        loadingStatus.textContent = "読み込み完了(Complete)";
+        console.log("PoseNet loaded successfully");
+        controls.style.display = "block";
+        rightButtons.style.display = "flex";
+      } catch (error) {
+        loadingStatus.textContent = "モデル読み込みに失敗しました(Failed)";
+        console.error("Error loading PoseNet:", error);
+      }
+
+      videoFile.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+          if (video.srcObject) {
+            video.srcObject.getTracks().forEach(track => track.stop());
+            video.srcObject = null;
+          }
+          const url = URL.createObjectURL(file);
+          video.src = url;
+          video.load();
+        }
+      });
+
+      startCameraButton.addEventListener('click', async function() {
+        if (video.src) {
+          video.pause();
+          video.src = "";
+        }
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: currentFacingMode } 
+          });
+          video.srcObject = stream;
+          video.play();
+        } catch (error) {
+          console.error("カメラの起動に失敗しました:", error);
+        }
+      });
+
+      switchCameraButton.addEventListener('click', async function() {
+        currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+        if (video.srcObject) {
+          video.srcObject.getTracks().forEach(track => track.stop());
+          video.srcObject = null;
+        }
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: currentFacingMode } 
+          });
+          video.srcObject = stream;
+          video.play();
+        } catch (error) {
+          console.error("カメラ切替に失敗しました:", error);
+        }
+      });
+
+      video.onloadedmetadata = () => {
+        updateVideoCanvasSize();
+        video.play().catch(err => console.error("Error playing video:", err));
+      };
+
+      video.onplay = () => {
+        detect();
+      };
+
+      window.addEventListener('resize', updateVideoCanvasSize);
+    }
+
+    async function detect() {
+      if (video.paused || video.ended || !net) {
+        requestAnimationFrame(detect);
+        return;
+      }
+
+      try {
+        const poses = await net.estimateMultiplePoses(video, {
+          flipHorizontal: currentFacingMode === 'user',
+          maxDetections: 5,
+          scoreThreshold: 0.5
+        });
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const isPortrait = window.matchMedia("(orientation: portrait)").matches;
+        const fontSize = isPortrait ? 24 : 16;
+        const minConfidence = 0.5;
+
+        const detectedPoses = [];
+
+        poses.forEach((pose, index) => {
+          const avgScore = pose.keypoints.reduce((sum, kp) => sum + kp.score, 0) / pose.keypoints.length;
+
+          // キーポイント描画
+          pose.keypoints.forEach(point => {
+            if (point.score >= minConfidence) {
+              ctx.beginPath();
+              ctx.arc(point.position.x, point.position.y, 5, 0, 2 * Math.PI);
+              ctx.fillStyle = 'red';
+              ctx.fill();
+            }
+          });
+
+          // 骨格線描画
+          const adjacentKeyPoints = posenet.getAdjacentKeyPoints(pose.keypoints, minConfidence);
+          adjacentKeyPoints.forEach(([start, end]) => {
+            ctx.beginPath();
+            ctx.moveTo(start.position.x, start.position.y);
+            ctx.lineTo(end.position.x, end.position.y);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'blue';
+            ctx.stroke();
+          });
+
+          // テキスト描画
+          const nose = pose.keypoints.find(kp => kp.part === 'nose');
+          if (nose && nose.score >= minConfidence) {
+            ctx.fillStyle = 'black';
+            ctx.font = `${fontSize}px Arial`;
+            const text = `Person ${index + 1} (${(avgScore * 100).toFixed(1)}%)`;
+            ctx.fillText(text, nose.position.x, nose.position.y - 10);
+          }
+
+          detectedPoses.push({ id: `Person ${index + 1}`, score: avgScore });
+        });
+
+        // 検出リスト更新
+        listContainer.innerHTML = "";
+        detectedPoses.forEach(item => {
+          const li = document.createElement("li");
+          li.textContent = `${item.id} (${(item.score * 100).toFixed(1)}%)`;
+          listContainer.appendChild(li);
+        });
+      } catch (error) {
+        console.error("Error during pose detection:", error);
+      }
+      requestAnimationFrame(detect);
+    }
+
+    setup();
+  </script>
+</body>
+</html>
