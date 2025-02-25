@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>MediaPipe Poseで動画モザイク</title>
+  <title>動画姿勢検出 - カメラ切替・部位選択・モザイクモード</title>
   <!-- MediaPipe Poseと描画用ユーティリティの読み込み -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
@@ -13,11 +13,7 @@
       height: 100%;
       overflow: auto;
     }
-    #loadingStatus {
-      margin: 10px;
-      font-size: 18px;
-      color: #333;
-    }
+    /* 読み込み状態の表示は削除 */
     #controls, #rightButtons {
       display: none;
     }
@@ -54,9 +50,6 @@
         font-size: 24px;
         padding: 15px 20px;
       }
-      #loadingStatus {
-        font-size: 24px;
-      }
     }
     #videoContainer {
       position: relative;
@@ -91,13 +84,12 @@
     #checkboxes label {
       margin-right: 10px;
     }
-    /* モザイク制御（上部中央配置）：背景を削除 */
+    /* モザイク制御（上部中央配置）：背景なし */
     #mosaicControl {
       position: fixed;
       top: 10px;
       left: 50%;
       transform: translateX(-50%);
-      /* 背景の削除 */
       background: none;
       padding: 10px;
       border-radius: 5px;
@@ -110,7 +102,7 @@
   </style>
 </head>
 <body>
-  <div id="loadingStatus">モデル読み込み中(Now Loading)</div>
+  <!-- 読み込み状態の表示は削除 -->
   
   <div id="controls">
     <input type="file" id="videoFile" accept="video/*">
@@ -149,7 +141,6 @@
     const videoFile = document.getElementById('videoFile');
     const startCameraButton = document.getElementById('startCamera');
     const switchCameraButton = document.getElementById('switchCamera');
-    const loadingStatus = document.getElementById('loadingStatus');
     const controls = document.getElementById('controls');
     const rightButtons = document.getElementById('rightButtons');
     const mosaicToggleButton = document.getElementById('mosaicToggleButton');
@@ -182,7 +173,6 @@
 
     // 指定領域の平均色を計算する関数
     function getAverageColor(x, y, size) {
-      // オフスクリーンCanvasはvideoフレームと同じサイズ
       const imageData = offCtx.getImageData(x, y, size, size).data;
       let r = 0, g = 0, b = 0;
       const count = imageData.length / 4;
@@ -200,7 +190,6 @@
     // onResults: MediaPipe Poseの検出結果を描画
     function onResults(results) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      // チェックボックスの状態を取得
       const checkFace = document.getElementById('face').checked;
       const checkEye = document.getElementById('eye').checked;
       const checkMouth = document.getElementById('mouth').checked;
@@ -210,7 +199,6 @@
       const checkFoot = document.getElementById('foot').checked;
       const mosaicSize = Number(mosaicSlider.value);
 
-      // モザイク処理をする場合、現在のvideoフレームをoffCanvasに描画
       if (mosaicMode) {
         offCanvas.width = video.videoWidth;
         offCanvas.height = video.videoHeight;
@@ -218,7 +206,6 @@
       }
 
       if (results.poseLandmarks) {
-        // 各検出部位に対応するランドマークのインデックス（代表例）
         const mapping = {
           face: [0, 1, 2, 3, 4, 5, 6, 7, 8],
           eye: [2, 5],
@@ -229,7 +216,6 @@
           foot: [27, 28]
         };
 
-        // 各部位ごとに描画するかどうかチェックし、描画
         for (const [category, indices] of Object.entries(mapping)) {
           let shouldDraw = false;
           if (category === 'face' && checkFace) shouldDraw = true;
@@ -247,20 +233,15 @@
               const x = landmark.x * canvas.width;
               const y = landmark.y * canvas.height;
               if (mosaicMode) {
-                // モザイク処理：ブロックを分割し、各サブブロックごとに平均色を取得して透過処理を適用
-                const splitFactor = 2; // 例として2×2の分割
+                const splitFactor = 2;
                 const subSize = mosaicSize / splitFactor;
                 for (let i = 0; i < splitFactor; i++) {
                   for (let j = 0; j < splitFactor; j++) {
-                    // 各サブブロックの描画開始座標
                     let blockX = x - mosaicSize / 2 + i * subSize;
                     let blockY = y - mosaicSize / 2 + j * subSize;
-                    // ブロックが範囲外にならないように調整
                     blockX = Math.max(0, blockX);
                     blockY = Math.max(0, blockY);
-                    // サブブロックの平均色を取得
                     const avgColor = getAverageColor(blockX, blockY, subSize);
-                    // 透過処理（例として0.6の透明度）
                     ctx.globalAlpha = 0.6;
                     ctx.fillStyle = avgColor;
                     ctx.fillRect(blockX, blockY, subSize, subSize);
@@ -268,7 +249,6 @@
                   }
                 }
               } else {
-                // 通常の描画：赤い円
                 ctx.beginPath();
                 ctx.arc(x, y, 5, 0, 2 * Math.PI);
                 ctx.fillStyle = 'red';
@@ -280,7 +260,6 @@
       }
     }
 
-    // 各フレームごとにPose検出を実行
     async function processFrame() {
       if (video.readyState >= 2 && pose) {
         await pose.send({image: video});
@@ -289,7 +268,6 @@
     }
 
     async function setup() {
-      // MediaPipe Poseの初期化
       pose = new Pose({
         locateFile: (file) => {
           return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
@@ -304,12 +282,9 @@
         minTrackingConfidence: 0.5
       });
       pose.onResults(onResults);
-      loadingStatus.textContent = "読み込み完了(Complete)";
-      console.log("MediaPipe Pose loaded successfully");
       controls.style.display = "block";
       rightButtons.style.display = "flex";
 
-      // 動画ファイルの読み込み
       videoFile.addEventListener('change', function(e) {
         const file = e.target.files[0];
         if (file) {
@@ -323,7 +298,6 @@
         }
       });
 
-      // カメラ起動
       startCameraButton.addEventListener('click', async function() {
         if (video.src) {
           video.pause();
@@ -340,7 +314,6 @@
         }
       });
 
-      // カメラ切替
       switchCameraButton.addEventListener('click', async function() {
         currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
         if (video.srcObject) {
@@ -358,7 +331,6 @@
         }
       });
 
-      // モザイクモードトグルボタンのイベントリスナー
       mosaicToggleButton.addEventListener('click', function() {
         mosaicMode = !mosaicMode;
         mosaicToggleButton.textContent = mosaicMode ? "モザイクモード ON" : "モザイクモード OFF";
