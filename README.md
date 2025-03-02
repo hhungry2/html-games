@@ -12,7 +12,7 @@ NS-Shaft風ゲーム
 [**driller.html**](https://hhungry2.github.io/html-games/driller.html)
 
 じゃんけんシステム  
-[**rock-paper-scissors.html**](https://rock-paper-scissors.html)
+[**rock-paper-scissors.html**](https://hhungry2.github.io/html-games/rock-paper-scissors.html)
 
 Deepth_anything デモ  
 [**depth_anything.html**](https://hhungry2.github.io/html-games/tools/depth_anything.html)
