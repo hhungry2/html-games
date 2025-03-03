@@ -1,0 +1,363 @@
+﻿<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZIPファイル展開・再生ツール</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .container {
+            background-color: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 20px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .upload-area:hover {
+            background-color: #f0f0f0;
+        }
+        .file-list {
+            margin-top: 20px;
+        }
+        .file-item {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            align-items: center;
+        }
+        .file-icon {
+            margin-right: 10px;
+            width: 24px;
+            text-align: center;
+        }
+        .file-name {
+            flex-grow: 1;
+        }
+        .file-action {
+            margin-left: 10px;
+        }
+        .player-container {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            background-color: #f9f9f9;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .hidden {
+            display: none;
+        }
+        #file-input {
+            display: none;
+        }
+        #current-player {
+            width: 100%;
+            margin-top: 10px;
+        }
+        .image-preview {
+            max-width: 100%;
+            max-height: 300px;
+            margin-top: 10px;
+        }
+        .text-preview {
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            white-space: pre-wrap;
+            overflow-x: auto;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ZIPファイル展開・再生ツール</h1>
+        
+        <div class="upload-area" id="drop-area">
+            <p>ZIPファイルをここにドラッグ＆ドロップするか、クリックして選択してください</p>
+            <input type="file" id="file-input" accept=".zip" />
+        </div>
+
+        <div class="file-list" id="file-list">
+            <p>ファイルが展開されるとここに表示されます。</p>
+        </div>
+
+        <div class="player-container hidden" id="player-container">
+            <h3 id="player-title">ファイル再生</h3>
+            <div id="player-content"></div>
+        </div>
+    </div>
+
+    <script>
+        // DOMの要素取得
+        const dropArea = document.getElementById('drop-area');
+        const fileInput = document.getElementById('file-input');
+        const fileList = document.getElementById('file-list');
+        const playerContainer = document.getElementById('player-container');
+        const playerTitle = document.getElementById('player-title');
+        const playerContent = document.getElementById('player-content');
+
+        // ファイルの内容を保持するオブジェクト
+        const extractedFiles = {};
+
+        // ドラッグ＆ドロップイベント
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        // ハイライト効果
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight() {
+            dropArea.style.backgroundColor = '#e9e9e9';
+        }
+
+        function unhighlight() {
+            dropArea.style.backgroundColor = '';
+        }
+
+        // ファイルドロップ処理
+        dropArea.addEventListener('drop', handleDrop, false);
+        
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles(files);
+        }
+
+        // クリックでファイル選択
+        dropArea.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', () => {
+            handleFiles(fileInput.files);
+        });
+
+        // ファイル処理
+        function handleFiles(files) {
+            if (files.length > 0) {
+                const file = files[0];
+                if (file.type === 'application/zip' || file.name.endsWith('.zip')) {
+                    processZipFile(file);
+                } else {
+                    alert('ZIPファイルを選択してください');
+                }
+            }
+        }
+
+        // ZIPファイル処理
+        async function processZipFile(file) {
+            try {
+                const zipData = await file.arrayBuffer();
+                const zip = await JSZip.loadAsync(zipData);
+                
+                // ファイルリストをクリア
+                fileList.innerHTML = '';
+                
+                // 抽出されたファイルを保持するオブジェクトをリセット
+                Object.keys(extractedFiles).forEach(key => delete extractedFiles[key]);
+                
+                const filePromises = [];
+                
+                // ZIPファイル内のファイルを処理
+                zip.forEach((relativePath, zipEntry) => {
+                    if (!zipEntry.dir) {
+                        const promise = processZipEntry(zipEntry);
+                        filePromises.push(promise);
+                    }
+                });
+                
+                await Promise.all(filePromises);
+                
+                if (Object.keys(extractedFiles).length === 0) {
+                    fileList.innerHTML = '<p>ZIPファイル内にファイルが見つかりませんでした。</p>';
+                }
+            } catch (error) {
+                console.error('ZIPファイルの処理中にエラーが発生しました:', error);
+                fileList.innerHTML = '<p>エラー: ZIPファイルを処理できませんでした。</p>';
+            }
+        }
+
+        // ZIPエントリー処理
+        async function processZipEntry(zipEntry) {
+            try {
+                const fileName = zipEntry.name;
+                const fileNameParts = fileName.split('/');
+                const simpleFileName = fileNameParts[fileNameParts.length - 1];
+                
+                if (!simpleFileName) return; // ディレクトリの場合はスキップ
+                
+                const fileData = await zipEntry.async('blob');
+                extractedFiles[fileName] = fileData;
+                
+                // ファイルタイプを判定
+                const fileType = getFileType(simpleFileName);
+                const fileIcon = getFileIcon(fileType);
+                
+                // ファイルリストアイテムを作成
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-item';
+                fileItem.innerHTML = `
+                    <div class="file-icon">${fileIcon}</div>
+                    <div class="file-name">${simpleFileName}</div>
+                    <div class="file-action">
+                        <button data-file="${fileName}">表示</button>
+                    </div>
+                `;
+                
+                fileList.appendChild(fileItem);
+                
+                // ボタンにイベントリスナーを追加
+                const button = fileItem.querySelector('button');
+                button.addEventListener('click', () => openFile(fileName, fileType));
+            } catch (error) {
+                console.error(`ファイル ${zipEntry.name} の処理中にエラーが発生しました:`, error);
+            }
+        }
+
+        // ファイルタイプを取得
+        function getFileType(fileName) {
+            const extension = fileName.split('.').pop().toLowerCase();
+            const audioExtensions = ['mp3', 'wav', 'ogg', 'aac', 'm4a'];
+            const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
+            const textExtensions = ['txt', 'md', 'html', 'css', 'js', 'json', 'xml'];
+            
+            if (audioExtensions.includes(extension)) {
+                return 'audio';
+            } else if (imageExtensions.includes(extension)) {
+                return 'image';
+            } else if (textExtensions.includes(extension)) {
+                return 'text';
+            } else {
+                return 'other';
+            }
+        }
+
+        // ファイルタイプに応じたアイコンを取得
+        function getFileIcon(fileType) {
+            switch (fileType) {
+                case 'audio':
+                    return '🎵';
+                case 'image':
+                    return '🖼️';
+                case 'text':
+                    return '📄';
+                default:
+                    return '📁';
+            }
+        }
+
+        // ファイルを開く
+        function openFile(fileName, fileType) {
+            const fileData = extractedFiles[fileName];
+            const fileNameParts = fileName.split('/');
+            const simpleFileName = fileNameParts[fileNameParts.length - 1];
+            
+            playerTitle.textContent = simpleFileName;
+            playerContent.innerHTML = '';
+            playerContainer.classList.remove('hidden');
+            
+            switch (fileType) {
+                case 'audio':
+                    displayAudio(fileData, simpleFileName);
+                    break;
+                case 'image':
+                    displayImage(fileData);
+                    break;
+                case 'text':
+                    displayText(fileData);
+                    break;
+                default:
+                    displayOther(simpleFileName);
+                    break;
+            }
+        }
+
+        // オーディオファイルの表示
+        function displayAudio(data, fileName) {
+            const audioURL = URL.createObjectURL(data);
+            const audio = document.createElement('audio');
+            audio.controls = true;
+            audio.id = 'current-player';
+            audio.src = audioURL;
+            
+            playerContent.appendChild(audio);
+            audio.play();
+        }
+
+        // 画像ファイルの表示
+        function displayImage(data) {
+            const imageURL = URL.createObjectURL(data);
+            const img = document.createElement('img');
+            img.className = 'image-preview';
+            img.src = imageURL;
+            
+            playerContent.appendChild(img);
+        }
+
+        // テキストファイルの表示
+        async function displayText(data) {
+            try {
+                const text = await data.text();
+                const pre = document.createElement('pre');
+                pre.className = 'text-preview';
+                pre.textContent = text;
+                
+                playerContent.appendChild(pre);
+            } catch (error) {
+                console.error('テキストファイルの読み込み中にエラーが発生しました:', error);
+                playerContent.innerHTML = '<p>エラー: テキストファイルを読み込めませんでした。</p>';
+            }
+        }
+
+        // その他のファイルの表示
+        function displayOther(fileName) {
+            playerContent.innerHTML = `
+                <p>このファイルタイプはプレビューできません: ${fileName}</p>
+            `;
+        }
+    </script>
+</body>
+</html>
