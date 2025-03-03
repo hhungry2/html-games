@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>リズムゲーム</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background-color: #121212;
+      color: white;
+    }
+    
+    .container {
+      width: 100%;
+      max-width: 500px;
+      text-align: center;
+    }
+    
+    .game-container {
+      position: relative;
+      width: 100%;
+      height: 500px;
+      background-color: #1e1e1e;
+      overflow: hidden;
+      border-radius: 10px;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+      margin: 20px 0;
+    }
+    
+    .lane {
+      position: absolute;
+      top: 0;
+      height: 100%;
+      width: 25%;
+      border-left: 1px solid #333;
+      border-right: 1px solid #333;
+    }
+    
+    .lane-0 { left: 0%; }
+    .lane-1 { left: 25%; }
+    .lane-2 { left: 50%; }
+    .lane-3 { left: 75%; }
+    
+    .lane.active {
+      background-color: rgba(59, 130, 246, 0.3);
+      transition: background-color 0.1s;
+    }
+    
+    .judgement-line {
+      position: absolute;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      background-color: #888;
+    }
+    
+    .judgement-line-upper {
+      top: 350px;
+    }
+    
+    .judgement-line-lower {
+      top: 370px;
+    }
+    
+    .note {
+      position: absolute;
+      width: 23%;
+      height: 24px;
+      background-color: #3b82f6;
+      border-radius: 5px;
+      transform: translateX(1%);
+    }
+    
+    .hit {
+      opacity: 0.3;
+    }
+    
+    .note-great {
+      animation: flyOutGreat 0.5s forwards;
+    }
+    
+    .note-good {
+      animation: flyOutGood 0.5s forwards;
+    }
+    
+    @keyframes flyOutGreat {
+      0% {
+        transform: translateX(1%) scale(1);
+        opacity: 1;
+      }
+      100% {
+        transform: translateX(1%) translateY(-50px) scale(0.2) rotate(360deg);
+        opacity: 0;
+      }
+    }
+    
+    @keyframes flyOutGood {
+      0% {
+        transform: translateX(1%) scale(1);
+        opacity: 1;
+      }
+      100% {
+        transform: translateX(1%) translateY(-30px) scale(0.4) rotate(180deg);
+        opacity: 0;
+      }
+    }
+    
+    .judgement {
+      position: absolute;
+      width: 25%;
+      font-weight: bold;
+      text-align: center;
+      font-size: 18px;
+      animation: fadeUp 0.5s forwards;
+    }
+    
+    @keyframes fadeUp {
+      from {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      to {
+        opacity: 0;
+        transform: translateY(-30px);
+      }
+    }
+    
+    .buttons {
+      position: absolute;
+      bottom: 10px;
+      left: 0;
+      width: 100%;
+      display: flex;
+      justify-content: space-around;
+      padding: 0 5px;
+    }
+    
+    .key-button {
+      width: 22%;
+      height: 60px;
+      background-color: #333;
+      border: 2px solid #555;
+      border-radius: 50%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 24px;
+      font-weight: bold;
+      cursor: pointer;
+      user-select: none;
+      transition: background-color 0.1s;
+    }
+    
+    .key-button:active {
+      background-color: #555;
+    }
+    
+    .stats {
+      background-color: #333;
+      padding: 10px;
+      border-radius: 5px;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+    }
+    
+    .start-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 200px;
+    }
+    
+    .title {
+      font-size: 28px;
+      margin-bottom: 20px;
+    }
+    
+    .start-button {
+      padding: 10px 25px;
+      background-color: #3b82f6;
+      border: none;
+      border-radius: 5px;
+      color: white;
+      font-size: 18px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    
+    .start-button:hover {
+      background-color: #2563eb;
+    }
+    
+    .instructions {
+      margin: 20px 0;
+      font-size: 16px;
+      color: #ccc;
+    }
+    
+    .game-screen {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="start-screen" id="startScreen">
+      <h1 class="title">リズムゲーム</h1>
+      <p class="instructions">D, F, J, K キーまたはタッチでノートをヒットしよう！</p>
+      <button class="start-button" id="startButton">ゲームスタート</button>
+    </div>
+    
+    <div class="game-screen" id="gameScreen">
+      <div class="stats">
+        <div id="score">スコア: 0</div>
+        <div id="combo">コンボ: 0</div>
+        <div id="maxCombo">最大コンボ: 0</div>
+      </div>
+      
+      <div class="game-container" id="gameContainer">
+        <!-- レーン -->
+        <div class="lane lane-0" id="lane0"></div>
+        <div class="lane lane-1" id="lane1"></div>
+        <div class="lane lane-2" id="lane2"></div>
+        <div class="lane lane-3" id="lane3"></div>
+        
+        <!-- 判定ライン -->
+        <div class="judgement-line judgement-line-upper"></div>
+        <div class="judgement-line judgement-line-lower"></div>
+        
+        <!-- ボタン -->
+        <div class="buttons">
+          <div class="key-button" id="button0" data-key="D">D</div>
+          <div class="key-button" id="button1" data-key="F">F</div>
+          <div class="key-button" id="button2" data-key="J">J</div>
+          <div class="key-button" id="button3" data-key="K">K</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ゲーム状態
+    const game = {
+      isStarted: false,
+      score: 0,
+      combo: 0,
+      maxCombo: 0,
+      notes: [],
+      judgements: [],
+      lanes: ['D', 'F', 'J', 'K'],
+      nextNoteId: 0,
+      judgementTexts: {
+        GREAT: '***GREAT***',
+        GOOD: '***GOOD***',
+        BAD: 'BAD',
+        POOR: '***POOR***'
+      },
+      judgementColors: {
+        GREAT: 'rgb(0, 255, 0)',
+        GOOD: 'rgb(0, 200, 255)',
+        BAD: 'rgb(255, 200, 0)',
+        POOR: 'rgb(255, 0, 0)'
+      },
+      // 判定基準（判定ラインからの距離）
+      judgementRanges: {
+        GREAT: 10,
+        GOOD: 30,
+        BAD: 50
+      }
+    };
+
+    // DOM要素
+    const elements = {
+      startScreen: document.getElementById('startScreen'),
+      gameScreen: document.getElementById('gameScreen'),
+      startButton: document.getElementById('startButton'),
+      scoreDisplay: document.getElementById('score'),
+      comboDisplay: document.getElementById('combo'),
+      maxComboDisplay: document.getElementById('maxCombo'),
+      gameContainer: document.getElementById('gameContainer'),
+      lanes: [
+        document.getElementById('lane0'),
+        document.getElementById('lane1'),
+        document.getElementById('lane2'),
+        document.getElementById('lane3')
+      ],
+      buttons: [
+        document.getElementById('button0'),
+        document.getElementById('button1'),
+        document.getElementById('button2'),
+        document.getElementById('button3')
+      ]
+    };
+
+    // ゲーム開始
+    function startGame() {
+      game.isStarted = true;
+      game.score = 0;
+      game.combo = 0;
+      game.maxCombo = 0;
+      game.notes = [];
+      game.judgements = [];
+      
+      updateDisplays();
+      
+      // 画面切り替え
+      elements.startScreen.style.display = 'none';
+      elements.gameScreen.style.display = 'block';
+      
+      // ノート生成の開始
+      game.noteGeneratorInterval = setInterval(generateNote, 1200);
+      
+      // ゲームループの開始
+      game.gameLoopInterval = setInterval(gameLoop, 16);
+    }
+
+    // ノートの生成
+    function generateNote() {
+      if (!game.isStarted) return;
+      
+      const laneIndex = Math.floor(Math.random() * 4);
+      const note = {
+        id: game.nextNoteId++,
+        lane: laneIndex,
+        y: 0,
+        element: createNoteElement(laneIndex),
+        hit: false
+      };
+      
+      game.notes.push(note);
+    }
+
+    // ノート要素の作成
+    function createNoteElement(laneIndex) {
+      const noteElement = document.createElement('div');
+      noteElement.className = 'note';
+      noteElement.style.left = `${laneIndex * 25}%`;
+      noteElement.style.top = '0px';
+      elements.gameContainer.appendChild(noteElement);
+      return noteElement;
+    }
+
+    // 判定表示の作成
+    function createJudgementElement(type, laneIndex) {
+      const judgementElement = document.createElement('div');
+      judgementElement.className = 'judgement';
+      judgementElement.style.left = `${laneIndex * 25}%`;
+      judgementElement.style.top = '350px';
+      judgementElement.style.color = game.judgementColors[type];
+      judgementElement.textContent = game.judgementTexts[type];
+      elements.gameContainer.appendChild(judgementElement);
+      
+      // アニメーション後に削除
+      setTimeout(() => {
+        if (judgementElement.parentNode) {
+          elements.gameContainer.removeChild(judgementElement);
+        }
+      }, 500);
+      
+      return judgementElement;
+    }
+
+    // ゲームループ
+    function gameLoop() {
+      if (!game.isStarted) return;
+      
+      // ノートの更新
+      for (let i = game.notes.length - 1; i >= 0; i--) {
+        const note = game.notes[i];
+        
+        // ノートの移動
+        note.y += 4;
+        note.element.style.top = `${note.y}px`;
+        
+        // 画面外に出たノートの処理
+        if (note.y > 400 && !note.hit) {
+          // ミス判定
+          addJudgement('POOR', note.lane);
+          game.combo = 0;
+          
+          // ノートの削除
+          elements.gameContainer.removeChild(note.element);
+          game.notes.splice(i, 1);
+        }
+      }
+      
+      updateDisplays();
+    }
+
+    // 表示の更新
+    function updateDisplays() {
+      elements.scoreDisplay.textContent = `スコア: ${game.score}`;
+      elements.comboDisplay.textContent = `コンボ: ${game.combo}`;
+      elements.maxComboDisplay.textContent = `最大コンボ: ${game.maxCombo}`;
+    }
+
+    // 判定の追加
+    function addJudgement(type, laneIndex) {
+      createJudgementElement(type, laneIndex);
+      
+      // スコアとコンボの更新
+      if (type === 'GREAT') {
+        game.score += 100;
+        game.combo++;
+      } else if (type === 'GOOD') {
+        game.score += 50;
+        game.combo++;
+      } else {
+        game.combo = 0;
+      }
+      
+      // 最大コンボの更新
+      game.maxCombo = Math.max(game.maxCombo, game.combo);
+    }
+
+    // ノートのヒット判定
+    function hitNote(laneIndex) {
+      if (!game.isStarted) return;
+      
+      // レーンのアクティブ化エフェクト
+      elements.lanes[laneIndex].classList.add('active');
+      setTimeout(() => {
+        elements.lanes[laneIndex].classList.remove('active');
+      }, 100);
+      
+      // 該当レーンのノートを検索（最も判定ラインに近いものを取得）
+      const targetNotes = game.notes
+        .filter(note => note.lane === laneIndex && !note.hit)
+        .sort((a, b) => b.y - a.y);
+      
+      if (targetNotes.length === 0) {
+        // 対象ノートがない場合
+        addJudgement('POOR', laneIndex);
+        return;
+      }
+      
+      const closestNote = targetNotes[0];
+      const judgementLineY = 360; // 判定ラインの中心位置
+      const distance = Math.abs(closestNote.y - judgementLineY);
+      
+      // 判定
+      let judgementType;
+      if (distance < game.judgementRanges.GREAT) {
+        judgementType = 'GREAT';
+      } else if (distance < game.judgementRanges.GOOD) {
+        judgementType = 'GOOD';
+      } else if (distance < game.judgementRanges.BAD) {
+        judgementType = 'BAD';
+      } else {
+        judgementType = 'POOR';
+      }
+      
+      // ノートをヒット状態に
+      closestNote.hit = true;
+      
+      // 判定に応じたアニメーションの追加
+      if (judgementType === 'GREAT') {
+        closestNote.element.classList.add('note-great');
+      } else if (judgementType === 'GOOD') {
+        closestNote.element.classList.add('note-good');
+      } else {
+        closestNote.element.classList.add('hit');
+      }
+      
+      // アニメーション後にノートを削除
+      setTimeout(() => {
+        if (closestNote.element.parentNode) {
+          elements.gameContainer.removeChild(closestNote.element);
+        }
+      }, 500);
+      
+      // 判定の追加
+      addJudgement(judgementType, laneIndex);
+    }
+
+    // イベントリスナーの設定
+    function setupEventListeners() {
+      // スタートボタン
+      elements.startButton.addEventListener('click', startGame);
+      
+      // キーボード入力
+      document.addEventListener('keydown', (event) => {
+        const key = event.key.toUpperCase();
+        const laneIndex = game.lanes.indexOf(key);
+        
+        if (laneIndex !== -1) {
+          hitNote(laneIndex);
+        }
+      });
+      
+      // タッチ/クリック入力
+      elements.buttons.forEach((button, index) => {
+        button.addEventListener('mousedown', () => {
+          hitNote(index);
+        });
+        
+        button.addEventListener('touchstart', (event) => {
+          event.preventDefault();
+          hitNote(index);
+        });
+      });
+    }
+
+    // 初期化
+    function init() {
+      setupEventListeners();
+    }
+
+    // ページ読み込み時に初期化
+    window.addEventListener('load', init);
+  </script>
+</body>
+</html>
