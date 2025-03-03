@@ -25,5 +25,6 @@ Deepth_anything デモ
 coco-ssd デモ  
 [**coco-ssd.html**](https://hhungry2.github.io/html-games/tools/coco-ssd.html)
 
-ZIPを展開する 
+ZIPを展開する  
 [**archive_open.html**](https://hhungry2.github.io/html-games/tools/archive_open.html)
+
