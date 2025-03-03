@@ -1,8 +1,9 @@
 # html-games
 
-htmlで作ったゲーム置き場です。  
+htmlで作ったゲームとかツール置き場です。  
 o3-mini,claudeを使用しています。  
 
+【ゲーム】  
 [**index.html**](https://hhungry2.github.io/html-games/index.html)  
 
 NS-Shaft風ゲーム  
@@ -17,8 +18,12 @@ BM風ゲーム
 じゃんけんシステム  
 [**rock-paper-scissors.html**](https://hhungry2.github.io/html-games/rock-paper-scissors.html)
 
+【ツール】
 Deepth_anything デモ  
 [**depth_anything.html**](https://hhungry2.github.io/html-games/tools/depth_anything.html)
 
 coco-ssd デモ  
 [**coco-ssd.html**](https://hhungry2.github.io/html-games/tools/coco-ssd.html)
+
+ZIPを展開する 
+[**archive_open.html**](https://hhungry2.github.io/html-games/tools/archive_open.html)
