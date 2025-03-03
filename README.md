@@ -1,7 +1,7 @@
 # html-games
 
 htmlで作ったゲーム置き場です。  
-o3-miniを使用しています。  
+o3-mini,claudeを使用しています。  
 
 [**index.html**](https://hhungry2.github.io/html-games/index.html)  
 
@@ -10,6 +10,9 @@ NS-Shaft風ゲーム
 
 ミスタードリラー風ゲーム  
 [**driller.html**](https://hhungry2.github.io/html-games/driller.html)
+
+BM風ゲーム  
+[**bm-like.html**](https://hhungry2.github.io/html-games/bm-like.html)
 
 じゃんけんシステム  
 [**rock-paper-scissors.html**](https://hhungry2.github.io/html-games/rock-paper-scissors.html)
