@@ -28,3 +28,6 @@ coco-ssd デモ
 ZIPを展開する  
 [**archive_open.html**](https://hhungry2.github.io/html-games/tools/archive_open.html)
 
+font_viewer
+[**archive_open.html**](https://hhungry2.github.io/html-games/tools/font_viewer.html)
+
