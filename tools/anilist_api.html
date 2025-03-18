@@ -1,0 +1,1787 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AniList API ビューアー</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f8f8f8;
+      color: #333;
+    }
+    h1, h2 {
+      color: #3db4f2;
+    }
+    .container {
+      background-color: white;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+    .search-container {
+      margin-bottom: 20px;
+    }
+    input, select, button {
+      padding: 8px 12px;
+      margin: 5px 0;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    button {
+      background-color: #3db4f2;
+      color: white;
+      border: none;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    button:hover {
+      background-color: #2a9fd6;
+    }
+    .results {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 20px;
+    }
+    .card {
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      transition: transform 0.3s;
+      cursor: pointer;
+    }
+    .card:hover {
+      transform: translateY(-5px);
+    }
+    .card-img {
+      width: 100%;
+      height: 280px;
+      object-fit: cover;
+    }
+    .card-body {
+      padding: 12px;
+      background-color: white;
+    }
+    .card-title {
+      font-weight: bold;
+      margin-bottom: 8px;
+      color: #3db4f2;
+    }
+    .genres {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 8px;
+    }
+    .genre {
+      font-size: 0.8rem;
+      background-color: #eee;
+      padding: 2px 8px;
+      border-radius: 12px;
+    }
+    .loading {
+      text-align: center;
+      padding: 20px;
+      font-style: italic;
+      color: #666;
+      display: none;
+    }
+    #latest-anime-section {
+      margin-bottom: 30px;
+    }
+    #latest-anime-section h2 {
+      margin-bottom: 15px;
+      padding-bottom: 5px;
+      border-bottom: 2px solid #3db4f2;
+    }
+    .error {
+      color: #e53935;
+      background-color: #ffebee;
+      padding: 10px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+      display: none;
+    }
+    .details-view {
+      display: none;
+      background-color: white;
+      border-radius: 8px;
+      padding: 20px;
+      margin-top: 20px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+    .details-header {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    .details-img {
+      width: 200px;
+      border-radius: 8px;
+    }
+    .details-info {
+      flex: 1;
+    }
+    .score {
+      display: inline-block;
+      background-color: #4caf50;
+      color: white;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: bold;
+    }
+    .back-button {
+      margin-bottom: 10px;
+    }
+    .description {
+      line-height: 1.6;
+    }
+    .season-tag {
+      display: inline-block;
+      background-color: #3db4f2;
+      color: white;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 0.8rem;
+      margin-top: 4px;
+    }
+    .filter-section {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+    #language-switcher {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+    }
+    .lang-btn {
+      padding: 5px 10px;
+      border: 1px solid #ddd;
+      background-color: #f8f8f8;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .lang-btn.active {
+      background-color: #3db4f2;
+      color: white;
+      border-color: #3db4f2;
+    }
+    .load-more {
+      text-align: center;
+      margin: 20px 0;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>AniList API ビューアー</h1>
+    
+    <!-- 言語切り替えボタン -->
+    <div id="language-switcher">
+      <button class="lang-btn active" data-lang="ja">日本語</button>
+      <button class="lang-btn" data-lang="en">English</button>
+    </div>
+    
+    <div id="search-view">
+      <div class="search-container">
+        <div>
+          <label for="search-type">検索タイプ:</label>
+          <select id="search-type">
+            <option value="anime">アニメ</option>
+            <option value="manga">マンガ</option>
+            <option value="character">キャラクター</option>
+          </select>
+        </div>
+        <div>
+          <label for="search-input">検索:</label>
+          <input type="text" id="search-input" placeholder="タイトルを入力...">
+        </div>
+        
+        <!-- 放送シーズンのフィルター -->
+        <div id="season-filter" class="filter-section">
+          <div>
+            <label for="season-select">シーズン:</label>
+            <select id="season-select">
+              <option value="">指定なし</option>
+              <option value="WINTER">冬</option>
+              <option value="SPRING">春</option>
+              <option value="SUMMER">夏</option>
+              <option value="FALL">秋</option>
+            </select>
+          </div>
+          <div>
+            <label for="season-year">年:</label>
+            <select id="season-year">
+              <option value="">指定なし</option>
+            </select>
+          </div>
+        </div>
+        
+        <div>
+          <label for="sort-select">並び替え:</label>
+          <select id="sort-select">
+            <!-- アニメ・マンガ共通の並び替えオプション -->
+            <option value="ID_DESC" class="sort-anime sort-manga" selected>登録日（新しい順）</option>
+            <option value="POPULARITY_DESC" class="sort-anime sort-manga">人気度（高い順）</option>
+            <option value="SCORE_DESC" class="sort-anime sort-manga">評価（高い順）</option>
+            <option value="START_DATE_DESC" class="sort-anime sort-manga">放送日（新しい順）</option>
+            <option value="START_DATE" class="sort-anime sort-manga">放送日（古い順）</option>
+            <option value="TITLE_ROMAJI" class="sort-anime sort-manga">タイトル（A-Z）</option>
+            <option value="TITLE_ROMAJI_DESC" class="sort-anime sort-manga">タイトル（Z-A）</option>
+            
+            <!-- キャラクター用の並び替えオプション -->
+            <option value="ID_DESC" class="sort-character" selected>登録日（新しい順）</option>
+            <option value="FAVOURITES_DESC" class="sort-character">人気度（高い順）</option>
+            <option value="ID" class="sort-character">登録日（古い順）</option>
+            <option value="ROLE" class="sort-character">役割</option>
+            <option value="SEARCH_MATCH" class="sort-character">検索一致度</option>
+          </select>
+        </div>
+        <button id="search-button">検索</button>
+      </div>
+      
+      <div id="error" class="error"></div>
+      <div id="loading" class="loading">読み込み中...</div>
+      
+      <div id="results" class="results"></div>
+      <div id="load-more" class="load-more">
+        <button id="load-more-btn">さらに読み込む</button>
+      </div>
+    </div>
+    
+    <div id="details-view" class="details-view">
+      <button id="back-button" class="back-button">← 検索結果に戻る</button>
+      <div id="details-content"></div>
+    </div>
+  </div>
+
+  <script>
+    // DOM要素の取得
+    const searchInput = document.getElementById('search-input');
+    const searchType = document.getElementById('search-type');
+    const sortSelect = document.getElementById('sort-select');
+    const searchButton = document.getElementById('search-button');
+    const resultsDiv = document.getElementById('results');
+    const loadingDiv = document.getElementById('loading');
+    const errorDiv = document.getElementById('error');
+    const searchView = document.getElementById('search-view');
+    const detailsView = document.getElementById('details-view');
+    const detailsContent = document.getElementById('details-content');
+    const backButton = document.getElementById('back-button');
+    const seasonSelect = document.getElementById('season-select');
+    const seasonYear = document.getElementById('season-year');
+    const seasonFilter = document.getElementById('season-filter');
+    const loadMoreBtn = document.getElementById('load-more-btn');
+    const loadMoreContainer = document.getElementById('load-more');
+
+    // 現在のページ番号（無限スクロール用）
+    let currentPage = 1;
+    // 検索キャッシュ（無限スクロール用）
+    let currentSearchParams = null;
+
+    // 現在の言語
+    let currentLang = 'ja';
+    
+    // 言語テキスト
+    const translations = {
+      ja: {
+        appTitle: 'AniList API ビューアー',
+        searchType: '検索タイプ:',
+        anime: 'アニメ',
+        manga: 'マンガ',
+        character: 'キャラクター',
+        search: '検索:',
+        searchPlaceholder: 'タイトルを入力...',
+        season: 'シーズン:',
+        seasonNone: '指定なし',
+        winter: '冬',
+        spring: '春',
+        summer: '夏',
+        fall: '秋',
+        year: '年:',
+        yearNone: '指定なし',
+        sort: '並び替え:',
+        idDesc: '登録日（新しい順）',
+        popularityDesc: '人気度（高い順）',
+        scoreDesc: '評価（高い順）',
+        startDateDesc: '放送日（新しい順）',
+        startDate: '放送日（古い順）',
+        titleRomaji: 'タイトル（A-Z）',
+        titleRomajiDesc: 'タイトル（Z-A）',
+        favoritesDesc: '人気度（高い順）',
+        id: '登録日（古い順）',
+        role: '役割',
+        searchMatch: '検索一致度',
+        searchBtn: '検索',
+        loading: '読み込み中...',
+        notFound: 'データが見つかりませんでした。',
+        searchNotFound: '検索結果が見つかりませんでした。',
+        back: '← 検索結果に戻る',
+        loadMore: 'さらに読み込む',
+        nativeName: '日本語名:',
+        romajiName: 'ローマ字表記:',
+        format: '形式:',
+        status: '状態:',
+        episodes: '話数:',
+        chapters: '章数:',
+        duration: '1話の長さ:',
+        minutes: '分',
+        startDate: '開始日:',
+        endDate: '終了日:',
+        broadcastSeason: '放送シーズン:',
+        studios: '制作会社:',
+        source: '原作:',
+        averageScore: '平均評価:',
+        popularity: '人気度:',
+        synopsis: 'あらすじ',
+        relatedWorks: '関連作品',
+        mainCharacters: '主要キャラクター',
+        characterIntro: 'キャラクター紹介',
+        appearances: '登場作品',
+        altNames: '別名:',
+        gender: '性別:',
+        age: '年齢:',
+        birthday: '誕生日:',
+        bloodType: '血液型:',
+        favorites: 'お気に入り数:'
+      },
+      en: {
+        appTitle: 'AniList API Viewer',
+        searchType: 'Search Type:',
+        anime: 'Anime',
+        manga: 'Manga',
+        character: 'Character',
+        search: 'Search:',
+        searchPlaceholder: 'Enter title...',
+        season: 'Season:',
+        seasonNone: 'None',
+        winter: 'Winter',
+        spring: 'Spring',
+        summer: 'Summer',
+        fall: 'Fall',
+        year: 'Year:',
+        yearNone: 'None',
+        sort: 'Sort:',
+        idDesc: 'Registration (Newest)',
+        popularityDesc: 'Popularity (Highest)',
+        scoreDesc: 'Score (Highest)',
+        startDateDesc: 'Air Date (Newest)',
+        startDate: 'Air Date (Oldest)',
+        titleRomaji: 'Title (A-Z)',
+        titleRomajiDesc: 'Title (Z-A)',
+        favoritesDesc: 'Favorites (Most)',
+        id: 'Registration (Oldest)',
+        role: 'Role',
+        searchMatch: 'Search Match',
+        searchBtn: 'Search',
+        loading: 'Loading...',
+        notFound: 'No data found.',
+        searchNotFound: 'No search results found.',
+        back: '← Back to results',
+        loadMore: 'Load More',
+        nativeName: 'Native Name:',
+        romajiName: 'Romaji:',
+        format: 'Format:',
+        status: 'Status:',
+        episodes: 'Episodes:',
+        chapters: 'Chapters:',
+        duration: 'Duration:',
+        minutes: 'min',
+        startDate: 'Start Date:',
+        endDate: 'End Date:',
+        broadcastSeason: 'Season:',
+        studios: 'Studios:',
+        source: 'Source:',
+        averageScore: 'Average Score:',
+        popularity: 'Popularity:',
+        synopsis: 'Synopsis',
+        relatedWorks: 'Related Works',
+        mainCharacters: 'Main Characters',
+        characterIntro: 'Character Introduction',
+        appearances: 'Appearances',
+        altNames: 'Alternative Names:',
+        gender: 'Gender:',
+        age: 'Age:',
+        birthday: 'Birthday:',
+        bloodType: 'Blood Type:',
+        favorites: 'Favorites:'
+      }
+    };
+
+    // 言語切り替え用のイベントリスナー
+    document.addEventListener('DOMContentLoaded', function() {
+      document.querySelectorAll('.lang-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+          const lang = this.getAttribute('data-lang');
+          switchLanguage(lang);
+        });
+      });
+      
+      // ページ読み込み時にデフォルト表示
+      loadDefaultResults();
+      
+      // さらに読み込むボタンのイベントリスナー
+      loadMoreBtn.addEventListener('click', loadMoreContent);
+      
+      // 検索ボタンのイベントリスナー
+      searchButton.addEventListener('click', searchMedia);
+      
+      // 検索入力フィールドでEnterキーを押した場合の処理
+      searchInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          searchMedia();
+        }
+      });
+      
+      // 戻るボタンのイベントリスナー
+      backButton.addEventListener('click', () => {
+        detailsView.style.display = 'none';
+        searchView.style.display = 'block';
+      });
+      
+      // 検索タイプ変更時に結果をリロード
+      searchType.addEventListener('change', function() {
+        updateSearchOptions();
+        loadDefaultResults();
+      });
+      
+      // ソート変更時に結果をリロード（検索語句がない場合）
+      sortSelect.addEventListener('change', function() {
+        if (searchInput.value.trim() === '') {
+          loadDefaultResults();
+        }
+      });
+    });
+    
+    // 言語切り替え関数
+    function switchLanguage(lang) {
+      currentLang = lang;
+      document.querySelectorAll('.lang-btn').forEach(btn => {
+        if (btn.getAttribute('data-lang') === lang) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+      document.querySelector('h1').textContent = translations[lang].appTitle;
+      updateSearchFormLanguage();
+      searchButton.textContent = translations[lang].searchBtn;
+      backButton.textContent = translations[lang].back;
+      loadingDiv.textContent = translations[lang].loading;
+      loadMoreBtn.textContent = translations[lang].loadMore;
+      if (searchView.style.display !== 'none') {
+        loadDefaultResults();
+      } else {
+        const detailId = detailsContent.getAttribute('data-id');
+        const detailType = detailsContent.getAttribute('data-type');
+        if (detailId && detailType) {
+          if (detailType === 'character') {
+            showCharacterDetails(detailId);
+          } else {
+            showDetails(detailId);
+          }
+        }
+      }
+    }
+    
+    // 検索フォームの言語を更新
+    function updateSearchFormLanguage() {
+      if (!searchType || !sortSelect || !seasonSelect || !seasonYear) return;
+      const searchTypeLabel = document.querySelector('label[for="search-type"]');
+      if (searchTypeLabel) searchTypeLabel.textContent = translations[currentLang].searchType;
+      const animeOption = searchType.querySelector('option[value="anime"]');
+      if (animeOption) animeOption.textContent = translations[currentLang].anime;
+      const mangaOption = searchType.querySelector('option[value="manga"]');
+      if (mangaOption) mangaOption.textContent = translations[currentLang].manga;
+      const characterOption = searchType.querySelector('option[value="character"]');
+      if (characterOption) characterOption.textContent = translations[currentLang].character;
+      const searchLabel = document.querySelector('label[for="search-input"]');
+      if (searchLabel) searchLabel.textContent = translations[currentLang].search;
+      if (searchInput) searchInput.placeholder = translations[currentLang].searchPlaceholder;
+      const seasonLabel = document.querySelector('label[for="season-select"]');
+      if (seasonLabel) seasonLabel.textContent = translations[currentLang].season;
+      const seasonNoneOption = seasonSelect.querySelector('option[value=""]');
+      if (seasonNoneOption) seasonNoneOption.textContent = translations[currentLang].seasonNone;
+      const winterOption = seasonSelect.querySelector('option[value="WINTER"]');
+      if (winterOption) winterOption.textContent = translations[currentLang].winter;
+      const springOption = seasonSelect.querySelector('option[value="SPRING"]');
+      if (springOption) springOption.textContent = translations[currentLang].spring;
+      const summerOption = seasonSelect.querySelector('option[value="SUMMER"]');
+      if (summerOption) summerOption.textContent = translations[currentLang].summer;
+      const fallOption = seasonSelect.querySelector('option[value="FALL"]');
+      if (fallOption) fallOption.textContent = translations[currentLang].fall;
+      const yearLabel = document.querySelector('label[for="season-year"]');
+      if (yearLabel) yearLabel.textContent = translations[currentLang].year;
+      const yearNoneOption = seasonYear.querySelector('option[value=""]');
+      if (yearNoneOption) yearNoneOption.textContent = translations[currentLang].yearNone;
+      const sortLabel = document.querySelector('label[for="sort-select"]');
+      if (sortLabel) sortLabel.textContent = translations[currentLang].sort;
+      updateSortOption('ID_DESC', 'idDesc');
+      updateSortOption('POPULARITY_DESC', 'popularityDesc');
+      updateSortOption('SCORE_DESC', 'scoreDesc');
+      updateSortOption('START_DATE_DESC', 'startDateDesc');
+      updateSortOption('START_DATE', 'startDate');
+      updateSortOption('TITLE_ROMAJI', 'titleRomaji');
+      updateSortOption('TITLE_ROMAJI_DESC', 'titleRomajiDesc');
+      updateSortOption('FAVOURITES_DESC', 'favoritesDesc');
+      updateSortOption('ROLE', 'role');
+      updateSortOption('SEARCH_MATCH', 'searchMatch');
+      populateYearOptions();
+    }
+    
+    // 並び替えオプションの更新ヘルパー関数
+    function updateSortOption(value, translationKey) {
+      const options = sortSelect.querySelectorAll(`option[value="${value}"]`);
+      options.forEach(option => {
+        option.textContent = translations[currentLang][translationKey];
+      });
+    }
+    
+    // 年の選択肢を作成（現在の年から1990年まで）
+    function populateYearOptions() {
+      const currentYear = new Date().getFullYear();
+      if (!seasonYear) return;
+      seasonYear.innerHTML = `<option value="">${translations[currentLang].yearNone}</option>`;
+      for (let year = currentYear + 1; year >= 1990; year--) {
+        const option = document.createElement('option');
+        option.value = year;
+        option.textContent = year + (currentLang === 'ja' ? '年' : '');
+        seasonYear.appendChild(option);
+      }
+    }
+    
+    populateYearOptions();
+    
+    // 検索タイプに応じた表示制御
+    function updateSearchOptions() {
+      const type = searchType.value;
+      if (type === 'character') {
+        seasonFilter.style.display = 'none';
+      } else {
+        seasonFilter.style.display = 'grid';
+      }
+      updateSortOptions();
+    }
+    
+    // 検索タイプに応じて並び替えオプションを表示/非表示
+    function updateSortOptions() {
+      const type = searchType.value;
+      Array.from(sortSelect.options).forEach(option => {
+        option.style.display = 'none';
+      });
+      const optionsToShow = document.querySelectorAll(`.sort-${type}`);
+      optionsToShow.forEach(option => {
+        option.style.display = '';
+      });
+      for (let i = 0; i < sortSelect.options.length; i++) {
+        if (sortSelect.options[i].style.display !== 'none') {
+          sortSelect.selectedIndex = i;
+          break;
+        }
+      }
+    }
+    
+    // 検索関数
+    function searchMedia() {
+      currentPage = 1;
+      const searchTerm = searchInput.value.trim();
+      const type = searchType.value;
+      const sort = sortSelect.value;
+      errorDiv.style.display = 'none';
+      loadingDiv.style.display = 'block';
+      resultsDiv.innerHTML = '';
+      loadMoreContainer.style.display = 'none';
+      
+      if (type === 'character') {
+        if (searchTerm === '') {
+          loadDefaultResults();
+          return;
+        }
+        currentSearchParams = {
+          type: 'character',
+          search: searchTerm,
+          sort: sort
+        };
+        const query = `
+          query ($search: String, $sort: [CharacterSort], $page: Int, $perPage: Int) {
+            Page(page: $page, perPage: $perPage) {
+              pageInfo {
+                total
+                currentPage
+                lastPage
+                hasNextPage
+              }
+              characters(search: $search, sort: $sort) {
+                id
+                name {
+                  full
+                  native
+                  alternative
+                }
+                image {
+                  large
+                }
+                gender
+                age
+                media {
+                  nodes {
+                    title {
+                      romaji
+                    }
+                    type
+                  }
+                }
+                favourites
+              }
+            }
+          }
+        `;
+        const variables = {
+          search: searchTerm,
+          sort: [sort],
+          page: currentPage,
+          perPage: 40
+        };
+        fetch('https://graphql.anilist.co', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: JSON.stringify({ query: query, variables: variables })
+        })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(currentLang === 'ja' ? 'ネットワークエラーが発生しました。' : 'Network error occurred.');
+          }
+          return response.json();
+        })
+        .then(data => {
+          loadingDiv.style.display = 'none';
+          if (data.errors) {
+            showError(data.errors[0].message);
+            return;
+          }
+          const characters = data.data.Page.characters;
+          const pageInfo = data.data.Page.pageInfo;
+          if (characters.length === 0) {
+            resultsDiv.innerHTML = `<p>${translations[currentLang].searchNotFound}</p>`;
+            return;
+          }
+          displayCharacterResults(characters);
+          if (pageInfo.hasNextPage) {
+            loadMoreContainer.style.display = 'block';
+          }
+        })
+        .catch(error => {
+          loadingDiv.style.display = 'none';
+          showError(error.message);
+        });
+      } else {
+        const mediaType = type.toUpperCase();
+        const season = seasonSelect.value;
+        const year = seasonYear.value ? parseInt(seasonYear.value) : null;
+        const variables = {
+          type: mediaType,
+          sort: [sort],
+          page: currentPage,
+          perPage: 20
+        };
+        currentSearchParams = {
+          type: 'media',
+          mediaType: mediaType,
+          sort: sort,
+          season: season,
+          year: year
+        };
+        if (searchTerm !== '') {
+          variables.search = searchTerm;
+          currentSearchParams.search = searchTerm;
+        }
+        if (season) {
+          variables.season = season;
+        }
+        if (year) {
+          variables.seasonYear = year;
+        }
+        if (!searchTerm && !season && !year) {
+          loadDefaultResults();
+          return;
+        }
+        const query = `
+          query ($search: String, $type: MediaType, $sort: [MediaSort], $season: MediaSeason, $seasonYear: Int, $page: Int, $perPage: Int) {
+            Page(page: $page, perPage: $perPage) {
+              pageInfo {
+                total
+                currentPage
+                lastPage
+                hasNextPage
+              }
+              media(search: $search, type: $type, sort: $sort, season: $season, seasonYear: $seasonYear) {
+                id
+                title {
+                  romaji
+                  native
+                  english
+                }
+                coverImage {
+                  large
+                }
+                genres
+                averageScore
+                format
+                episodes
+                chapters
+                status
+                season
+                seasonYear
+              }
+            }
+          }
+        `;
+        fetch('https://graphql.anilist.co', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: JSON.stringify({ query: query, variables: variables })
+        })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(currentLang === 'ja' ? 'ネットワークエラーが発生しました。' : 'Network error occurred.');
+          }
+          return response.json();
+        })
+        .then(data => {
+          loadingDiv.style.display = 'none';
+          if (data.errors) {
+            showError(data.errors[0].message);
+            return;
+          }
+          const media = data.data.Page.media;
+          const pageInfo = data.data.Page.pageInfo;
+          if (media.length === 0) {
+            resultsDiv.innerHTML = `<p>${translations[currentLang].searchNotFound}</p>`;
+            return;
+          }
+          displayResults(media);
+          if (pageInfo.hasNextPage) {
+            loadMoreContainer.style.display = 'block';
+          }
+        })
+        .catch(error => {
+          loadingDiv.style.display = 'none';
+          showError(error.message);
+        });
+      }
+    }
+
+    // loadMoreContent 関数（無限スクロール用）
+    function loadMoreContent() {
+      currentPage++;
+      loadingDiv.style.display = 'block';
+      if (currentSearchParams.type === 'character') {
+        const query = `
+          query ($search: String, $sort: [CharacterSort], $page: Int, $perPage: Int) {
+            Page(page: $page, perPage: $perPage) {
+              pageInfo {
+                total
+                currentPage
+                lastPage
+                hasNextPage
+              }
+              characters(search: $search, sort: $sort) {
+                id
+                name {
+                  full
+                  native
+                  alternative
+                }
+                image {
+                  large
+                }
+                gender
+                age
+                media {
+                  nodes {
+                    title {
+                      romaji
+                    }
+                    type
+                  }
+                }
+                favourites
+              }
+            }
+          }
+        `;
+        const variables = {
+          search: currentSearchParams.search,
+          sort: [currentSearchParams.sort],
+          page: currentPage,
+          perPage: 40
+        };
+        fetch('https://graphql.anilist.co', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: JSON.stringify({ query: query, variables: variables })
+        })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(currentLang === 'ja' ? 'ネットワークエラーが発生しました。' : 'Network error occurred.');
+          }
+          return response.json();
+        })
+        .then(data => {
+          loadingDiv.style.display = 'none';
+          if (data.errors) {
+            showError(data.errors[0].message);
+            return;
+          }
+          const characters = data.data.Page.characters;
+          const pageInfo = data.data.Page.pageInfo;
+          if (characters.length > 0) {
+            appendCharacterResults(characters);
+          }
+          if (!pageInfo.hasNextPage) {
+            loadMoreContainer.style.display = 'none';
+          }
+        })
+        .catch(error => {
+          loadingDiv.style.display = 'none';
+          showError(error.message);
+        });
+      } else {
+        const mediaType = currentSearchParams.mediaType;
+        const query = `
+          query ($search: String, $type: MediaType, $sort: [MediaSort], $season: MediaSeason, $seasonYear: Int, $page: Int, $perPage: Int) {
+            Page(page: $page, perPage: $perPage) {
+              pageInfo {
+                total
+                currentPage
+                lastPage
+                hasNextPage
+              }
+              media(search: $search, type: $type, sort: $sort, season: $season, seasonYear: $seasonYear) {
+                id
+                title {
+                  romaji
+                  native
+                  english
+                }
+                coverImage {
+                  large
+                }
+                genres
+                averageScore
+                format
+                episodes
+                chapters
+                status
+                season
+                seasonYear
+              }
+            }
+          }
+        `;
+        const variables = {
+          type: mediaType,
+          sort: [currentSearchParams.sort],
+          page: currentPage,
+          perPage: 20
+        };
+        if (currentSearchParams.search) {
+          variables.search = currentSearchParams.search;
+        }
+        if (currentSearchParams.season) {
+          variables.season = currentSearchParams.season;
+        }
+        if (currentSearchParams.year) {
+          variables.seasonYear = currentSearchParams.year;
+        }
+        fetch('https://graphql.anilist.co', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: JSON.stringify({ query: query, variables: variables })
+        })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(currentLang === 'ja' ? 'ネットワークエラーが発生しました。' : 'Network error occurred.');
+          }
+          return response.json();
+        })
+        .then(data => {
+          loadingDiv.style.display = 'none';
+          if (data.errors) {
+            showError(data.errors[0].message);
+            return;
+          }
+          const media = data.data.Page.media;
+          const pageInfo = data.data.Page.pageInfo;
+          if (media.length > 0) {
+            appendResults(media);
+          }
+          if (!pageInfo.hasNextPage) {
+            loadMoreContainer.style.display = 'none';
+          }
+        })
+        .catch(error => {
+          loadingDiv.style.display = 'none';
+          showError(error.message);
+        });
+      }
+    }
+
+    // デフォルト結果を読み込む関数
+    function loadDefaultResults() {
+      if (!searchType || !sortSelect || !resultsDiv || !loadingDiv || !loadMoreContainer) return;
+      currentPage = 1;
+      loadingDiv.style.display = 'block';
+      resultsDiv.innerHTML = '';
+      loadMoreContainer.style.display = 'none';
+      const type = searchType.value;
+      const mediaType = type === 'anime' || type === 'manga' ? type.toUpperCase() : null;
+      const sort = sortSelect.value;
+      if (type === 'character') {
+        currentSearchParams = {
+          type: 'character',
+          sort: sort
+        };
+        const query = `
+          query ($sort: [CharacterSort], $page: Int, $perPage: Int) {
+            Page(page: $page, perPage: $perPage) {
+              pageInfo {
+                total
+                currentPage
+                lastPage
+                hasNextPage
+              }
+              characters(sort: $sort) {
+                id
+                name {
+                  full
+                  native
+                  alternative
+                }
+                image {
+                  large
+                }
+                gender
+                age
+                media {
+                  nodes {
+                    title {
+                      romaji
+                    }
+                    type
+                  }
+                }
+                favourites
+              }
+            }
+          }
+        `;
+        const variables = {
+          sort: [sort],
+          page: currentPage,
+          perPage: 40
+        };
+        fetch('https://graphql.anilist.co', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: JSON.stringify({ query: query, variables: variables })
+        })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(currentLang === 'ja' ? 'ネットワークエラーが発生しました。' : 'Network error occurred.');
+          }
+          return response.json();
+        })
+        .then(data => {
+          loadingDiv.style.display = 'none';
+          if (data.errors) {
+            showError(data.errors[0].message);
+            return;
+          }
+          const characters = data.data.Page.characters;
+          const pageInfo = data.data.Page.pageInfo;
+          if (characters.length === 0) {
+            resultsDiv.innerHTML = `<p>${translations[currentLang].notFound}</p>`;
+            return;
+          }
+          displayCharacterResults(characters);
+          if (pageInfo.hasNextPage) {
+            loadMoreContainer.style.display = 'block';
+          }
+        })
+        .catch(error => {
+          loadingDiv.style.display = 'none';
+          showError(error.message);
+        });
+      } else {
+        const season = seasonSelect ? seasonSelect.value : null;
+        const year = seasonYear && seasonYear.value ? parseInt(seasonYear.value) : null;
+        currentSearchParams = {
+          type: 'media',
+          mediaType: mediaType,
+          sort: sort,
+          season: season,
+          year: year
+        };
+        const query = `
+          query ($type: MediaType, $sort: [MediaSort], $season: MediaSeason, $seasonYear: Int, $page: Int, $perPage: Int) {
+            Page(page: $page, perPage: $perPage) {
+              pageInfo {
+                total
+                currentPage
+                lastPage
+                hasNextPage
+              }
+              media(type: $type, sort: $sort, season: $season, seasonYear: $seasonYear) {
+                id
+                title {
+                  romaji
+                  native
+                  english
+                }
+                coverImage {
+                  large
+                }
+                genres
+                averageScore
+                format
+                episodes
+                chapters
+                status
+                season
+                seasonYear
+              }
+            }
+          }
+        `;
+        const variables = {
+          type: mediaType,
+          sort: [sort],
+          page: currentPage,
+          perPage: 20
+        };
+        if (season) {
+          variables.season = season;
+        }
+        if (year) {
+          variables.seasonYear = year;
+        }
+        fetch('https://graphql.anilist.co', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: JSON.stringify({ query: query, variables: variables })
+        })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(currentLang === 'ja' ? 'ネットワークエラーが発生しました。' : 'Network error occurred.');
+          }
+          return response.json();
+        })
+        .then(data => {
+          loadingDiv.style.display = 'none';
+          if (data.errors) {
+            showError(data.errors[0].message);
+            return;
+          }
+          const media = data.data.Page.media;
+          const pageInfo = data.data.Page.pageInfo;
+          if (media.length === 0) {
+            resultsDiv.innerHTML = `<p>${translations[currentLang].notFound}</p>`;
+            return;
+          }
+          displayResults(media);
+          if (pageInfo.hasNextPage) {
+            loadMoreContainer.style.display = 'block';
+          }
+        })
+        .catch(error => {
+          loadingDiv.style.display = 'none';
+          showError(error.message);
+        });
+      }
+    }
+    
+    // キャラクター検索結果の表示（初期表示用）
+    function displayCharacterResults(characters) {
+      resultsDiv.innerHTML = '';
+      characters.forEach(character => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.onclick = () => showCharacterDetails(character.id);
+        
+        // 日本語モードなら日本語名を優先
+        const name = currentLang === 'ja' && character.name.native
+          ? character.name.native
+          : character.name.full;
+        
+        const imageUrl = character.image.large;
+        let appearances = '';
+        if (character.media && character.media.nodes && character.media.nodes.length > 0) {
+          const mediaList = character.media.nodes.slice(0, 2).map(media => {
+            return `${media.title.romaji} (${media.type === 'ANIME' ? translations[currentLang].anime : translations[currentLang].manga})`;
+          });
+          appearances = `<div>${translations[currentLang].appearances}: ${mediaList.join(', ')}</div>`;
+        }
+        
+        // キャラクター名の表示も変更
+        // 日本語モードで日本語名を表示する場合は、代わりにローマ字名を追加情報として表示
+        const nameDisplay = currentLang === 'ja' && character.name.native 
+          ? `<div>${translations[currentLang].romajiName} ${character.name.full}</div>`
+          : `<div>${translations[currentLang].nativeName} ${character.name.native || '不明'}</div>`;
+        
+        card.innerHTML = `
+          <img src="${imageUrl}" alt="${name}" class="card-img">
+          <div class="card-body">
+            <div class="card-title">${name}</div>
+            ${currentLang === 'ja' && character.name.native ? nameDisplay : (character.name.native ? nameDisplay : '')}
+            ${character.gender ? `<div>${translations[currentLang].gender} ${character.gender}</div>` : ''}
+            ${character.age ? `<div>${translations[currentLang].age} ${character.age}</div>` : ''}
+            ${appearances}
+            ${character.favourites ? `<div>${translations[currentLang].favorites} ${character.favourites}</div>` : ''}
+          </div>
+        `;
+        resultsDiv.appendChild(card);
+      });
+    }
+    
+    // メディア検索結果の表示（初期表示用）
+    function displayResults(media) {
+      resultsDiv.innerHTML = '';
+      media.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.onclick = () => showDetails(item.id);
+        
+        // 日本語モードなら日本語名を優先、それ以外なら英語名を優先
+        const title = currentLang === 'ja' 
+          ? (item.title.native || item.title.romaji || item.title.english)
+          : (item.title.english || item.title.romaji || item.title.native);
+        
+        const imageUrl = item.coverImage.large;
+        let seasonInfo = '';
+        if (item.season && item.seasonYear) {
+          seasonInfo = `<div class="season-tag">${formatSeason(item.season)} ${item.seasonYear}</div>`;
+        }
+        card.innerHTML = `
+          <img src="${imageUrl}" alt="${title}" class="card-img">
+          <div class="card-body">
+            <div class="card-title">${title}</div>
+            ${item.averageScore ? `<div>${translations[currentLang].averageScore} <span class="score">${item.averageScore}%</span></div>` : ''}
+            ${item.format ? `<div>${translations[currentLang].format} ${formatMediaFormat(item.format)}</div>` : ''}
+            ${item.episodes ? `<div>${translations[currentLang].episodes} ${item.episodes}</div>` : ''}
+            ${item.chapters ? `<div>${translations[currentLang].chapters} ${item.chapters}</div>` : ''}
+            ${seasonInfo}
+            <div class="genres">
+              ${item.genres.slice(0, 3).map(genre => `<span class="genre">${genre}</span>`).join('')}
+            </div>
+          </div>
+        `;
+        resultsDiv.appendChild(card);
+      });
+    }
+    
+    // キャラクター詳細情報の表示
+    function showCharacterDetails(id) {
+      loadingDiv.style.display = 'block';
+      const query = `
+        query ($id: Int) {
+          Character(id: $id) {
+            id
+            name {
+              full
+              native
+              alternative
+            }
+            image {
+              large
+            }
+            description
+            gender
+            age
+            dateOfBirth {
+              year
+              month
+              day
+            }
+            bloodType
+            favourites
+            media {
+              edges {
+                node {
+                  id
+                  title {
+                    romaji
+                    english
+                    native
+                  }
+                  type
+                  format
+                  coverImage {
+                    medium
+                  }
+                  season
+                  seasonYear
+                }
+                characterRole
+              }
+            }
+          }
+        }
+      `;
+      const variables = { id: id };
+      fetch('https://graphql.anilist.co', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({ query: query, variables: variables })
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('ネットワークエラーが発生しました。');
+        }
+        return response.json();
+      })
+      .then(data => {
+        loadingDiv.style.display = 'none';
+        if (data.errors) {
+          showError(data.errors[0].message);
+          return;
+        }
+        const character = data.data.Character;
+        displayCharacterDetails(character);
+        searchView.style.display = 'none';
+        detailsView.style.display = 'block';
+      })
+      .catch(error => {
+        loadingDiv.style.display = 'none';
+        showError(error.message);
+      });
+    }
+    
+    // アニメ・マンガ詳細情報の表示
+    function showDetails(id) {
+      loadingDiv.style.display = 'block';
+      const query = `
+        query ($id: Int) {
+          Media(id: $id) {
+            id
+            title {
+              romaji
+              english
+              native
+            }
+            coverImage {
+              large
+            }
+            bannerImage
+            description
+            genres
+            tags {
+              name
+              rank
+            }
+            averageScore
+            meanScore
+            popularity
+            format
+            episodes
+            duration
+            status
+            startDate {
+              year
+              month
+              day
+            }
+            endDate {
+              year
+              month
+              day
+            }
+            season
+            seasonYear
+            studios {
+              nodes {
+                name
+              }
+            }
+            source
+            relations {
+              edges {
+                relationType
+                node {
+                  id
+                  title {
+                    romaji
+                  }
+                  type
+                  format
+                }
+              }
+            }
+            characters(sort: ROLE, perPage: 12) {
+              edges {
+                node {
+                  id
+                  name {
+                    full
+                  }
+                  image {
+                    medium
+                  }
+                }
+                role
+                voiceActors(language: JAPANESE) {
+                  id
+                  name {
+                    full
+                  }
+                  image {
+                    medium
+                  }
+                }
+              }
+            }
+          }
+        }
+      `;
+      const variables = { id: id };
+      fetch('https://graphql.anilist.co', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({ query: query, variables: variables })
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('ネットワークエラーが発生しました。');
+        }
+        return response.json();
+      })
+      .then(data => {
+        loadingDiv.style.display = 'none';
+        if (data.errors) {
+          showError(data.errors[0].message);
+          return;
+        }
+        const media = data.data.Media;
+        displayDetails(media);
+        searchView.style.display = 'none';
+        detailsView.style.display = 'block';
+      })
+      .catch(error => {
+        loadingDiv.style.display = 'none';
+        showError(error.message);
+      });
+    }
+    
+    // アニメ・マンガ詳細情報の表示
+    function displayDetails(media) {
+      // 日本語モードなら日本語名を優先
+      const title = currentLang === 'ja' 
+        ? (media.title.native || media.title.romaji || media.title.english)
+        : (media.title.english || media.title.romaji || media.title.native);
+      
+      const imageUrl = media.coverImage.large;
+      const startDate = formatDate(media.startDate);
+      const endDate = formatDate(media.endDate);
+      const studios = media.studios.nodes.map(studio => studio.name).join(', ');
+      const seasonInfo = media.season && media.seasonYear ? 
+        `<div>${translations[currentLang].broadcastSeason} <span class="season-tag">${formatSeason(media.season)} ${media.seasonYear}</span></div>` : '';
+      
+      // タイトル表示の調整
+      let titleInfo = '';
+      if (currentLang === 'ja') {
+        if (media.title.romaji && media.title.romaji !== title) {
+          titleInfo += `<div>${translations[currentLang].romajiName} ${media.title.romaji}</div>`;
+        }
+        if (media.title.english && media.title.english !== title) {
+          titleInfo += `<div>英語名: ${media.title.english}</div>`;
+        }
+      } else {
+        if (media.title.native && media.title.native !== title) {
+          titleInfo += `<div>${translations[currentLang].nativeName} ${media.title.native}</div>`;
+        }
+        if (media.title.romaji && media.title.romaji !== title) {
+          titleInfo += `<div>${translations[currentLang].romajiName} ${media.title.romaji}</div>`;
+        }
+      }
+      
+      let html = `
+        <div class="details-header">
+          <img src="${imageUrl}" alt="${title}" class="details-img">
+          <div class="details-info">
+            <h2>${title}</h2>
+            ${titleInfo}
+            ${media.format ? `<div>${translations[currentLang].format} ${formatMediaFormat(media.format)}</div>` : ''}
+            ${media.status ? `<div>${translations[currentLang].status} ${formatMediaStatus(media.status)}</div>` : ''}
+            ${media.episodes ? `<div>${translations[currentLang].episodes} ${media.episodes}</div>` : ''}
+            ${media.duration ? `<div>${translations[currentLang].duration} ${media.duration}${translations[currentLang].minutes}</div>` : ''}
+            ${startDate ? `<div>${translations[currentLang].startDate} ${startDate}</div>` : ''}
+            ${endDate ? `<div>${translations[currentLang].endDate} ${endDate}</div>` : ''}
+            ${seasonInfo}
+            ${studios ? `<div>${translations[currentLang].studios} ${studios}</div>` : ''}
+            ${media.source ? `<div>${translations[currentLang].source} ${formatSource(media.source)}</div>` : ''}
+            ${media.averageScore ? `<div>${translations[currentLang].averageScore} <span class="score">${media.averageScore}%</span></div>` : ''}
+            ${media.popularity ? `<div>${translations[currentLang].popularity} ${media.popularity}</div>` : ''}
+            <div class="genres">
+              ${media.genres.map(genre => `<span class="genre">${genre}</span>`).join('')}
+            </div>
+          </div>
+        </div>
+        ${media.description ? `<h3>${translations[currentLang].synopsis}</h3><div class="description">${formatDescription(media.description)}</div>` : ''}
+      `;
+      
+      if (media.relations && media.relations.edges && media.relations.edges.length > 0) {
+        html += `<h3>${translations[currentLang].relatedWorks}</h3><ul>`;
+        media.relations.edges.forEach(edge => {
+          html += `<li>${formatRelationType(edge.relationType)}: ${edge.node.title.romaji} (${formatMediaType(edge.node.type)}, ${formatMediaFormat(edge.node.format)})</li>`;
+        });
+        html += `</ul>`;
+      }
+      
+      if (media.characters && media.characters.edges && media.characters.edges.length > 0) {
+        html += `<h3>${translations[currentLang].mainCharacters}</h3><div class="character-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px;">`;
+        media.characters.edges.forEach(edge => {
+          const character = edge.node;
+          const voiceActor = edge.voiceActors && edge.voiceActors.length > 0 ? edge.voiceActors[0] : null;
+          html += `
+            <div class="character-card" style="border: 1px solid #eee; border-radius: 8px; overflow: hidden; background: white;">
+              <div style="display: flex; align-items: center; padding: 10px;">
+                <img src="${character.image.medium}" alt="${character.name.full}" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover;">
+                <div style="margin-left: 10px;">
+                  <div style="font-weight: bold;">${character.name.full}</div>
+                  <div style="font-size: 0.8rem;">${formatCharacterRole(edge.role)}</div>
+                </div>
+              </div>
+              ${voiceActor ? `
+                <div style="background: #f9f9f9; padding: 10px; display: flex; align-items: center; border-top: 1px solid #eee;">
+                  <img src="${voiceActor.image.medium}" alt="${voiceActor.name.full}" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover;">
+                  <div style="margin-left: 10px; font-size: 0.8rem;">${voiceActor.name.full}</div>
+                </div>
+              ` : ''}
+            </div>
+          `;
+        });
+        html += `</div>`;
+      }
+      
+      detailsContent.innerHTML = html;
+      // データ属性を設定（リロード時に使用）
+      detailsContent.setAttribute('data-id', media.id);
+      detailsContent.setAttribute('data-type', 'media');
+    }
+    
+    // キャラクター詳細情報の表示
+    function displayCharacterDetails(character) {
+      // 日本語モードなら日本語名を優先
+      const name = currentLang === 'ja' && character.name.native 
+        ? character.name.native
+        : character.name.full;
+      
+      const imageUrl = character.image.large;
+      const birthday = character.dateOfBirth && character.dateOfBirth.month && character.dateOfBirth.day ? 
+        `${character.dateOfBirth.month}${currentLang === 'ja' ? '月' : '/'}${character.dateOfBirth.day}${currentLang === 'ja' ? '日' : ''}` : null;
+      
+      // 名前表示の調整
+      let nameInfo = '';
+      if (currentLang === 'ja' && character.name.native) {
+        nameInfo += `<div>${translations[currentLang].romajiName} ${character.name.full}</div>`;
+      } else if (character.name.native) {
+        nameInfo += `<div>${translations[currentLang].nativeName} ${character.name.native}</div>`;
+      }
+      
+      let html = `
+        <div class="details-header">
+          <img src="${imageUrl}" alt="${name}" class="details-img">
+          <div class="details-info">
+            <h2>${name}</h2>
+            ${nameInfo}
+            ${character.name.alternative && character.name.alternative.length > 0 ? `<div>${translations[currentLang].altNames} ${character.name.alternative.join(', ')}</div>` : ''}
+            ${character.gender ? `<div>${translations[currentLang].gender} ${character.gender}</div>` : ''}
+            ${character.age ? `<div>${translations[currentLang].age} ${character.age}</div>` : ''}
+            ${birthday ? `<div>${translations[currentLang].birthday} ${birthday}</div>` : ''}
+            ${character.bloodType ? `<div>${translations[currentLang].bloodType} ${character.bloodType}</div>` : ''}
+            ${character.favourites ? `<div>${translations[currentLang].favorites} ${character.favourites}</div>` : ''}
+          </div>
+        </div>
+        ${character.description ? `<h3>${translations[currentLang].characterIntro}</h3><div class="description">${formatDescription(character.description)}</div>` : ''}
+      `;
+      
+      if (character.media && character.media.edges && character.media.edges.length > 0) {
+        html += `<h3>${translations[currentLang].appearances}</h3><div class="media-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px;">`;
+        character.media.edges.forEach(edge => {
+          const media = edge.node;
+          const role = edge.characterRole;
+          
+          // 日本語モードなら日本語名を優先
+          const mediaTitle = currentLang === 'ja' && media.title.native
+            ? media.title.native
+            : (media.title.english || media.title.romaji);
+            
+          let seasonInfo = '';
+          if (media.season && media.seasonYear) {
+            seasonInfo = `<div style="font-size: 0.75rem; color: white; background-color: #3db4f2; padding: 1px 6px; border-radius: 10px; display: inline-block; margin-top: 2px;">${formatSeason(media.season)} ${media.seasonYear}</div>`;
+          }
+          html += `
+            <div class="media-card" style="border: 1px solid #eee; border-radius: 8px; overflow: hidden; background: white;">
+              <div style="display: flex; align-items: center; padding: 10px;">
+                <img src="${media.coverImage.medium}" alt="${mediaTitle}" style="width: 50px; height: 70px; object-fit: cover; border-radius: 4px;">
+                <div style="margin-left: 10px;">
+                  <div style="font-weight: bold;">${mediaTitle}</div>
+                  <div style="font-size: 0.8rem;">${formatMediaType(media.type)}, ${formatMediaFormat(media.format)}</div>
+                  <div style="font-size: 0.8rem; color: #3db4f2;">${formatCharacterRole(role)}</div>
+                  ${seasonInfo}
+                </div>
+              </div>
+            </div>
+          `;
+        });
+        html += `</div>`;
+      }
+      
+      detailsContent.innerHTML = html;
+      // データ属性を設定（リロード時に使用）
+      detailsContent.setAttribute('data-id', character.id);
+      detailsContent.setAttribute('data-type', 'character');
+    }
+    
+    // エラーメッセージの表示
+    function showError(message) {
+      errorDiv.textContent = message;
+      errorDiv.style.display = 'block';
+    }
+    
+    // 日付のフォーマット
+    function formatDate(dateObj) {
+      if (!dateObj || !dateObj.year) return null;
+      const year = dateObj.year;
+      const month = dateObj.month ? dateObj.month : null;
+      const day = dateObj.day ? dateObj.day : null;
+      if (month && day) {
+        return `${year}年${month}月${day}日`;
+      } else if (month) {
+        return `${year}年${month}月`;
+      } else {
+        return `${year}年`;
+      }
+    }
+    
+    // メディア形式のフォーマット
+    function formatMediaFormat(format) {
+      const formats = {
+        TV: 'TVアニメ',
+        TV_SHORT: 'TVショート',
+        MOVIE: '映画',
+        SPECIAL: 'スペシャル',
+        OVA: 'OVA',
+        ONA: 'ONA',
+        MUSIC: 'ミュージック',
+        MANGA: 'マンガ',
+        NOVEL: '小説',
+        ONE_SHOT: 'ワンショット'
+      };
+      return formats[format] || format;
+    }
+    
+    // メディアタイプのフォーマット
+    function formatMediaType(type) {
+      const types = {
+        ANIME: 'アニメ',
+        MANGA: 'マンガ'
+      };
+      return types[type] || type;
+    }
+    
+    // メディア状態のフォーマット
+    function formatMediaStatus(status) {
+      const statuses = {
+        FINISHED: '完結',
+        RELEASING: '放送/連載中',
+        NOT_YET_RELEASED: '未放送/未連載',
+        CANCELLED: '中止',
+        HIATUS: '休止中'
+      };
+      return statuses[status] || status;
+    }
+    
+    // シーズンのフォーマット
+    function formatSeason(season) {
+      const seasons = {
+        WINTER: '冬',
+        SPRING: '春',
+        SUMMER: '夏',
+        FALL: '秋'
+      };
+      return seasons[season] || season;
+    }
+    
+    // 原作のフォーマット
+    function formatSource(source) {
+      const sources = {
+        ORIGINAL: 'オリジナル',
+        MANGA: 'マンガ',
+        LIGHT_NOVEL: 'ライトノベル',
+        VISUAL_NOVEL: 'ビジュアルノベル',
+        VIDEO_GAME: 'ビデオゲーム',
+        OTHER: 'その他',
+        NOVEL: '小説',
+        DOUJINSHI: '同人誌',
+        ANIME: 'アニメ',
+        WEB_NOVEL: 'ウェブ小説',
+        LIVE_ACTION: '実写',
+        GAME: 'ゲーム',
+        COMIC: 'コミック',
+        MULTIMEDIA_PROJECT: 'マルチメディアプロジェクト',
+        PICTURE_BOOK: '絵本'
+      };
+      return sources[source] || source;
+    }
+    
+    // 関連タイプのフォーマット
+    function formatRelationType(relationType) {
+      const relationTypes = {
+        ADAPTATION: '原作',
+        PREQUEL: '前作',
+        SEQUEL: '続編',
+        PARENT: '親作品',
+        SIDE_STORY: '外伝',
+        CHARACTER: 'キャラクター出演',
+        SUMMARY: '要約',
+        ALTERNATIVE: '別バージョン',
+        SPIN_OFF: 'スピンオフ',
+        OTHER: '関連作品',
+        SOURCE: '原作',
+        COMPILATION: '総集編',
+        CONTAINS: '含む'
+      };
+      return relationTypes[relationType] || relationType;
+    }
+    
+    // キャラクターロールのフォーマット
+    function formatCharacterRole(role) {
+      const roles = {
+        MAIN: '主人公',
+        SUPPORTING: 'サブキャラクター',
+        BACKGROUND: '脇役',
+        VOICE_ACTOR: '声優'
+      };
+      return roles[role] || role;
+    }
+    
+    // HTMLタグを含む説明文のフォーマット
+    function formatDescription(description) {
+      if (!description) return '';
+      return description
+        .replace(/<br>/g, '<br>')
+        .replace(/<i>/g, '<i>')
+        .replace(/<\/i>/g, '</i>')
+        .replace(/<b>/g, '<b>')
+        .replace(/<\/b>/g, '</b>');
+    }
+    
+    // 「さらに読み込む」ボタン用のメディア追加関数
+    function appendResults(media) {
+      media.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.onclick = () => showDetails(item.id);
+        
+        // 日本語モードなら日本語名を優先
+        const title = currentLang === 'ja' 
+          ? (item.title.native || item.title.romaji || item.title.english)
+          : (item.title.english || item.title.romaji || item.title.native);
+        
+        const imageUrl = item.coverImage.large;
+        let seasonInfo = '';
+        if (item.season && item.seasonYear) {
+          seasonInfo = `<div class="season-tag">${formatSeason(item.season)} ${item.seasonYear}</div>`;
+        }
+        card.innerHTML = `
+          <img src="${imageUrl}" alt="${title}" class="card-img">
+          <div class="card-body">
+            <div class="card-title">${title}</div>
+            ${item.averageScore ? `<div>${translations[currentLang].averageScore} <span class="score">${item.averageScore}%</span></div>` : ''}
+            ${item.format ? `<div>${translations[currentLang].format} ${formatMediaFormat(item.format)}</div>` : ''}
+            ${item.episodes ? `<div>${translations[currentLang].episodes} ${item.episodes}</div>` : ''}
+            ${item.chapters ? `<div>${translations[currentLang].chapters} ${item.chapters}</div>` : ''}
+            ${seasonInfo}
+            <div class="genres">
+              ${item.genres.slice(0, 3).map(genre => `<span class="genre">${genre}</span>`).join('')}
+            </div>
+          </div>
+        `;
+        resultsDiv.appendChild(card);
+      });
+    }
+    
+    // 「さらに読み込む」ボタン用のキャラクター追加関数
+    function appendCharacterResults(characters) {
+      characters.forEach(character => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.onclick = () => showCharacterDetails(character.id);
+        
+        // 日本語モードなら日本語名を優先
+        const name = currentLang === 'ja' && character.name.native
+          ? character.name.native
+          : character.name.full;
+        
+        const imageUrl = character.image.large;
+        let appearances = '';
+        if (character.media && character.media.nodes && character.media.nodes.length > 0) {
+          const mediaList = character.media.nodes.slice(0, 2).map(media => {
+            return `${media.title.romaji} (${media.type === 'ANIME' ? translations[currentLang].anime : translations[currentLang].manga})`;
+          });
+          appearances = `<div>${translations[currentLang].appearances}: ${mediaList.join(', ')}</div>`;
+        }
+        
+        // キャラクター名の表示も変更
+        const nameDisplay = currentLang === 'ja' && character.name.native 
+          ? `<div>${translations[currentLang].romajiName} ${character.name.full}</div>`
+          : `<div>${translations[currentLang].nativeName} ${character.name.native || '不明'}</div>`;
+        
+        card.innerHTML = `
+          <img src="${imageUrl}" alt="${name}" class="card-img">
+          <div class="card-body">
+            <div class="card-title">${name}</div>
+            ${currentLang === 'ja' && character.name.native ? nameDisplay : (character.name.native ? nameDisplay : '')}
+            ${character.gender ? `<div>${translations[currentLang].gender} ${character.gender}</div>` : ''}
+            ${character.age ? `<div>${translations[currentLang].age} ${character.age}</div>` : ''}
+            ${appearances}
+            ${character.favourites ? `<div>${translations[currentLang].favorites} ${character.favourites}</div>` : ''}
+          </div>
+        `;
+        resultsDiv.appendChild(card);
+      });
+    }
+  </script>
+</body>
+</html>
