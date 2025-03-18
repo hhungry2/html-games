@@ -31,3 +31,5 @@ ZIPを展開する
 font_viewer  
 [**archive_open.html**](https://hhungry2.github.io/html-games/tools/font_viewer.html)
 
+glb_viewer  
+[**glb_viewer.html**](https://hhungry2.github.io/html-games/tools/glb_viewer.html)
