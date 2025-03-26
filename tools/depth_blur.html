@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>深度マップによる効果切替／解像度選択と画像保存</title>
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.wasm.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; }
+    canvas { border: 1px solid #ccc; margin: 10px; }
+    #loadingOverlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.8); display: none; justify-content: center;
+      align-items: center; flex-direction: column; color: white; z-index: 1000;
+    }
+    .loadingSpinner {
+      border: 8px solid rgba(255, 255, 255, 0.3); border-top: 8px solid white;
+      border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .control-panel { margin: 10px; }
+  </style>
+</head>
+<body>
+  <h1>深度マップによる効果切替／解像度選択と画像保存</h1>
+  <input type="file" id="imageInput" accept="image/*">
+  <div class="control-panel">
+    <label for="thresholdSlider">深度しきい値 (%): <span id="thresholdValue">50</span></label>
+    <input type="range" id="thresholdSlider" min="0" max="100" value="50" style="width:300px;">
+  </div>
+  <div class="control-panel">
+    <label for="resolutionSelect">出力解像度:</label>
+    <select id="resolutionSelect">
+      <option value="auto">自動（元画像サイズ）</option>
+      <option value="fixed">518px</option>
+    </select>
+    <label for="effectSelect">効果:</label>
+    <select id="effectSelect">
+      <option value="transparent">透過</option>
+      <option value="blur">ブラー</option>
+    </select>
+    <button id="saveButton">画像保存</button>
+  </div>
+  <div>
+    <h3>入力画像</h3>
+    <canvas id="inputCanvas"></canvas>
+  </div>
+  <div>
+    <h3>出力画像（前景部分の効果切替）</h3>
+    <canvas id="outputCanvas"></canvas>
+  </div>
+  <div id="loadingOverlay">
+    <div class="loadingSpinner"></div>
+    <div>処理中...</div>
+  </div>
+
+  <script>
+    const inputCanvas = document.getElementById('inputCanvas');
+    const outputCanvas = document.getElementById('outputCanvas');
+    const imageInput = document.getElementById('imageInput');
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    const thresholdSlider = document.getElementById('thresholdSlider');
+    const thresholdValueSpan = document.getElementById('thresholdValue');
+    const resolutionSelect = document.getElementById('resolutionSelect');
+    const effectSelect = document.getElementById('effectSelect');
+    const saveButton = document.getElementById('saveButton');
+
+    const modelSize = 518; // ONNXモデル用固定サイズ
+    const displaySizeFixed = 518; // 固定出力時のサイズ
+    let origImg = null;         // アップロード画像のImageオブジェクト
+    let origWidth = 0, origHeight = 0;  // アップロード画像の元サイズ
+
+    let globalDepthArray = null; // ONNXモデルで得た正規化済み深度マップ（modelSize x modelSize）
+    let offscreenCanvas = document.createElement('canvas');
+    offscreenCanvas.width = modelSize;
+    offscreenCanvas.height = modelSize;
+    let offscreenCtx = offscreenCanvas.getContext('2d');
+
+    // 入力画像の前処理：ピクセル値を0～1に正規化
+    function preprocess(imageData, width, height) {
+      const floatArr = new Float32Array(width * height * 3);
+      let j = 0;
+      for (let i = 0; i < imageData.data.length; i += 4) {
+        floatArr[j] = imageData.data[i] / 255;
+        floatArr[j + width * height] = imageData.data[i + 1] / 255;
+        floatArr[j + 2 * width * height] = imageData.data[i + 2] / 255;
+        j++;
+      }
+      return floatArr;
+    }
+
+    // ONNX推論結果の後処理：深度マップの正規化＋描画用ImageData作成
+    function postprocess(tensor) {
+      const [_, height, width] = tensor.dims;
+      const imageData = new ImageData(width, height);
+      const data = imageData.data;
+      const tensorData = tensor.data;
+      let minDepth = Infinity, maxDepth = -Infinity;
+      for (let i = 0; i < tensorData.length; i++) {
+        if (tensorData[i] < minDepth) minDepth = tensorData[i];
+        if (tensorData[i] > maxDepth) maxDepth = tensorData[i];
+      }
+      const normalizedDepthArray = new Float32Array(tensorData.length);
+      for (let i = 0; i < tensorData.length; i++) {
+        normalizedDepthArray[i] = (tensorData[i] - minDepth) / (maxDepth - minDepth);
+      }
+      globalDepthArray = normalizedDepthArray;
+      // 深度マップ画像の作成（参考用）
+      for (let i = 0; i < tensorData.length; i++) {
+        const value = normalizedDepthArray[i] * 255;
+        const idx = i * 4;
+        data[idx] = data[idx + 1] = data[idx + 2] = value;
+        data[idx + 3] = 255;
+      }
+      return imageData;
+    }
+
+    // 指定サイズへ最近傍補間で深度マップを拡大
+    function upscaleDepthMap(targetWidth, targetHeight) {
+      const upscaled = new Float32Array(targetWidth * targetHeight);
+      for (let y = 0; y < targetHeight; y++) {
+        const srcY = Math.floor(y * modelSize / targetHeight);
+        for (let x = 0; x < targetWidth; x++) {
+          const srcX = Math.floor(x * modelSize / targetWidth);
+          upscaled[y * targetWidth + x] = globalDepthArray[srcY * modelSize + srcX];
+        }
+      }
+      return upscaled;
+    }
+
+    // ブラー画像データを生成（canvas の filter を利用）
+    function getBlurredImageData(targetWidth, targetHeight, blurAmount) {
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = targetWidth;
+      tempCanvas.height = targetHeight;
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.filter = `blur(${blurAmount}px)`;
+      if (resolutionSelect.value === "fixed") {
+        tempCtx.drawImage(offscreenCanvas, 0, 0, targetWidth, targetHeight);
+      } else {
+        tempCtx.drawImage(origImg, 0, 0, targetWidth, targetHeight);
+      }
+      return tempCtx.getImageData(0, 0, targetWidth, targetHeight).data;
+    }
+
+    // 前景抽出と背景効果の適用：効果モードにより、前景部分を透明またはブラー画像に置き換え
+    function applyBackgroundEffect(threshold, targetWidth, targetHeight, depthMap, effectMode) {
+      const ctx = outputCanvas.getContext('2d');
+      outputCanvas.width = targetWidth;
+      outputCanvas.height = targetHeight;
+      const outputImageData = ctx.createImageData(targetWidth, targetHeight);
+      let origData;
+      if (resolutionSelect.value === "fixed") {
+        origData = offscreenCtx.getImageData(0, 0, modelSize, modelSize).data;
+      } else {
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = origWidth;
+        tempCanvas.height = origHeight;
+        tempCanvas.getContext('2d').drawImage(origImg, 0, 0, origWidth, origHeight);
+        origData = tempCanvas.getContext('2d').getImageData(0, 0, origWidth, origHeight).data;
+      }
+      
+      let blurredData = null;
+      if (effectMode === "blur") {
+        // ブラー量は固定で10px（必要に応じて調整可）
+        blurredData = getBlurredImageData(targetWidth, targetHeight, 10);
+      }
+      
+      for (let i = 0; i < targetWidth * targetHeight; i++) {
+        const idx = i * 4;
+        if (globalDepthArray ? depthMap[i] < threshold : false) {
+          // 深度がしきい値より低い領域（前景）
+          if (effectMode === "transparent") {
+            outputImageData.data[idx] = 0;
+            outputImageData.data[idx + 1] = 0;
+            outputImageData.data[idx + 2] = 0;
+            outputImageData.data[idx + 3] = 0;
+          } else if (effectMode === "blur") {
+            outputImageData.data[idx] = blurredData[idx];
+            outputImageData.data[idx + 1] = blurredData[idx + 1];
+            outputImageData.data[idx + 2] = blurredData[idx + 2];
+            outputImageData.data[idx + 3] = 255;
+          }
+        } else {
+          // 背景部分は元画像のピクセルをそのまま利用
+          outputImageData.data[idx] = origData[idx];
+          outputImageData.data[idx + 1] = origData[idx + 1];
+          outputImageData.data[idx + 2] = origData[idx + 2];
+          outputImageData.data[idx + 3] = 255;
+        }
+      }
+      ctx.putImageData(outputImageData, 0, 0);
+    }
+
+    // しきい値、解像度、効果モードに応じた出力更新
+    function updateOutput() {
+      const thresholdValue = parseInt(thresholdSlider.value, 10);
+      thresholdValueSpan.textContent = thresholdValue;
+      const thresholdNormalized = thresholdValue / 100;
+      let targetWidth, targetHeight, depthMap;
+      if (resolutionSelect.value === "fixed") {
+        targetWidth = targetHeight = displaySizeFixed;
+        depthMap = globalDepthArray;  // modelSize x modelSize のデータ
+      } else {
+        targetWidth = origWidth;
+        targetHeight = origHeight;
+        depthMap = upscaleDepthMap(targetWidth, targetHeight);
+      }
+      const effectMode = effectSelect.value; // "transparent" または "blur"
+      applyBackgroundEffect(thresholdNormalized, targetWidth, targetHeight, depthMap, effectMode);
+    }
+
+    // 画像保存機能：outputCanvasの内容をPNGとしてダウンロード
+    saveButton.addEventListener('click', () => {
+      const link = document.createElement('a');
+      link.download = 'output.png';
+      link.href = outputCanvas.toDataURL('image/png');
+      link.click();
+    });
+
+    thresholdSlider.addEventListener('input', updateOutput);
+    resolutionSelect.addEventListener('change', updateOutput);
+    effectSelect.addEventListener('change', updateOutput);
+
+    // 画像アップロード時の処理
+    async function processImage(file) {
+      loadingOverlay.style.display = 'flex';
+      try {
+        origImg = new Image();
+        origImg.src = URL.createObjectURL(file);
+        await new Promise(resolve => { origImg.onload = resolve; });
+        origWidth = origImg.naturalWidth;
+        origHeight = origImg.naturalHeight;
+
+        // 入力画像表示（縮小表示）
+        const inputCtx = inputCanvas.getContext('2d');
+        inputCanvas.width = Math.min(300, origWidth);
+        inputCanvas.height = Math.min(300, origHeight);
+        inputCtx.drawImage(origImg, 0, 0, inputCanvas.width, inputCanvas.height);
+
+        // offscreenCanvas にモデル用固定サイズ（518×518）にリサイズして描画
+        offscreenCtx.drawImage(origImg, 0, 0, modelSize, modelSize);
+        const imageData = offscreenCtx.getImageData(0, 0, modelSize, modelSize);
+
+        // ONNXモデルによる深度推定
+        const session = await ort.InferenceSession.create(
+          'https://cdn.glitch.me/0f5359e2-6022-421b-88f7-13e276d0fb33/depthanythingv2-vits-dynamic-quant.onnx',
+          { executionProviders: ['wasm'] }
+        );
+        const inputTensor = new ort.Tensor('float32', preprocess(imageData, modelSize, modelSize), [1, 3, modelSize, modelSize]);
+        const feeds = { image: inputTensor };
+        const results = await session.run(feeds);
+        const depthTensor = results.depth;
+
+        postprocess(depthTensor);
+        updateOutput();
+        loadingOverlay.style.display = 'none';
+      } catch (err) {
+        console.error('エラー詳細:', err);
+        alert('処理中にエラーが発生しました。詳細はコンソールを確認してください。');
+        loadingOverlay.style.display = 'none';
+      }
+    }
+
+    imageInput.addEventListener('change', (event) => {
+      const file = event.target.files[0];
+      if (file) processImage(file);
+    });
+  </script>
+</body>
+</html>
