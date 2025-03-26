@@ -22,7 +22,7 @@ BM風ゲーム
 Deepth_anything デモ  
 [**depth_anything.html**](https://hhungry2.github.io/html-games/tools/depth_anything.html)
 
-depth_blur.html
+depth_blur.html  
 [**depth_blur.html**](https://hhungry2.github.io/html-games/tools/depth_blur.html)  
 Deepth_anythingで背景を透過・ブラーをかける  
 
