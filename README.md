@@ -23,11 +23,11 @@ Deepth_anything デモ
 [**depth_anything.html**](https://hhungry2.github.io/html-games/tools/depth_anything.html)
 
 depth_blur.html
-[**depth_blur.html**](https://hhungry2.github.io/html-games/tools/depth_blur.html)
+[**depth_blur.html**](https://hhungry2.github.io/html-games/tools/depth_blur.html)  
 Deepth_anythingで背景を透過・ブラーをかける  
 
 coco-ssd デモ  
-[**coco-ssd.html**](https://hhungry2.github.io/html-games/tools/coco-ssd.html)
+[**coco-ssd.html**](https://hhungry2.github.io/html-games/tools/coco-ssd.html)  
 COCO-SSDモデル（mobilenetV2-SSDLite）をTensorflow.jsを使用して物体検出  
 
 ZIPを展開する  
