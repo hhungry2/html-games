@@ -18,7 +18,7 @@ BM風ゲーム
 じゃんけんシステム  
 [**rock-paper-scissors.html**](https://hhungry2.github.io/html-games/rock-paper-scissors.html)
 
-【ツール】
+【ツール】  
 Deepth_anything デモ  
 [**depth_anything.html**](https://hhungry2.github.io/html-games/tools/depth_anything.html)
 
