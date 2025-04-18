@@ -803,7 +803,7 @@
              studios(isMain: true) { nodes { id name isAnimationStudio } }
              externalLinks { id url site siteId type language color icon notes isDisabled }
              coverImage { large medium color } # Fetch large and medium cover images
-             bannerImage
+             bannerImage # Ensure bannerImage is fetched
              trailer { id site thumbnail }
              updatedAt
            }
@@ -1049,11 +1049,20 @@
 
         // Add details rows
         addRow('ID', animeDetails.id, 'Media.id');
-        // --- MODIFIED: Image URLs ---
         addRow('カバー画像URL (大)', animeDetails.coverImage?.large || '-', 'Media.coverImage.large');
-        addRow('リストサムネイルURL (中)', animeDetails.coverImage?.medium || '-', 'Media.coverImage.medium');
-        addRow('カバー画像のAPIパス', '各URLは Media.coverImage の下の large または medium フィールドで取得できます。', 'Media.coverImage'); // Point to Media.coverImage
+
+        // --- MODIFIED: Display Banner Image URL instead of Cover Image API explanation ---
+        const bannerImageUrl = animeDetails.bannerImage;
+        if (bannerImageUrl) {
+             // Render the URL as a clickable link
+             const bannerLinkHTML = `<a href="${bannerImageUrl}" target="_blank" rel="noopener noreferrer" class="title-link">${bannerImageUrl}</a>`;
+             addRow('バナー画像のURL', bannerLinkHTML, 'Media.bannerImage', true); // Pass true to render as HTML
+        } else {
+             // If no banner image, display '-'
+             addRow('バナー画像のURL', '-', 'Media.bannerImage', false); // Pass false as no HTML to render
+        }
         // --- END MODIFIED ---
+
         addRow('タイトル（日本語）', animeDetails.title.native, 'Media.title.native');
         addRow('タイトル（英語）', animeDetails.title.english, 'Media.title.english');
         addRow('タイトル（ローマ字）', animeDetails.title.romaji, 'Media.title.romaji');
@@ -1150,9 +1159,12 @@
             // 3. Mark the corresponding button as registered and update state
             markAsRegistered(animeId, nativeTitle || 'タイトル取得不可'); // Pass title here
 
-            // NEW: Update the container class based on the new state
-            container.classList.remove('is-unregistered');
-            container.classList.add('is-registered');
+             // Find the container and update its class based on the new state
+             const targetContainer = animeListContainer.querySelector(`.container[data-anime-id="${animeId}"]`);
+             if (targetContainer) {
+                 targetContainer.classList.remove('is-unregistered');
+                 targetContainer.classList.add('is-registered');
+             }
 
 
         }, { once: true }); // Automatically remove listener after first click
@@ -1243,20 +1255,16 @@
         detailContentElement.innerHTML = '';
     }
 
-     // NEW: Dummy filter function (does nothing but logs selection)
+     // NEW: Filter function
      function handleFilterChange() {
          const selectedValue = filterDropdown.value;
          console.log(`Filter changed to: ${selectedValue}`);
-         // Actual filtering logic would go here, e.g.,
-         // 1. Get all .container elements
-         // 2. Iterate through them
-         // 3. Check their class ('is-registered' or 'is-unregistered') or check registrationState
-         // 4. Set display style ('block' or 'none') based on selectedValue and registration status
-         // Example structure (not implemented):
-         /*
+
          const containers = animeListContainer.querySelectorAll('.container');
          containers.forEach(container => {
-             const isRegistered = container.classList.contains('is-registered');
+             const animeId = container.dataset.animeId;
+             const isRegistered = registrationState[animeId]; // Get state from dummy storage
+
              let show = false;
              if (selectedValue === 'all') {
                  show = true;
@@ -1267,8 +1275,8 @@
              }
              container.style.display = show ? 'flex' : 'none'; // Assuming default list display is 'flex'
          });
-         */
      }
+
 
     // --- Initialization ---
     function initializeEventListeners() {
