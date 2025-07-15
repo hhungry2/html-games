@@ -1,0 +1,1426 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>anilist2neoapo - キャラクター版</title>
+  <style>
+    /* Reset and Base Styles */
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #d1dce3;
+      color: #333;
+      line-height: 1.6;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* Headings */
+    h1, h2 {
+      text-align: center;
+      color: #2e51a2;
+      margin-bottom: 30px;
+      font-weight: 700;
+      position: relative;
+      padding-bottom: 10px;
+      width: 100%;
+    }
+    h1::after, h2::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100px;
+      height: 3px;
+      background-color: #2e51a2;
+      border-radius: 3px;
+    }
+
+    /* Character List Layout Styles */
+     #character-list {
+         width: 100%;
+         display: flex;
+         flex-direction: column;
+         align-items: center;
+         gap: 20px;
+     }
+
+     .container {
+         border: 1px solid #ccc;
+         padding: 15px;
+         display: flex;
+         align-items: flex-start;
+         background-color: #fff;
+         width: 600px;
+         max-width: 95%;
+         box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.1);
+         border-radius: 8px;
+         box-sizing: border-box;
+     }
+     .container img.list-thumbnail {
+         margin-right: 20px;
+         width: 100px;
+         height: 140px;
+         object-fit: cover;
+         border: 1px solid #ddd;
+         border-radius: 4px;
+         flex-shrink: 0;
+     }
+     .details {
+         flex-grow: 1;
+         min-width: 0;
+     }
+     .details h2.character-name {
+         margin-top: 0;
+         margin-bottom: 10px;
+         font-size: 1.2em;
+         color: #3f51b5;
+         cursor: pointer;
+         transition: color 0.2s;
+         line-height: 1.3;
+         text-align: left;
+         padding-bottom: 0;
+         position: static;
+     }
+     .details h2.character-name::after {
+        content: none;
+     }
+     .details h2.character-name:hover {
+        color: #303f9f;
+        text-decoration: underline;
+     }
+     .details table.info-table {
+         border-collapse: collapse;
+         width: 100%;
+         margin-bottom: 10px;
+         font-size: 0.9em;
+     }
+     .details table.info-table th,
+     .details table.info-table td {
+         border: 1px solid #eee;
+         padding: 6px 8px;
+         text-align: left;
+         vertical-align: middle;
+         word-break: break-word;
+     }
+     .details table.info-table th {
+         background-color: #f8f9fa;
+         width: 80px;
+         font-weight: 600;
+         color: #555;
+     }
+     .details table.info-table td.neoapo-value-cell span.placeholder {
+         color: #999;
+         font-style: italic;
+     }
+     .button-container {
+         margin-top: 15px;
+         display: flex;
+         flex-wrap: wrap;
+         gap: 10px;
+     }
+     .search-button, .unregister-button, .hold-button {
+         padding: 6px 12px;
+         color: white;
+         border: none;
+         border-radius: 4px;
+         cursor: pointer;
+         font-size: 0.9em;
+         transition: background-color 0.2s;
+     }
+     .search-button {
+         background-color: #4CAF50;
+     }
+     .search-button:hover:not(:disabled) {
+         background-color: #45a049;
+     }
+     .search-button:disabled {
+         background-color: #cccccc;
+         cursor: not-allowed;
+     }
+     .unregister-button {
+         background-color: #007bff;
+     }
+     .unregister-button:hover:not(:disabled):not(.registered) {
+         background-color: #0056b3;
+     }
+     .unregister-button.registered {
+         background-color: #6c757d;
+         cursor: default;
+     }
+     .unregister-button.registered:hover {
+         background-color: #6c757d;
+     }
+     .hold-button {
+         background-color: #ffc107;
+     }
+     .hold-button:hover:not(:disabled):not(.held) {
+         background-color: #e0a800;
+     }
+     .hold-button.held {
+         background-color: #6c757d;
+         cursor: default;
+     }
+     .hold-button.held:hover {
+         background-color: #6c757d;
+     }
+     .search-result-title {
+        margin-top: 8px;
+        padding: 5px 8px;
+        background-color: #e9f5e9;
+        border: 1px solid #a5d6a7;
+        border-radius: 4px;
+        font-size: 0.9em;
+        cursor: pointer;
+        display: inline-block;
+        transition: background-color 0.2s;
+        width: calc(100% - 16px);
+        box-sizing: border-box;
+     }
+     .search-result-title:hover {
+         background-color: #c8e6c9;
+     }
+
+    /* Navigation Styles */
+    .navigation-container {
+        width: 600px;
+        max-width: 95%;
+        margin-bottom: 15px;
+        padding: 12px 15px;
+        background-color: #f5f5f5;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.05);
+        display: flex;
+        justify-content: center;
+        gap: 30px;
+        box-sizing: border-box;
+    }
+
+    .nav-link {
+        text-decoration: none;
+        color: #555;
+        font-weight: 500;
+        font-size: 1em;
+        padding: 8px 16px;
+        border-radius: 5px;
+        transition: all 0.3s ease;
+        position: relative;
+    }
+
+    .nav-link:hover {
+        color: #2e51a2;
+        background-color: #e8eaf6;
+    }
+
+    .nav-link.active {
+        color: #2e51a2;
+        background-color: #e8eaf6;
+        font-weight: 600;
+    }
+
+    .nav-link.active::after {
+        content: '';
+        position: absolute;
+        bottom: -3px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 80%;
+        height: 2px;
+        background-color: #2e51a2;
+        border-radius: 2px;
+    }
+
+    /* Filter Styles */
+    .filter-container {
+        width: 600px;
+        max-width: 95%;
+        margin-bottom: 20px;
+        padding: 10px 15px;
+        background-color: #eef;
+        border: 1px solid #cdd;
+        border-radius: 8px;
+        box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.05);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        box-sizing: border-box;
+        font-size: 0.95em;
+    }
+
+    .filter-container span {
+        font-weight: 600;
+        color: #555;
+    }
+
+    .filter-container select {
+        padding: 5px 8px;
+        border-radius: 4px;
+        border: 1px solid #ccc;
+        font-size: 1em;
+        cursor: pointer;
+    }
+
+    /* Loading and Error States */
+    .loading, .error {
+      text-align: center;
+      padding: 30px;
+      background-color: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      font-style: italic;
+      color: #666;
+      width: 600px;
+      max-width: 95%;
+      box-sizing: border-box;
+    }
+    .error {
+      color: #e53935;
+      background-color: #ffebee;
+      font-style: normal;
+    }
+
+    /* Links */
+    .title-link {
+      cursor: pointer;
+      color: #3f51b5;
+      text-decoration: none;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+    .title-link:hover {
+      color: #303f9f;
+      text-decoration: underline;
+    }
+
+    /* Dialog Styles */
+    .dialog-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(0, 0, 0, 0.5);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    .dialog-content {
+      background-color: white;
+      padding: 25px;
+      border-radius: 8px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+      max-width: 400px;
+      width: 90%;
+    }
+    .dialog-title {
+      font-size: 1.3em;
+      font-weight: 600;
+      margin-bottom: 15px;
+      color: #2e51a2;
+    }
+    .dialog-buttons {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 25px;
+      gap: 10px;
+    }
+    .dialog-button {
+      padding: 10px 18px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: background-color 0.2s, box-shadow 0.2s;
+    }
+    .dialog-button-primary {
+      background-color: #2e51a2;
+      color: white;
+    }
+    .dialog-button-primary:hover {
+      background-color: #1f3c7a;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    .dialog-button-secondary {
+      background-color: #e0e0e0;
+      color: #333;
+    }
+     .dialog-button-secondary:hover {
+      background-color: #bdbdbd;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    /* Detail View Styles */
+    #character-details {
+        background-color: #fff;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        width: 100%;
+        max-width: 1100px;
+        box-sizing: border-box;
+        margin-top: 20px;
+    }
+    .back-button-container {
+        margin-bottom: 25px;
+    }
+    #back-button {
+      background-color: #6c757d;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #back-button:hover {
+      background-color: #5a6268;
+    }
+    .detail-table {
+      margin-top: 20px;
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      background-color: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      overflow: hidden;
+      table-layout: auto;
+    }
+    .detail-table thead th {
+      background-color: #2e51a2;
+      color: white;
+      padding: 12px 15px;
+      text-align: left;
+      font-weight: 600;
+    }
+    .detail-table th {
+      width: 180px;
+      background-color: #e8eaf6;
+      color: #303f9f;
+      text-align: left;
+      font-weight: 600;
+      padding: 12px 15px;
+      border-bottom: 1px solid #eee;
+    }
+    .detail-table td {
+      word-break: break-word;
+      background-color: #ffffff;
+      padding: 12px 15px;
+      border-bottom: 1px solid #eee;
+    }
+     .detail-table tr:last-child th,
+     .detail-table tr:last-child td {
+         border-bottom: none;
+     }
+
+    .api-path-column {
+      width: 180px;
+      font-family: 'Consolas', 'Menlo', monospace;
+      color: white;
+      font-size: 0.85em;
+      background-color: #2e51a2 !important;
+      padding: 12px 10px !important;
+      vertical-align: top;
+      border-right: 1px solid rgba(255, 255, 255, 0.2);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    }
+     .detail-table tr:last-child .api-path-column {
+         border-bottom: none;
+     }
+
+    .cover-image {
+      width: 100%;
+      max-width: 250px;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+      margin-bottom: 20px;
+      display: block;
+    }
+    .cover-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 25px;
+    }
+    .character-info-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 30px;
+      margin-top: 20px;
+    }
+    .character-info-left {
+      flex: 0 0 250px;
+      display: flex;
+      justify-content: center;
+    }
+    .character-info-right {
+      flex: 1;
+      min-width: 300px;
+    }
+
+    /* Responsive Adjustments */
+         @media (max-width: 768px) {
+      .container, .filter-container, .navigation-container {
+        width: 90%;
+      }
+      .detail-table th { width: 150px; }
+      .api-path-column { width: 150px; }
+      .character-info-container {
+        flex-direction: column;
+        gap: 20px;
+      }
+      .character-info-left, .character-info-right {
+        width: 100%;
+        flex: none;
+      }
+      .cover-image { max-width: 200px; }
+    }
+
+     @media (max-width: 650px) {
+         .container {
+             flex-direction: column;
+             align-items: center;
+             width: 95%;
+         }
+          .filter-container, .navigation-container {
+             width: 95%;
+             flex-direction: column;
+             align-items: flex-start;
+         }
+         .navigation-container {
+             gap: 10px;
+             align-items: center;
+         }
+         .container img.list-thumbnail {
+             margin-right: 0;
+             margin-bottom: 15px;
+             width: 150px;
+             height: 210px;
+         }
+         .details {
+             width: 100%;
+         }
+          .details h2.character-name {
+             text-align: center;
+         }
+         .details table.info-table th { width: 70px; }
+     }
+
+     @media (max-width: 480px) {
+         body { padding: 10px; }
+         h1 { font-size: 1.5em; }
+         h2 { font-size: 1.3em; }
+         .container { padding: 10px; }
+         .container img.list-thumbnail {
+             width: 120px;
+             height: 168px;
+         }
+         .details h2.character-name { font-size: 1.1em; }
+         .details table.info-table { font-size: 0.85em; }
+          .details table.info-table th,
+          .details table.info-table td { padding: 5px 6px; }
+
+         .button-container { justify-content: center; }
+         .search-button, .unregister-button, .hold-button { font-size: 0.85em; padding: 5px 10px; }
+          .search-result-title {
+             width: 100%;
+             text-align: center;
+             margin-left: 0;
+             margin-right: 0;
+             padding-left: 8px;
+             padding-right: 8px;
+          }
+
+          .filter-container, .navigation-container {
+              padding: 8px 10px;
+              font-size: 0.9em;
+              width: 95%;
+          }
+          .filter-container select {
+              width: 100%;
+              box-sizing: border-box;
+          }
+          .navigation-container {
+              gap: 8px;
+          }
+          .nav-link {
+              font-size: 0.9em;
+              padding: 6px 12px;
+          }
+
+         #character-details { padding: 15px; }
+         .detail-table { font-size: 0.9em; }
+         .detail-table th, .detail-table td, .api-path-column { padding: 8px 10px; }
+         .detail-table th { width: 100px; }
+         .api-path-column { width: 100px; }
+         #back-button { padding: 8px 15px; font-size: 0.9em;}
+     }
+  </style>
+</head>
+<body>
+  <h1>anilist2neoapo - キャラクター版</h1>
+①「検索」ボタン押下でneoapoのキャラクター名を検索する。<br>
+②ヒットしたらキャラクター名をクリックでneoapoのDBと紐づける。<br>
+③ヒットしなかったら「未登録」ボタンでanilistのデータを使ってキャラクターを未登録する。<br>
+
+  <div class="navigation-container">
+      <a href="#" class="nav-link" data-page="anime">アニメ一覧</a>
+      <a href="#" class="nav-link active" data-page="character">キャラクター一覧</a>
+      <a href="#" class="nav-link" data-page="voice-actor">声優一覧</a>
+  </div>
+
+  <div class="filter-container">
+      <span>表示フィルター:</span>
+      <select id="filter-dropdown">
+          <option value="all">すべて</option>
+          <option value="unregistered">未登録</option>
+          <option value="registered">登録済み</option>
+          <option value="held">保留</option>
+      </select>
+  </div>
+
+  <div id="character-list">
+    <p class="loading">データを読み込み中...</p>
+    </div>
+
+  <div id="character-details" style="display: none;">
+    <div class="back-button-container">
+      <button id="back-button">← 一覧に戻る</button>
+    </div>
+    <h2 id="detail-title"></h2>
+    <div id="detail-content">
+      </div>
+  </div>
+
+  <div id="registration-dialog" style="display: none;" class="dialog-overlay">
+    <div class="dialog-content">
+      <div class="dialog-title">登録確認</div>
+      <p><strong id="dialog-character-name"></strong> をneoapoに新規登録しますか？</p>
+      <div class="dialog-buttons">
+        <button id="dialog-cancel" class="dialog-button dialog-button-secondary">キャンセル</button>
+        <button id="dialog-confirm" class="dialog-button dialog-button-primary">はい</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="hold-dialog" style="display: none;" class="dialog-overlay">
+    <div class="dialog-content">
+      <div class="dialog-title">保留確認</div>
+      <p><strong id="hold-dialog-character-name"></strong> を保留にしますか？</p>
+      <div class="dialog-buttons">
+        <button id="hold-dialog-cancel" class="dialog-button dialog-button-secondary">キャンセル</button>
+        <button id="hold-dialog-confirm" class="dialog-button dialog-button-primary">はい</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- Configuration ---
+    const ANILIST_API_URL = 'https://graphql.anilist.co';
+    const ITEMS_PER_PAGE = 20;
+
+    // --- DOM Elements ---
+    const characterListContainer = document.getElementById('character-list');
+    const characterDetailsContainer = document.getElementById('character-details');
+    const detailTitleElement = document.getElementById('detail-title');
+    const detailContentElement = document.getElementById('detail-content');
+    const backButton = document.getElementById('back-button');
+    const registrationDialog = document.getElementById('registration-dialog');
+    const dialogCharacterName = document.getElementById('dialog-character-name');
+    const dialogConfirmButton = document.getElementById('dialog-confirm');
+    const dialogCancelButton = document.getElementById('dialog-cancel');
+    const holdDialog = document.getElementById('hold-dialog');
+    const holdDialogCharacterName = document.getElementById('hold-dialog-character-name');
+    const holdDialogConfirmButton = document.getElementById('hold-dialog-confirm');
+    const holdDialogCancelButton = document.getElementById('hold-dialog-cancel');
+    const filterDropdown = document.getElementById('filter-dropdown');
+
+    // --- State ---
+    let currentCharacterIdForDialog = null;
+    let currentCharacterNameForDialog = null;
+    let currentCharacterIdForHold = null;
+    let currentCharacterNameForHold = null;
+    let characterDataCache = {};
+    let registrationState = {}; // { characterId: 'unregistered' | 'registered' | 'held' }
+
+    // --- Helper Functions ---
+    function formatDate(dateInput) {
+      if (!dateInput) return '-';
+      try {
+        const year = dateInput.year;
+        const month = dateInput.month;
+        const day = dateInput.day;
+
+        if (year && month && day) {
+             const date = new Date(year, month - 1, day);
+             if (isNaN(date.getTime())) return '-';
+             return `${year}/${String(month).padStart(2, '0')}/${String(day).padStart(2, '0')}`;
+        } else if (year && month) {
+             return `${year}/${String(month).padStart(2, '0')}/??`;
+        } else if (year) {
+             return `${year}/??/??`;
+        }
+        return '-';
+      } catch (e) {
+        console.error("Error formatting date:", dateInput, e);
+        return '-';
+      }
+    }
+
+    function mapGender(genderCode) {
+        if (!genderCode) return '-';
+        const genderMap = {
+            Male: '男性',
+            Female: '女性',
+            Non_binary: 'ノンバイナリー'
+        };
+        return genderMap[genderCode] || genderCode;
+    }
+
+    function mapBloodType(bloodType) {
+        if (!bloodType) return '-';
+        return bloodType;
+    }
+
+    function getVoiceActors(character) {
+        if (!character.media || !character.media.edges) return '-';
+        
+        const voiceActors = new Set();
+        character.media.edges.forEach(edge => {
+            if (edge.voiceActors && Array.isArray(edge.voiceActors)) { // 配列であることも確認
+                edge.voiceActors.forEach(va => {
+                    if (va && va.name) { // va自体がnullでないことも確認
+                        voiceActors.add(va.name.native || va.name.full);
+                    }
+                });
+            }
+        });
+        
+        const vaArray = Array.from(voiceActors);
+        if (vaArray.length === 0) return '-';
+        // 取得件数を増やす場合は、下のsliceの数値を変更
+        if (vaArray.length > 2) {
+            return vaArray.slice(0, 2).join(', ') + '...';
+        }
+        return vaArray.join(', ');
+    }
+
+    function getRelatedMedia(character) {
+        if (!character.media || !character.media.edges) return '-';
+        
+        const mediaNames = character.media.edges
+            .slice(0, 2)
+            .map(edge => edge.node?.title?.native || edge.node?.title?.romaji || edge.node?.title?.english || '作品名なし')
+            .filter(name => name !== '作品名なし');
+        
+        if (mediaNames.length === 0) return '-';
+        if (character.media.edges.length > 2) {
+            return mediaNames.join(', ') + '...';
+        }
+        return mediaNames.join(', ');
+    }
+
+     function markAsRegistered(characterId, nameToInsert = null) {
+         if (!characterId) {
+             console.warn("markAsRegistered called with invalid characterId:", characterId);
+             return;
+         }
+
+         const targetContainer = characterListContainer.querySelector(`.container[data-character-id="${characterId}"]`);
+         if (!targetContainer) {
+             console.warn(`Could not find container for ID: ${characterId} in markAsRegistered`);
+             return;
+         }
+
+         if (nameToInsert) {
+             const neoapoValueCell = targetContainer.querySelector('.neoapo-value-cell');
+             if (neoapoValueCell) {
+                 neoapoValueCell.innerHTML = '';
+                 neoapoValueCell.textContent = nameToInsert;
+             }
+         }
+
+         const unregisterButton = targetContainer.querySelector(`.unregister-button[data-character-id="${characterId}"]`);
+         const holdButton = targetContainer.querySelector(`.hold-button[data-character-id="${characterId}"]`);
+         
+         if (unregisterButton) {
+             unregisterButton.textContent = '登録済み';
+             unregisterButton.classList.add('registered');
+             unregisterButton.disabled = true;
+             unregisterButton.removeEventListener('click', showRegistrationDialog);
+         }
+         
+         if (holdButton) {
+             holdButton.disabled = true;
+             holdButton.removeEventListener('click', showHoldDialog);
+         }
+
+         registrationState[characterId] = 'registered';
+         console.log(`Marked character ID ${characterId} as registered.`);
+     }
+
+     function markAsHeld(characterId, nameToInsert = null) {
+         if (!characterId) {
+             console.warn("markAsHeld called with invalid characterId:", characterId);
+             return;
+         }
+
+         const targetContainer = characterListContainer.querySelector(`.container[data-character-id="${characterId}"]`);
+         if (!targetContainer) {
+             console.warn(`Could not find container for ID: ${characterId} in markAsHeld`);
+             return;
+         }
+
+         if (nameToInsert) {
+             const neoapoValueCell = targetContainer.querySelector('.neoapo-value-cell');
+             if (neoapoValueCell) {
+                 neoapoValueCell.innerHTML = '';
+                 const span = document.createElement('span');
+                 span.style.color = '#ff9800';
+                 span.style.fontStyle = 'italic';
+                 span.textContent = '保留中';
+                 neoapoValueCell.appendChild(span);
+             }
+         }
+
+         const unregisterButton = targetContainer.querySelector(`.unregister-button[data-character-id="${characterId}"]`);
+         const holdButton = targetContainer.querySelector(`.hold-button[data-character-id="${characterId}"]`);
+         
+         if (unregisterButton) {
+             unregisterButton.disabled = true;
+             unregisterButton.removeEventListener('click', showRegistrationDialog);
+         }
+         
+         if (holdButton) {
+             holdButton.textContent = '保留中';
+             holdButton.classList.add('held');
+             holdButton.disabled = true;
+             holdButton.removeEventListener('click', showHoldDialog);
+         }
+
+         registrationState[characterId] = 'held';
+         console.log(`Marked character ID ${characterId} as held.`);
+     }
+
+    // --- API Fetching ---
+     async function fetchAniListData(query, variables = {}) {
+       try {
+         const response = await fetch(ANILIST_API_URL, {
+           method: 'POST',
+           headers: {
+             'Content-Type': 'application/json',
+             'Accept': 'application/json',
+           },
+           body: JSON.stringify({ query, variables })
+         });
+
+         if (!response.ok) {
+             throw new Error(`HTTP error! status: ${response.status}`);
+         }
+
+         const data = await response.json();
+
+         if (data.errors) {
+           console.error('GraphQL エラー:', data.errors);
+           const errorMessage = data.errors[0]?.message || '不明なAPIエラーが発生しました。';
+           throw new Error(`API エラー: ${errorMessage}`);
+         }
+         if (!data.data) {
+           throw new Error("APIから有効なデータが返却されませんでした。");
+         }
+         return data.data;
+       } catch (error) {
+         console.error('データ取得エラー:', error);
+         throw error;
+       }
+     }
+
+     async function fetchLatestCharacters() {
+       const query = `
+         query ($page: Int, $perPage: Int) {
+           Page(page: $page, perPage: $perPage) {
+             characters(sort: ID_DESC) {
+               id
+               name { full first middle last native alternative alternativeSpoiler }
+               image { large medium }
+               dateOfBirth { year month day }
+               age
+               gender
+               bloodType
+               description
+               siteUrl
+               favourites
+               modNotes
+               media(page: 1, perPage: 5) {
+                 edges {
+                   node {
+                     id
+                     title { native romaji english }
+                   }
+                   voiceActors(language: JAPANESE, sort: RELEVANCE) {
+                     id
+                     name { full native }
+                   }
+                 }
+               }
+             }
+           }
+         }
+       `;
+       const variables = { page: 1, perPage: ITEMS_PER_PAGE };
+       const data = await fetchAniListData(query, variables);
+       
+       data.Page.characters.forEach(character => {
+           if (registrationState[character.id] === undefined) {
+                registrationState[character.id] = 'unregistered';
+           }
+       });
+       return data.Page.characters;
+     }
+
+     async function fetchCharacterDetails(id) {
+         if (characterDataCache[id] && characterDataCache[id].description) {
+             return characterDataCache[id];
+         }
+
+         const query = `
+         query ($id: Int) {
+           Character(id: $id) {
+             id
+             name { full first middle last native alternative alternativeSpoiler }
+             image { large medium }
+             description(asHtml: false)
+             dateOfBirth { year month day }
+             age
+             gender
+             bloodType
+             siteUrl
+             favourites
+             modNotes
+             media(page: 1, perPage: 10) {
+               edges {
+                 node {
+                   id
+                   title { romaji native english }
+                   type
+                   format
+                   coverImage { medium }
+                 }
+                 voiceActors(language: JAPANESE) {
+                   id
+                   name { full native }
+                 }
+               }
+             }
+           }
+         }
+       `;
+       const variables = { id: parseInt(id, 10) };
+       const data = await fetchAniListData(query, variables);
+       characterDataCache[id] = data.Character;
+       return data.Character;
+     }
+
+    // --- UI Rendering ---
+    function displayCharacterList(characterList) {
+      if (!characterList || characterList.length === 0) {
+        characterListContainer.innerHTML = '<p class="error">キャラクターデータが見つかりませんでした。</p>';
+        return;
+      }
+
+      characterListContainer.innerHTML = '';
+
+      characterList.forEach(character => {
+        const container = document.createElement('div');
+        container.className = 'container';
+        container.dataset.characterId = character.id;
+        
+        const currentState = registrationState[character.id] || 'unregistered';
+
+        if (currentState === 'registered') {
+            container.classList.add('is-registered');
+        } else if (currentState === 'held') {
+            container.classList.add('is-held');
+        } else {
+            container.classList.add('is-unregistered');
+        }
+
+        const img = document.createElement('img');
+        img.className = 'list-thumbnail';
+        img.src = character.image?.medium || 'https://placehold.co/100x140/eee/ccc?text=N/A';
+        img.alt = character.name?.full || character.name?.native || 'キャラクター画像';
+        img.loading = 'lazy';
+        img.onerror = function() { this.onerror=null; this.src='https://placehold.co/100x140/eee/ccc?text=N/A'; };
+        container.appendChild(img);
+
+        const detailsDiv = document.createElement('div');
+        detailsDiv.className = 'details';
+        container.appendChild(detailsDiv);
+
+        const nameH2 = document.createElement('h2');
+        nameH2.className = 'character-name';
+        nameH2.textContent = character.name?.native || character.name?.full || 'キャラクター名なし';
+        nameH2.dataset.id = character.id;
+        nameH2.addEventListener('click', () => showCharacterDetails(character.id));
+        detailsDiv.appendChild(nameH2);
+
+        const infoTable = document.createElement('table');
+        infoTable.className = 'info-table';
+        const tbody = document.createElement('tbody');
+
+        const addVerticalInfoRow = (label, value, valueClass = '') => {
+            const row = document.createElement('tr');
+            const th = document.createElement('th');
+            th.textContent = label;
+            const td = document.createElement('td');
+            if (valueClass) td.className = valueClass;
+
+            if (label === 'neoapo') {
+                if (currentState === 'registered') {
+                     td.textContent = character.name?.native || character.name?.full || '登録済み(名前なし)';
+                } else if (currentState === 'held') {
+                     const span = document.createElement('span');
+                     span.style.color = '#ff9800';
+                     span.style.fontStyle = 'italic';
+                     span.textContent = '保留中';
+                     td.appendChild(span);
+                } else {
+                     const span = document.createElement('span');
+                     span.className = 'placeholder';
+                     span.textContent = value;
+                     td.appendChild(span);
+                }
+            } else {
+                td.textContent = value;
+            }
+
+            row.appendChild(th);
+            row.appendChild(td);
+            tbody.appendChild(row);
+        };
+
+        addVerticalInfoRow('関連作品', getRelatedMedia(character)); // Changed from 年齢 to 関連作品
+        addVerticalInfoRow('声優', getVoiceActors(character));
+        addVerticalInfoRow('neoapo', '-', 'neoapo-value-cell');
+
+        infoTable.appendChild(tbody);
+        detailsDiv.appendChild(infoTable);
+
+        const buttonContainer = document.createElement('div');
+        buttonContainer.className = 'button-container';
+        detailsDiv.appendChild(buttonContainer);
+
+        const searchButton = document.createElement('button');
+        searchButton.textContent = '検索';
+        searchButton.className = 'search-button';
+        searchButton.dataset.id = character.id;
+        searchButton.dataset.nameNative = character.name?.native || character.name?.full || '';
+        
+        if (currentState !== 'unregistered') {
+             searchButton.disabled = true;
+        } else {
+             searchButton.addEventListener('click', handleSearchClickRevised);
+        }
+        buttonContainer.appendChild(searchButton);
+
+        const unregisterButton = document.createElement('button');
+        if (currentState === 'registered') {
+            unregisterButton.textContent = '登録済み';
+            unregisterButton.classList.add('registered');
+            unregisterButton.disabled = true;
+        } else if (currentState === 'held') {
+            unregisterButton.textContent = '未登録';
+            unregisterButton.className = 'unregister-button';
+            unregisterButton.disabled = true;
+        } else {
+            unregisterButton.textContent = '未登録';
+            unregisterButton.className = 'unregister-button';
+            unregisterButton.dataset.characterId = character.id;
+            unregisterButton.dataset.characterName = character.name?.native || character.name?.full || 'このキャラクター';
+            unregisterButton.addEventListener('click', showRegistrationDialog);
+        }
+        buttonContainer.appendChild(unregisterButton);
+
+        const holdButton = document.createElement('button');
+        if (currentState === 'held') {
+            holdButton.textContent = '保留中';
+            holdButton.classList.add('held');
+            holdButton.disabled = true;
+        } else if (currentState === 'registered') {
+            holdButton.textContent = '保留';
+            holdButton.className = 'hold-button';
+            holdButton.disabled = true;
+        } else {
+            holdButton.textContent = '保留';
+            holdButton.className = 'hold-button';
+            holdButton.dataset.characterId = character.id;
+            holdButton.dataset.characterName = character.name?.native || character.name?.full || 'このキャラクター';
+            holdButton.addEventListener('click', showHoldDialog);
+        }
+        buttonContainer.appendChild(holdButton);
+
+        const searchResultPlaceholder = document.createElement('div');
+        searchResultPlaceholder.className = 'search-result-title';
+        searchResultPlaceholder.style.display = 'none';
+        detailsDiv.appendChild(searchResultPlaceholder);
+
+        characterListContainer.appendChild(container);
+      });
+    }
+
+    function displayCharacterDetails(characterDetails) {
+        detailTitleElement.textContent = characterDetails.name?.full || characterDetails.name?.native || '詳細情報';
+        detailContentElement.innerHTML = '';
+
+        const characterInfoContainer = document.createElement('div');
+        characterInfoContainer.className = 'character-info-container';
+
+        const characterInfoLeft = document.createElement('div');
+        characterInfoLeft.className = 'character-info-left';
+
+        const characterInfoRight = document.createElement('div');
+        characterInfoRight.className = 'character-info-right';
+
+        // Character Image
+        if (characterDetails.image && characterDetails.image.large) {
+            const coverContainer = document.createElement('div');
+            coverContainer.className = 'cover-container';
+            const coverImage = document.createElement('img');
+            coverImage.className = 'cover-image';
+            coverImage.src = characterDetails.image.large;
+            coverImage.alt = `${characterDetails.name?.full || characterDetails.name?.native} 画像`;
+            coverImage.onerror = function() { this.onerror=null; this.src='https://placehold.co/250x350/eee/ccc?text=No+Image'; };
+            coverContainer.appendChild(coverImage);
+            characterInfoLeft.appendChild(coverContainer);
+        } else {
+             const placeholder = document.createElement('img');
+             placeholder.className = 'cover-image';
+             placeholder.src = 'https://placehold.co/250x350/eee/ccc?text=No+Image';
+             placeholder.alt = 'キャラクター画像なし';
+             characterInfoLeft.appendChild(placeholder);
+        }
+        characterInfoContainer.appendChild(characterInfoLeft);
+
+        // Details Table
+        const detailTable = document.createElement('table');
+        detailTable.className = 'detail-table';
+
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        ['APIパス', '項目', '値'].forEach(text => {
+            const th = document.createElement('th');
+            if (text === 'APIパス') th.className = 'api-path-column';
+            th.textContent = text;
+            headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        detailTable.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+
+        const addRow = (label, value, apiPath = '-', renderAsHTML = false) => {
+            const row = document.createElement('tr');
+            const apiPathCell = document.createElement('td');
+            apiPathCell.className = 'api-path-column';
+            apiPathCell.textContent = apiPath;
+            row.appendChild(apiPathCell);
+            const labelCell = document.createElement('th');
+            labelCell.textContent = label;
+            row.appendChild(labelCell);
+            const valueCell = document.createElement('td');
+             if (renderAsHTML && typeof value === 'string' && (value.includes('<') || value.includes('&'))) {
+                 try {
+                    const sanitizedValue = value.replace(/<script.*?>.*?<\/script>/gi, '');
+                     valueCell.innerHTML = sanitizedValue || '-';
+                 } catch (e) {
+                     console.error("Error rendering HTML:", e);
+                     valueCell.textContent = (value !== null && value !== undefined && value !== '') ? String(value) : '-';
+                 }
+             } else {
+                valueCell.textContent = (value !== null && value !== undefined && value !== '') ? String(value) : '-';
+             }
+            row.appendChild(valueCell);
+            tbody.appendChild(row);
+        };
+
+        // Add character details rows
+        addRow('ID', characterDetails.id, 'Character.id');
+        addRow('画像URL (大)', characterDetails.image?.large || '-', 'Character.image.large');
+        addRow('名前（フル）', characterDetails.name?.full, 'Character.name.full');
+        addRow('名前（名）', characterDetails.name?.first, 'Character.name.first');
+        addRow('名前（姓）', characterDetails.name?.last, 'Character.name.last');
+        addRow('名前（ネイティブ）', characterDetails.name?.native, 'Character.name.native');
+        addRow('別名', characterDetails.name?.alternative?.join(', ') || '-', 'Character.name.alternative');
+        addRow('説明', characterDetails.description || '-', 'Character.description');
+        addRow('誕生日', formatDate(characterDetails.dateOfBirth), 'Character.dateOfBirth');
+        addRow('年齢', characterDetails.age, 'Character.age');
+        addRow('性別', mapGender(characterDetails.gender), 'Character.gender');
+        addRow('血液型', mapBloodType(characterDetails.bloodType), 'Character.bloodType');
+        addRow('お気に入り数', characterDetails.favourites, 'Character.favourites');
+
+        // Site URL as clickable link
+        if (characterDetails.siteUrl) {
+            const siteLinkHTML = `<a href="${characterDetails.siteUrl}" target="_blank" rel="noopener noreferrer" class="title-link">${characterDetails.siteUrl}</a>`;
+            addRow('AniListページ', siteLinkHTML, 'Character.siteUrl', true);
+        } else {
+            addRow('AniListページ', '-', 'Character.siteUrl');
+        }
+
+        // Related Media and Voice Actors
+        if (characterDetails.media && characterDetails.media.edges && characterDetails.media.edges.length > 0) {
+            const mediaNames = characterDetails.media.edges
+                .map(edge => edge.node?.title?.native || edge.node?.title?.romaji || edge.node?.title?.english || 'タイトルなし')
+                .slice(0, 5)
+                .join(', ');
+            const displayMedia = mediaNames + (characterDetails.media.edges.length > 5 ? '...' : '');
+            addRow('関連作品', displayMedia, 'Character.media.edges.node');
+
+            // Voice Actors
+            const allVoiceActors = new Set();
+            characterDetails.media.edges.forEach(edge => {
+                if (edge.voiceActors) {
+                    edge.voiceActors.forEach(va => {
+                        if (va.name) {
+                            allVoiceActors.add(va.name.native || va.name.full);
+                        }
+                    });
+                }
+            });
+            
+            const voiceActorsList = Array.from(allVoiceActors);
+            const displayVoiceActors = voiceActorsList.length > 0 ? voiceActorsList.join(', ') : '-';
+            addRow('声優', displayVoiceActors, 'Character.media.edges.voiceActors');
+        } else {
+            addRow('関連作品', '-', 'Character.media.edges.node');
+            addRow('声優', '-', 'Character.media.edges.voiceActors');
+        }
+
+        detailTable.appendChild(tbody);
+        characterInfoRight.appendChild(detailTable);
+        characterInfoContainer.appendChild(characterInfoRight);
+
+        detailContentElement.appendChild(characterInfoContainer);
+
+        characterListContainer.style.display = 'none';
+        characterDetailsContainer.style.display = 'block';
+        window.scrollTo(0, 0);
+    }
+
+    // --- Event Handlers ---
+    function handleSearchClickRevised(event) {
+        const button = event.target;
+        const characterId = button.dataset.id;
+        const nativeName = button.dataset.nameNative;
+
+        const container = button.closest('.container');
+        if (!container) return;
+        const detailsDiv = container.querySelector('.details');
+        if (!detailsDiv) return;
+        const searchResultPlaceholder = detailsDiv.querySelector('.search-result-title');
+        if (!searchResultPlaceholder) return;
+        const neoapoValueCell = container.querySelector('.neoapo-value-cell');
+        if (!neoapoValueCell) return;
+
+        searchResultPlaceholder.textContent = nativeName || 'キャラクター名取得不可';
+        searchResultPlaceholder.style.display = 'inline-block';
+
+        const newSearchResultPlaceholder = searchResultPlaceholder.cloneNode(true);
+        searchResultPlaceholder.replaceWith(newSearchResultPlaceholder);
+
+        newSearchResultPlaceholder.addEventListener('click', function nameClickHandler() {
+            neoapoValueCell.innerHTML = '';
+            neoapoValueCell.textContent = nativeName || '-';
+
+            newSearchResultPlaceholder.style.display = 'none';
+            newSearchResultPlaceholder.textContent = '';
+
+            markAsRegistered(characterId, nativeName || 'キャラクター名取得不可');
+
+             const targetContainer = characterListContainer.querySelector(`.container[data-character-id="${characterId}"]`);
+             if (targetContainer) {
+                 targetContainer.classList.remove('is-unregistered', 'is-held');
+                 targetContainer.classList.add('is-registered');
+             }
+
+        }, { once: true });
+
+        button.disabled = true;
+    }
+
+    async function showCharacterDetails(characterId) {
+      characterListContainer.style.display = 'none';
+      characterDetailsContainer.style.display = 'block';
+      detailTitleElement.textContent = '読み込み中...';
+      detailContentElement.innerHTML = '<p class="loading">詳細データを読み込み中...</p>';
+      window.scrollTo(0, 0);
+
+      try {
+        const characterDetails = await fetchCharacterDetails(characterId);
+        if (characterDetails) {
+            displayCharacterDetails(characterDetails);
+        } else {
+             throw new Error(`ID ${characterId} のキャラクターが見つかりませんでした。`);
+        }
+      } catch (error) {
+        console.error(`詳細表示エラー (ID: ${characterId}):`, error);
+        detailTitleElement.textContent = 'エラー';
+        detailContentElement.innerHTML = `<p class="error">詳細データの取得中にエラーが発生しました: ${error.message}</p>`;
+      }
+    }
+
+    function showRegistrationDialog(event) {
+        const button = event.target;
+        if (button.disabled || button.classList.contains('registered')) {
+            return;
+        }
+        const characterId = button.dataset.characterId;
+        const characterName = button.dataset.characterName || 'このキャラクター';
+
+        currentCharacterIdForDialog = characterId;
+        currentCharacterNameForDialog = characterName;
+        dialogCharacterName.textContent = currentCharacterNameForDialog;
+
+        registrationDialog.style.display = 'flex';
+    }
+
+    function showHoldDialog(event) {
+        const button = event.target;
+        if (button.disabled || button.classList.contains('held')) {
+            return;
+        }
+        const characterId = button.dataset.characterId;
+        const characterName = button.dataset.characterName || 'このキャラクター';
+
+        currentCharacterIdForHold = characterId;
+        currentCharacterNameForHold = characterName;
+        holdDialogCharacterName.textContent = currentCharacterNameForHold;
+
+        holdDialog.style.display = 'flex';
+    }
+
+    function hideRegistrationDialog() {
+        registrationDialog.style.display = 'none';
+        currentCharacterIdForDialog = null;
+        currentCharacterNameForDialog = null;
+    }
+
+    function hideHoldDialog() {
+        holdDialog.style.display = 'none';
+        currentCharacterIdForHold = null;
+        currentCharacterNameForHold = null;
+    }
+
+    function handleRegistrationConfirm() {
+        if (currentCharacterIdForDialog && currentCharacterNameForDialog) {
+            markAsRegistered(currentCharacterIdForDialog, currentCharacterNameForDialog);
+
+             const targetContainer = characterListContainer.querySelector(`.container[data-character-id="${currentCharacterIdForDialog}"]`);
+             if (targetContainer) {
+                 targetContainer.classList.remove('is-unregistered', 'is-held');
+                 targetContainer.classList.add('is-registered');
+             }
+
+             console.log(`Simulating registration for character ID: ${currentCharacterIdForDialog} with name: ${currentCharacterNameForDialog}`);
+        } else {
+            console.warn("Cannot confirm registration: Missing character ID or name.");
+        }
+
+        hideRegistrationDialog();
+    }
+
+    function handleHoldConfirm() {
+        if (currentCharacterIdForHold && currentCharacterNameForHold) {
+            markAsHeld(currentCharacterIdForHold, currentCharacterNameForHold);
+
+             const targetContainer = characterListContainer.querySelector(`.container[data-character-id="${currentCharacterIdForHold}"]`);
+             if (targetContainer) {
+                 targetContainer.classList.remove('is-unregistered', 'is-registered');
+                 targetContainer.classList.add('is-held');
+             }
+
+             console.log(`Simulating hold for character ID: ${currentCharacterIdForHold} with name: ${currentCharacterNameForHold}`);
+        } else {
+            console.warn("Cannot confirm hold: Missing character ID or name.");
+        }
+
+        hideHoldDialog();
+    }
+
+    function goBackToList() {
+        characterDetailsContainer.style.display = 'none';
+        characterListContainer.style.display = 'flex';
+        detailTitleElement.textContent = '';
+        detailContentElement.innerHTML = '';
+    }
+
+     function handleFilterChange() {
+         const selectedValue = filterDropdown.value;
+         console.log(`Filter changed to: ${selectedValue}`);
+
+         const containers = characterListContainer.querySelectorAll('.container');
+         containers.forEach(container => {
+             const characterId = container.dataset.characterId;
+             const currentState = registrationState[characterId] || 'unregistered';
+
+             let show = false;
+             if (selectedValue === 'all') {
+                 show = true;
+             } else if (selectedValue === 'registered' && currentState === 'registered') {
+                 show = true;
+             } else if (selectedValue === 'unregistered' && currentState === 'unregistered') {
+                 show = true;
+             } else if (selectedValue === 'held' && currentState === 'held') {
+                 show = true;
+             }
+             container.style.display = show ? 'flex' : 'none';
+         });
+     }
+
+    // --- Initialization ---
+    function initializeEventListeners() {
+        backButton.addEventListener('click', goBackToList);
+        dialogConfirmButton.addEventListener('click', handleRegistrationConfirm);
+        dialogCancelButton.addEventListener('click', hideRegistrationDialog);
+        holdDialogConfirmButton.addEventListener('click', handleHoldConfirm);
+        holdDialogCancelButton.addEventListener('click', hideHoldDialog);
+        registrationDialog.addEventListener('click', (event) => {
+            if (event.target === registrationDialog) {
+                hideRegistrationDialog();
+            }
+        });
+        holdDialog.addEventListener('click', (event) => {
+            if (event.target === holdDialog) {
+                hideHoldDialog();
+            }
+        });
+         filterDropdown.addEventListener('change', handleFilterChange);
+    }
+
+    async function loadInitialData() {
+      characterListContainer.innerHTML = '<p class="loading">データを読み込み中...</p>';
+      try {
+        const characterList = await fetchLatestCharacters();
+        displayCharacterList(characterList);
+         handleFilterChange();
+      } catch (error) {
+        characterListContainer.innerHTML = `<p class="error">データの初期読み込みに失敗しました: ${error.message}</p>`;
+      }
+    }
+
+    // --- Run Application ---
+    initializeEventListeners();
+    loadInitialData();
+
+  </script>
+</body>
+</html>
