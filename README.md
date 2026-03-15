@@ -7,7 +7,7 @@ o3-mini,claudeを使用しています。
 [**index.html**](https://hhungry2.github.io/html-games/index.html)  
 
 公館名・地域クイズ
-[**mission_quiz_game.html**](https://hhungry2.github.io/html-games/mission_quiz_game.html)  
+[**mission_quiz_game.html**](ttps://hhungry2.github.io/html-games/mission_quiz_game.html)  
 
 NS-Shaft風ゲーム  
 [**endless-fall.html**](https://hhungry2.github.io/html-games/endless-fall.html)  
