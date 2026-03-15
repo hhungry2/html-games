@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>在外公館 地域当てクイズ</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f0f7ff;
+    --surface: #ffffff;
+    --surface2: #e8f2ff;
+    --border: #bfdbfe;
+    --text: #1e3a5f;
+    --text-muted: #6490c0;
+    --accent: #2563eb;
+    --accent2: #7c3aed;
+    --correct: #059669;
+    --wrong: #dc2626;
+    --warn: #d97706;
+    --radius: 12px;
+  }
+
+  body {
+    background: linear-gradient(135deg, #dbeafe 0%, #ede9fe 50%, #d1fae5 100%);
+    color: var(--text);
+    font-family: 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px 48px;
+  }
+
+  /* ── Header ── */
+  header {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+  header h1 {
+    font-size: clamp(20px, 5vw, 28px);
+    font-weight: 700;
+    letter-spacing: .03em;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 6px;
+  }
+  header p { font-size: 13px; color: var(--text-muted); }
+
+  /* ── Card ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px 24px;
+    width: 100%;
+    max-width: 560px;
+    box-shadow: 0 8px 32px rgba(37, 99, 235, 0.12);
+  }
+
+  /* ── Stats bar ── */
+  .stats {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    font-size: 13px;
+  }
+  .stat-item { text-align: center; }
+  .stat-label { color: var(--text-muted); font-size: 11px; margin-bottom: 2px; }
+  .stat-val { font-size: 20px; font-weight: 700; }
+  .stat-val.correct { color: var(--correct); }
+  .stat-val.wrong   { color: var(--wrong); }
+  .stat-val.streak  { color: var(--warn); }
+
+  /* ── Progress bar ── */
+  .progress-wrap {
+    height: 6px;
+    background: #bfdbfe;
+    border-radius: 99px;
+    margin-bottom: 24px;
+    overflow: hidden;
+  }
+  .progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 99px;
+    transition: width .4s ease;
+  }
+
+  /* ── Question ── */
+  .q-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .q-mission {
+    font-size: clamp(18px, 4vw, 24px);
+    font-weight: 700;
+    line-height: 1.4;
+    margin-bottom: 6px;
+    color: var(--text);
+  }
+  .q-type {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 10px;
+    border-radius: 99px;
+    font-weight: 600;
+    margin-bottom: 24px;
+  }
+  .q-type.大使館   { background: #dbeafe; color: #1d4ed8; }
+  .q-type.総領事館 { background: #d1fae5; color: #065f46; }
+  .q-type.窓口機関 { background: #fef3c7; color: #92400e; }
+
+  /* ── Options ── */
+  .options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .opt-btn {
+    padding: 14px 10px;
+    background: var(--surface2);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .15s;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .opt-btn:hover:not(:disabled) {
+    border-color: var(--accent);
+    background: #dbeafe;
+    transform: translateY(-1px);
+  }
+  .opt-btn:disabled { cursor: default; }
+  .opt-btn.correct-ans {
+    border-color: var(--correct);
+    background: #d1fae5;
+    color: var(--correct);
+  }
+  .opt-btn.wrong-ans {
+    border-color: var(--wrong);
+    background: #fee2e2;
+    color: var(--wrong);
+  }
+
+  /* ── Feedback ── */
+  .feedback {
+    min-height: 40px;
+    text-align: center;
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    transition: opacity .2s;
+  }
+  .feedback.correct { color: var(--correct); }
+  .feedback.wrong   { color: var(--wrong); }
+
+  /* ── Next button ── */
+  .next-btn {
+    width: 100%;
+    padding: 14px;
+    border-radius: 10px;
+    border: none;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all .15s;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #ffffff;
+    display: none;
+  }
+  .next-btn:hover { opacity: .9; transform: translateY(-1px); }
+  .next-btn.visible { display: block; }
+
+  /* ── Start / Result screen ── */
+  .screen {
+    text-align: center;
+    padding: 8px 0;
+  }
+  .screen h2 {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .screen p { color: var(--text-muted); font-size: 14px; line-height: 1.7; margin-bottom: 20px; }
+
+  .big-score {
+    font-size: 56px;
+    font-weight: 800;
+    line-height: 1;
+    margin: 16px 0 4px;
+  }
+  .big-score .denom { font-size: 20px; color: var(--text-muted); font-weight: 500; }
+
+  .rank {
+    font-size: 13px;
+    padding: 4px 14px;
+    border-radius: 99px;
+    display: inline-block;
+    margin-bottom: 20px;
+    font-weight: 600;
+  }
+
+  .start-btn, .restart-btn {
+    display: inline-block;
+    padding: 14px 36px;
+    border-radius: 10px;
+    border: none;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #ffffff;
+    transition: all .15s;
+  }
+  .start-btn:hover, .restart-btn:hover { opacity: .9; transform: translateY(-1px); }
+
+  .region-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+    margin-bottom: 24px;
+  }
+  .rtag {
+    padding: 4px 12px;
+    border-radius: 99px;
+    font-size: 12px;
+    font-weight: 600;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+
+  /* ── Result breakdown ── */
+  .breakdown {
+    margin: 16px 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    text-align: left;
+  }
+  .bd-item {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12px;
+  }
+  .bd-region { color: var(--text-muted); margin-bottom: 3px; }
+  .bd-score { font-size: 16px; font-weight: 700; }
+
+  /* ── Mode selector ── */
+  .mode-sel {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .mode-btn {
+    padding: 7px 18px;
+    border-radius: 99px;
+    border: 2px solid var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .mode-btn.active {
+    border-color: var(--accent);
+    background: #dbeafe;
+    color: var(--accent);
+  }
+
+  /* ── Count selector ── */
+  .count-sel {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  .count-btn {
+    padding: 6px 16px;
+    border-radius: 99px;
+    border: 2px solid var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .count-btn.active {
+    border-color: var(--accent2);
+    background: #ede9fe;
+    color: var(--accent2);
+  }
+
+  /* ── Streak badge ── */
+  .streak-badge {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: var(--warn);
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 6px 14px;
+    border-radius: 99px;
+    opacity: 0;
+    transform: translateY(-10px);
+    transition: all .3s;
+    pointer-events: none;
+    box-shadow: 0 4px 12px rgba(217,119,6,.4);
+  }
+  .streak-badge.show { opacity: 1; transform: translateY(0); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🌏 在外公館 地域当てクイズ</h1>
+  <p>公館名からどの地域か選んでみよう！</p>
+</header>
+
+<div class="card" id="main-card">
+  <!-- Start screen -->
+  <div class="screen" id="start-screen">
+    <h2>ゲーム開始</h2>
+    <p>日本の在外公館名を見て、<br>正しい地域を選んでください。</p>
+
+    <div class="region-tags" id="region-tags"></div>
+
+    <div style="margin-bottom:10px;font-size:12px;color:var(--text-muted)">出題モード</div>
+    <div class="mode-sel">
+      <button class="mode-btn active" data-mode="all">全公館</button>
+      <button class="mode-btn" data-mode="embassy">大使館のみ</button>
+      <button class="mode-btn" data-mode="consulate">総領事館のみ</button>
+    </div>
+
+    <div style="margin-bottom:10px;font-size:12px;color:var(--text-muted)">問題数</div>
+    <div class="count-sel">
+      <button class="count-btn" data-count="10">10問</button>
+      <button class="count-btn active" data-count="20">20問</button>
+      <button class="count-btn" data-count="30">30問</button>
+      <button class="count-btn" data-count="999">全問</button>
+    </div>
+
+    <button class="start-btn" id="start-btn">スタート！</button>
+  </div>
+
+  <!-- Quiz screen -->
+  <div id="quiz-screen" style="display:none">
+    <div class="stats">
+      <div class="stat-item">
+        <div class="stat-label">正解</div>
+        <div class="stat-val correct" id="s-correct">0</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">不正解</div>
+        <div class="stat-val wrong" id="s-wrong">0</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">問題</div>
+        <div class="stat-val" id="s-num" style="color:var(--accent)">1/20</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">連続正解</div>
+        <div class="stat-val streak" id="s-streak">0</div>
+      </div>
+    </div>
+
+    <div class="progress-wrap">
+      <div class="progress-bar" id="progress-bar" style="width:0%"></div>
+    </div>
+
+    <div class="q-label">この公館が属する地域は？</div>
+    <div class="q-mission" id="q-mission">—</div>
+    <span class="q-type" id="q-type"></span>
+
+    <div class="options" id="options"></div>
+    <div class="feedback" id="feedback"></div>
+    <button class="next-btn" id="next-btn">次の問題 →</button>
+  </div>
+
+  <!-- Result screen -->
+  <div class="screen" id="result-screen" style="display:none">
+    <h2>クイズ終了！</h2>
+    <div class="big-score">
+      <span id="r-score">0</span><span class="denom"> / <span id="r-total">20</span></span>
+    </div>
+    <div class="rank" id="r-rank"></div>
+    <p id="r-comment"></p>
+    <div class="breakdown" id="r-breakdown"></div>
+    <button class="restart-btn" id="restart-btn">もう一度遊ぶ</button>
+  </div>
+</div>
+
+<div class="streak-badge" id="streak-badge">🔥 連続正解！</div>
+
+<script>
+const data = {
+  "アジア": [
+    {name:"アフガニスタン大使館",type:"大使館"},{name:"インド大使館",type:"大使館"},
+    {name:"コルカタ総領事館",type:"総領事館"},{name:"チェンナイ総領事館",type:"総領事館"},
+    {name:"ベンガルール総領事館",type:"総領事館"},{name:"ムンバイ総領事館",type:"総領事館"},
+    {name:"インドネシア大使館",type:"大使館"},{name:"スラバヤ総領事館",type:"総領事館"},
+    {name:"デンパサール総領事館",type:"総領事館"},{name:"メダン総領事館",type:"総領事館"},
+    {name:"カンボジア大使館",type:"大使館"},{name:"韓国大使館",type:"大使館"},
+    {name:"釜山総領事館",type:"総領事館"},{name:"済州総領事館",type:"総領事館"},
+    {name:"中国大使館",type:"大使館"},{name:"上海総領事館",type:"総領事館"},
+    {name:"広州総領事館",type:"総領事館"},{name:"成都総領事館",type:"総領事館"},
+    {name:"沈陽総領事館",type:"総領事館"},{name:"重慶総領事館",type:"総領事館"},
+    {name:"スリランカ大使館",type:"大使館"},{name:"タイ大使館",type:"大使館"},
+    {name:"チェンマイ総領事館",type:"総領事館"},{name:"日本台湾交流協会台北事務所",type:"窓口機関"},
+    {name:"タジキスタン大使館",type:"大使館"},{name:"カザフスタン大使館",type:"大使館"},
+    {name:"ネパール大使館",type:"大使館"},{name:"パキスタン大使館",type:"大使館"},
+    {name:"カラチ総領事館",type:"総領事館"},{name:"バングラデシュ大使館",type:"大使館"},
+    {name:"フィリピン大使館",type:"大使館"},{name:"セブ総領事館",type:"総領事館"},
+    {name:"ダバオ総領事館",type:"総領事館"},{name:"ブータン大使館",type:"大使館"},
+    {name:"ブルネイ大使館",type:"大使館"},{name:"ベトナム大使館",type:"大使館"},
+    {name:"ホーチミン総領事館",type:"総領事館"},{name:"モルディブ大使館",type:"大使館"},
+    {name:"モンゴル大使館",type:"大使館"},{name:"ミャンマー大使館",type:"大使館"},
+    {name:"ラオス大使館",type:"大使館"},{name:"マレーシア大使館",type:"大使館"},
+    {name:"コタキナバル総領事館",type:"総領事館"},{name:"シンガポール大使館",type:"大使館"},
+    {name:"キルギス大使館",type:"大使館"},{name:"トルクメニスタン大使館",type:"大使館"},
+    {name:"ウズベキスタン大使館",type:"大使館"},
+  ],
+  "大洋州": [
+    {name:"オーストラリア大使館",type:"大使館"},{name:"シドニー総領事館",type:"総領事館"},
+    {name:"メルボルン総領事館",type:"総領事館"},{name:"ブリスベン総領事館",type:"総領事館"},
+    {name:"パース総領事館",type:"総領事館"},{name:"フィジー大使館",type:"大使館"},
+    {name:"キリバス大使館",type:"大使館"},{name:"サモア大使館",type:"大使館"},
+    {name:"ソロモン諸島大使館",type:"大使館"},{name:"ニュージーランド大使館",type:"大使館"},
+    {name:"オークランド総領事館",type:"総領事館"},{name:"パプアニューギニア大使館",type:"大使館"},
+    {name:"パラオ大使館",type:"大使館"},{name:"バヌアツ大使館",type:"大使館"},
+    {name:"マーシャル諸島大使館",type:"大使館"},{name:"ミクロネシア連邦大使館",type:"大使館"},
+    {name:"トンガ大使館",type:"大使館"},{name:"ツバル大使館",type:"大使館"},
+    {name:"ナウル大使館",type:"大使館"},
+  ],
+  "北米": [
+    {name:"アメリカ合衆国大使館",type:"大使館"},{name:"アトランタ総領事館",type:"総領事館"},
+    {name:"アンカレジ総領事館",type:"総領事館"},{name:"シカゴ総領事館",type:"総領事館"},
+    {name:"シアトル総領事館",type:"総領事館"},{name:"デトロイト総領事館",type:"総領事館"},
+    {name:"ニューヨーク総領事館",type:"総領事館"},{name:"ポートランド総領事館",type:"総領事館"},
+    {name:"ホノルル総領事館",type:"総領事館"},{name:"ボストン総領事館",type:"総領事館"},
+    {name:"ロサンゼルス総領事館",type:"総領事館"},{name:"サンフランシスコ総領事館",type:"総領事館"},
+    {name:"デンバー総領事館",type:"総領事館"},{name:"ナッシュビル総領事館",type:"総領事館"},
+    {name:"カナダ大使館",type:"大使館"},{name:"トロント総領事館",type:"総領事館"},
+    {name:"バンクーバー総領事館",type:"総領事館"},{name:"カルガリー総領事館",type:"総領事館"},
+  ],
+  "中南米": [
+    {name:"アルゼンチン大使館",type:"大使館"},{name:"アンティグア・バーブーダ大使館",type:"大使館"},
+    {name:"ウルグアイ大使館",type:"大使館"},{name:"エクアドル大使館",type:"大使館"},
+    {name:"エルサルバドル大使館",type:"大使館"},{name:"ガイアナ大使館",type:"大使館"},
+    {name:"グアテマラ大使館",type:"大使館"},{name:"グレナダ大使館",type:"大使館"},
+    {name:"コスタリカ大使館",type:"大使館"},{name:"コロンビア大使館",type:"大使館"},
+    {name:"ジャマイカ大使館",type:"大使館"},{name:"スリナム大使館",type:"大使館"},
+    {name:"セントクリストファー・ネーヴィス大使館",type:"大使館"},
+    {name:"セントビンセント・グレナディーン大使館",type:"大使館"},
+    {name:"セントルシア大使館",type:"大使館"},{name:"チリ大使館",type:"大使館"},
+    {name:"ドミニカ共和国大使館",type:"大使館"},{name:"ドミニカ国大使館",type:"大使館"},
+    {name:"トリニダード・トバゴ大使館",type:"大使館"},{name:"ニカラグア大使館",type:"大使館"},
+    {name:"ハイチ大使館",type:"大使館"},{name:"パナマ大使館",type:"大使館"},
+    {name:"パラグアイ大使館",type:"大使館"},{name:"バルバドス大使館",type:"大使館"},
+    {name:"ブラジル大使館",type:"大使館"},{name:"クリチバ総領事館",type:"総領事館"},
+    {name:"サンパウロ総領事館",type:"総領事館"},{name:"リオデジャネイロ総領事館",type:"総領事館"},
+    {name:"マナウス総領事館",type:"総領事館"},{name:"レシフェ総領事館",type:"総領事館"},
+    {name:"ベネズエラ大使館",type:"大使館"},{name:"ベリーズ大使館",type:"大使館"},
+    {name:"ペルー大使館",type:"大使館"},{name:"ボリビア大使館",type:"大使館"},
+    {name:"ホンジュラス大使館",type:"大使館"},{name:"メキシコ大使館",type:"大使館"},
+    {name:"グアダラハラ総領事館",type:"総領事館"},{name:"キューバ大使館",type:"大使館"},
+  ],
+  "欧州": [
+    {name:"アイスランド大使館",type:"大使館"},{name:"アイルランド大使館",type:"大使館"},
+    {name:"アゼルバイジャン大使館",type:"大使館"},{name:"アルバニア大使館",type:"大使館"},
+    {name:"アルメニア大使館",type:"大使館"},{name:"イタリア大使館",type:"大使館"},
+    {name:"ミラノ総領事館",type:"総領事館"},{name:"バチカン大使館",type:"大使館"},
+    {name:"ウクライナ大使館",type:"大使館"},{name:"英国大使館",type:"大使館"},
+    {name:"エジンバラ総領事館",type:"総領事館"},{name:"エストニア大使館",type:"大使館"},
+    {name:"オーストリア大使館",type:"大使館"},{name:"オランダ大使館",type:"大使館"},
+    {name:"北マケドニア大使館",type:"大使館"},{name:"キプロス大使館",type:"大使館"},
+    {name:"ギリシャ大使館",type:"大使館"},{name:"クロアチア大使館",type:"大使館"},
+    {name:"コソボ大使館",type:"大使館"},{name:"ジョージア大使館",type:"大使館"},
+    {name:"スイス大使館",type:"大使館"},{name:"スウェーデン大使館",type:"大使館"},
+    {name:"スペイン大使館",type:"大使館"},{name:"バルセロナ総領事館",type:"総領事館"},
+    {name:"スロバキア大使館",type:"大使館"},{name:"スロベニア大使館",type:"大使館"},
+    {name:"セルビア大使館",type:"大使館"},{name:"チェコ大使館",type:"大使館"},
+    {name:"デンマーク大使館",type:"大使館"},{name:"ドイツ大使館",type:"大使館"},
+    {name:"デュッセルドルフ総領事館",type:"総領事館"},{name:"ハンブルク総領事館",type:"総領事館"},
+    {name:"フランクフルト総領事館",type:"総領事館"},{name:"ミュンヘン総領事館",type:"総領事館"},
+    {name:"ノルウェー大使館",type:"大使館"},{name:"ハンガリー大使館",type:"大使館"},
+    {name:"フィンランド大使館",type:"大使館"},{name:"フランス大使館",type:"大使館"},
+    {name:"ストラスブール総領事館",type:"総領事館"},{name:"マルセイユ総領事館",type:"総領事館"},
+    {name:"ブルガリア大使館",type:"大使館"},{name:"ベラルーシ大使館",type:"大使館"},
+    {name:"ベルギー大使館",type:"大使館"},{name:"ポーランド大使館",type:"大使館"},
+    {name:"ボスニア・ヘルツェゴビナ大使館",type:"大使館"},{name:"ポルトガル大使館",type:"大使館"},
+    {name:"マルタ大使館",type:"大使館"},{name:"モルドバ大使館",type:"大使館"},
+    {name:"ラトビア大使館",type:"大使館"},{name:"リトアニア大使館",type:"大使館"},
+    {name:"ルーマニア大使館",type:"大使館"},{name:"ルクセンブルク大使館",type:"大使館"},
+    {name:"ロシア大使館",type:"大使館"},{name:"エカテリンブルク総領事館",type:"総領事館"},
+  ],
+  "中東": [
+    {name:"アラブ首長国連邦大使館",type:"大使館"},{name:"ドバイ総領事館",type:"総領事館"},
+    {name:"イエメン大使館",type:"大使館"},{name:"イスラエル大使館",type:"大使館"},
+    {name:"イラク大使館",type:"大使館"},{name:"アルビル総領事館",type:"総領事館"},
+    {name:"イラン大使館",type:"大使館"},{name:"オマーン大使館",type:"大使館"},
+    {name:"カタール大使館",type:"大使館"},{name:"クウェート大使館",type:"大使館"},
+    {name:"サウジアラビア大使館",type:"大使館"},{name:"ジッダ総領事館",type:"総領事館"},
+    {name:"シリア大使館",type:"大使館"},{name:"バーレーン大使館",type:"大使館"},
+    {name:"ヨルダン大使館",type:"大使館"},{name:"レバノン大使館",type:"大使館"},
+    {name:"トルコ大使館",type:"大使館"},{name:"イスタンブール総領事館",type:"総領事館"},
+  ],
+  "アフリカ": [
+    {name:"アルジェリア大使館",type:"大使館"},{name:"アンゴラ大使館",type:"大使館"},
+    {name:"ウガンダ大使館",type:"大使館"},{name:"エジプト大使館",type:"大使館"},
+    {name:"エチオピア大使館",type:"大使館"},{name:"エリトリア大使館",type:"大使館"},
+    {name:"ガーナ大使館",type:"大使館"},{name:"ガボン大使館",type:"大使館"},
+    {name:"カメルーン大使館",type:"大使館"},{name:"ギニア大使館",type:"大使館"},
+    {name:"ケニア大使館",type:"大使館"},{name:"コートジボワール大使館",type:"大使館"},
+    {name:"コンゴ民主共和国大使館",type:"大使館"},{name:"ザンビア大使館",type:"大使館"},
+    {name:"ジブチ大使館",type:"大使館"},{name:"ジンバブエ大使館",type:"大使館"},
+    {name:"スーダン大使館",type:"大使館"},{name:"セーシェル大使館",type:"大使館"},
+    {name:"セネガル大使館",type:"大使館"},{name:"タンザニア大使館",type:"大使館"},
+    {name:"チュニジア大使館",type:"大使館"},{name:"ナイジェリア大使館",type:"大使館"},
+    {name:"ラゴス総領事館",type:"総領事館"},{name:"ナミビア大使館",type:"大使館"},
+    {name:"ブルキナファソ大使館",type:"大使館"},{name:"ベナン大使館",type:"大使館"},
+    {name:"ボツワナ大使館",type:"大使館"},{name:"マダガスカル大使館",type:"大使館"},
+    {name:"マラウイ大使館",type:"大使館"},{name:"マリ大使館",type:"大使館"},
+    {name:"南アフリカ共和国大使館",type:"大使館"},{name:"ケープタウン総領事館",type:"総領事館"},
+    {name:"南スーダン大使館",type:"大使館"},{name:"モーリシャス大使館",type:"大使館"},
+    {name:"モーリタニア大使館",type:"大使館"},{name:"モザンビーク大使館",type:"大使館"},
+    {name:"モロッコ大使館",type:"大使館"},{name:"リビア大使館",type:"大使館"},
+    {name:"ルワンダ大使館",type:"大使館"},
+  ]
+};
+
+const REGIONS = Object.keys(data);
+
+// Build flat array with region
+let allItems = [];
+REGIONS.forEach(r => data[r].forEach(m => allItems.push({...m, region: r})));
+
+// Region tags on start screen
+const tagsCont = document.getElementById('region-tags');
+REGIONS.forEach(r => {
+  const t = document.createElement('span');
+  t.className = 'rtag';
+  t.textContent = `${r} (${data[r].length})`;
+  tagsCont.appendChild(t);
+});
+
+// State
+let pool = [], questions = [], qIdx = 0;
+let correctCount = 0, wrongCount = 0, streak = 0, maxStreak = 0;
+let regionStats = {}; // region -> {correct, total}
+let answered = false;
+let selectedMode = 'all', selectedCount = 20;
+
+// Mode buttons
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedMode = btn.dataset.mode;
+  });
+});
+
+// Count buttons
+document.querySelectorAll('.count-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.count-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedCount = parseInt(btn.dataset.count);
+  });
+});
+
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('next-btn').addEventListener('click', nextQuestion);
+document.getElementById('restart-btn').addEventListener('click', () => {
+  document.getElementById('result-screen').style.display = 'none';
+  document.getElementById('start-screen').style.display = 'block';
+});
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function startGame() {
+  // Filter by mode
+  let filtered = allItems;
+  if (selectedMode === 'embassy')   filtered = allItems.filter(m => m.type === '大使館');
+  if (selectedMode === 'consulate') filtered = allItems.filter(m => m.type === '総領事館');
+
+  pool = shuffle(filtered);
+  const cnt = selectedCount === 999 ? pool.length : Math.min(selectedCount, pool.length);
+  questions = pool.slice(0, cnt);
+
+  qIdx = 0; correctCount = 0; wrongCount = 0; streak = 0; maxStreak = 0;
+  regionStats = {};
+  REGIONS.forEach(r => regionStats[r] = {correct: 0, total: 0});
+
+  document.getElementById('start-screen').style.display = 'none';
+  document.getElementById('result-screen').style.display = 'none';
+  document.getElementById('quiz-screen').style.display = 'block';
+  showQuestion();
+}
+
+function showQuestion() {
+  answered = false;
+  const q = questions[qIdx];
+  const total = questions.length;
+
+  document.getElementById('q-mission').textContent = q.name;
+  const typeEl = document.getElementById('q-type');
+  typeEl.textContent = q.type;
+  typeEl.className = 'q-type ' + q.type;
+
+  document.getElementById('s-correct').textContent = correctCount;
+  document.getElementById('s-wrong').textContent = wrongCount;
+  document.getElementById('s-num').textContent = `${qIdx + 1}/${total}`;
+  document.getElementById('s-streak').textContent = streak;
+  document.getElementById('progress-bar').style.width = `${(qIdx / total) * 100}%`;
+  document.getElementById('feedback').textContent = '';
+  document.getElementById('feedback').className = 'feedback';
+  document.getElementById('next-btn').classList.remove('visible');
+
+  // Build options: correct region + 3 random wrong
+  const correct = q.region;
+  const others = shuffle(REGIONS.filter(r => r !== correct));
+  const opts = shuffle([correct, ...others.slice(0, 3)]);
+
+  const optsCont = document.getElementById('options');
+  optsCont.innerHTML = '';
+  opts.forEach(r => {
+    const btn = document.createElement('button');
+    btn.className = 'opt-btn';
+    btn.textContent = r;
+    btn.addEventListener('click', () => selectAnswer(r, correct));
+    optsCont.appendChild(btn);
+  });
+}
+
+function selectAnswer(chosen, correct) {
+  if (answered) return;
+  answered = true;
+
+  const q = questions[qIdx];
+  regionStats[correct].total++;
+
+  const optBtns = document.querySelectorAll('.opt-btn');
+  optBtns.forEach(btn => {
+    btn.disabled = true;
+    if (btn.textContent === correct) btn.classList.add('correct-ans');
+    if (btn.textContent === chosen && chosen !== correct) btn.classList.add('wrong-ans');
+  });
+
+  const fb = document.getElementById('feedback');
+  if (chosen === correct) {
+    correctCount++;
+    streak++;
+    maxStreak = Math.max(maxStreak, streak);
+    regionStats[correct].correct++;
+    fb.textContent = streak >= 3 ? `🔥 正解！ ${streak}連続！` : '✅ 正解！';
+    fb.className = 'feedback correct';
+    if (streak >= 3) showStreakBadge(streak);
+  } else {
+    wrongCount++;
+    streak = 0;
+    fb.textContent = `❌ 不正解… 正解は「${correct}」でした`;
+    fb.className = 'feedback wrong';
+  }
+
+  document.getElementById('s-correct').textContent = correctCount;
+  document.getElementById('s-wrong').textContent = wrongCount;
+  document.getElementById('s-streak').textContent = streak;
+  document.getElementById('next-btn').classList.add('visible');
+}
+
+function nextQuestion() {
+  qIdx++;
+  if (qIdx >= questions.length) {
+    showResult();
+  } else {
+    showQuestion();
+  }
+}
+
+function showResult() {
+  document.getElementById('quiz-screen').style.display = 'none';
+  document.getElementById('result-screen').style.display = 'block';
+
+  const total = questions.length;
+  const pct = Math.round((correctCount / total) * 100);
+
+  document.getElementById('r-score').textContent = correctCount;
+  document.getElementById('r-total').textContent = total;
+
+  const rankEl = document.getElementById('r-rank');
+  let rank, comment;
+  if (pct === 100)      { rank = '🏆 外務省レベル！'; rankEl.style.cssText = 'background:#1f3d2a;color:#34d399;'; comment = '完璧です！在外公館を完全に把握していますね。'; }
+  else if (pct >= 80)   { rank = '🥇 外交官候補！'; rankEl.style.cssText = 'background:#3d3010;color:#fbbf24;'; comment = `素晴らしい！最高連続正解は ${maxStreak} 問でした。`; }
+  else if (pct >= 60)   { rank = '🥈 地理マスター'; rankEl.style.cssText = 'background:#1e2c4f;color:#93c5fd;'; comment = `なかなか良いです！最高連続正解は ${maxStreak} 問でした。`; }
+  else if (pct >= 40)   { rank = '🥉 地理通'; rankEl.style.cssText = 'background:#2a1f3d;color:#c4b5fd;'; comment = '半分以上正解できました。もう一度挑戦してみましょう！'; }
+  else                  { rank = '📚 要勉強'; rankEl.style.cssText = 'background:#2e1a1a;color:#fca5a5;'; comment = '繰り返し挑戦して覚えましょう！'; }
+
+  rankEl.textContent = rank;
+  document.getElementById('r-comment').textContent = comment;
+
+  // Breakdown by region
+  const bd = document.getElementById('r-breakdown');
+  bd.innerHTML = '';
+  REGIONS.forEach(r => {
+    const s = regionStats[r];
+    if (s.total === 0) return;
+    const div = document.createElement('div');
+    div.className = 'bd-item';
+    const p = Math.round((s.correct / s.total) * 100);
+    const col = p >= 80 ? 'var(--correct)' : p >= 50 ? 'var(--warn)' : 'var(--wrong)';
+    div.innerHTML = `<div class="bd-region">${r}</div><div class="bd-score" style="color:${col}">${s.correct}/${s.total} <span style="font-size:11px;color:var(--text-muted)">(${p}%)</span></div>`;
+    bd.appendChild(div);
+  });
+}
+
+function showStreakBadge(n) {
+  const badge = document.getElementById('streak-badge');
+  badge.textContent = `🔥 ${n}連続正解！`;
+  badge.classList.add('show');
+  setTimeout(() => badge.classList.remove('show'), 2000);
+}
+</script>
+</body>
+</html>
