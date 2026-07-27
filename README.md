@@ -6,6 +6,9 @@ o3-mini,claudeを使用しています。
 【ゲーム】  
 [**index.html**](https://hhungry2.github.io/html-games/index.html)  
 
+スーパーマリオ風ゲーム  
+[**mario.html**](https://hhungry2.github.io/html-games/mario.html)  
+
 公館名・地域クイズ
 [**mission_quiz_game.html**](ttps://hhungry2.github.io/html-games/mission_quiz_game.html)  
 
