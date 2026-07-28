@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <title>SUPER CLONE BROS. DX</title>
 <style>
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent;
+      -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   html, body {
     margin: 0; padding: 0; height: 100%;
     background: #0d0d16; color: #fff;
@@ -25,31 +26,62 @@
   }
   #hint { margin-top: 10px; font-size: 12px; color: #8a8aa0; text-align: center; line-height: 1.7; padding: 0 8px; }
   #hint b { color: #cfcfe4; }
-  #pad { display: none; margin-top: 10px; width: 100%; max-width: 600px; justify-content: space-between; padding: 0 14px; }
-  #pad .side { display: flex; gap: 12px; align-items: center; }
+  #pad { display: none; }
   #pad button {
     width: 62px; height: 62px; border-radius: 50%;
     border: 2px solid #4a4a60; background: #23233a; color: #fff;
     font-size: 19px; font-family: inherit; font-weight: bold;
+    touch-action: none;
   }
-  #pad button:active { background: #3b3b60; }
-  @media (pointer: coarse) { #pad { display: flex; } #hint { display: none; } }
+  #pad button.on, #pad button:active { background: #4a4a80; border-color: #8a8ad0; }
+
+  /* --- スマホ・タブレット（タッチ操作） --- */
+  @media (pointer: coarse) {
+    body { display: block; }
+    #wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+    canvas { max-width: 100vw; max-height: 100vh; border: 0; border-radius: 0; }
+    #hint { display: none; }
+    /* 画面いっぱいに敷いた透明レイヤーの上にボタンを置く（ボタン以外はタップを通す） */
+    #pad { display: block; position: fixed; inset: 0; pointer-events: none; }
+    #pad .grp { position: fixed; display: flex; gap: 14px; align-items: flex-end; pointer-events: auto; }
+    #pad .l { left: max(10px, env(safe-area-inset-left)); bottom: max(10px, env(safe-area-inset-bottom)); }
+    #pad .r { right: max(10px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom)); }
+    #pad .sys { top: max(8px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right)); gap: 8px; }
+    #pad button { width: 72px; height: 72px; font-size: 22px; opacity: .8; }
+    #pad .jump { width: 86px; height: 86px; margin-bottom: 16px; }
+    /* HUDに重なるので、システム系は小さく薄く */
+    #pad .sys { gap: 6px; }
+    #pad .sys button { width: auto; height: 30px; padding: 0 10px; border-radius: 15px; font-size: 11px; opacity: .5; }
+    #pad .sys button.on { opacity: .9; }
+  }
+  /* 縦持ちのときだけ出る「横向きにしてね」の案内 */
+  #rot { display: none; }
+  @media (pointer: coarse) and (orientation: portrait) {
+    #rot { display: block; position: fixed; top: 50%; left: 0; right: 0; transform: translateY(-50%);
+           text-align: center; font-size: 15px; color: #cfcfe4; background: rgba(13,13,22,.86);
+           padding: 18px 10px; z-index: 5; pointer-events: none; }
+  }
 </style>
 </head>
 <body>
 <div id="wrap"><canvas id="game" width="800" height="480"></canvas></div>
 <div id="hint">
-  <b>← →</b> 移動 &nbsp;|&nbsp; <b>SPACE / ↑</b> ジャンプ・泳ぐ &nbsp;|&nbsp; <b>SHIFT</b> ダッシュ・ファイア &nbsp;|&nbsp; <b>↓</b> しゃがみ・土管<br>
+  <b>← →</b> 移動 &nbsp;|&nbsp; <b>SPACE / ↑</b> ジャンプ・泳ぐ &nbsp;|&nbsp; <b>SHIFT</b> ダッシュ・ファイア &nbsp;|&nbsp; <b>↓</b> しゃがみ・土管・薄い台から降りる &nbsp;|&nbsp; <b>↓+ジャンプ</b> しゃがみジャンプ<br>
   <b>ENTER</b> 決定 &nbsp;|&nbsp; <b>P</b> ポーズ &nbsp;|&nbsp; <b>R</b> やり直し &nbsp;|&nbsp; <b>M</b> BGM &nbsp;|&nbsp; <b>ESC</b> マップへ
 </div>
 <div id="pad">
-  <div class="side">
+  <div class="grp l">
     <button data-k="left">◀</button><button data-k="down">▼</button><button data-k="right">▶</button>
   </div>
-  <div class="side">
-    <button data-k="run">B</button><button data-k="jump">A</button>
+  <div class="grp r">
+    <button data-k="run">B</button><button data-k="jump" class="jump">A</button>
+  </div>
+  <div class="grp sys">
+    <button data-k="start">START</button><button data-k="pause">II</button>
+    <button data-k="restart">R</button><button data-k="back">MAP</button><button data-k="mute">♪</button>
   </div>
 </div>
+<div id="rot">スマホは横向きにすると大きく遊べます</div>
 
 <script>
 (() => {
@@ -77,12 +109,45 @@ const KEYMAP = {
 addEventListener('keydown', e => { const k = KEYMAP[e.code]; if (k) { e.preventDefault(); keys[k] = true; } });
 addEventListener('keyup',   e => { const k = KEYMAP[e.code]; if (k) { e.preventDefault(); keys[k] = false; } });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
-document.querySelectorAll('#pad button').forEach(b => {
+/* --- タッチ操作 ---
+   指ごとに「今どのボタンの上にあるか」を毎回引き直すので、
+   押したままスライドしてボタンを移れる・複数同時押しもできる */
+const padBtns = [...document.querySelectorAll('#pad button')];
+const PAD_KEYS = [...new Set(padBtns.map(b => b.dataset.k))];
+let padTapStart = false;         // ボタン以外を触ったとき（タイトル等の決定用）
+function btnAt(x, y) {
+  for (const b of padBtns) {
+    const r = b.getBoundingClientRect();
+    if (r.width && x >= r.left - 6 && x <= r.right + 6 && y >= r.top - 6 && y <= r.bottom + 6) return b;
+  }
+  return null;
+}
+function applyTouches(e) {
+  if (e.cancelable) e.preventDefault();
+  ac();                                   // 最初のタッチで音を起こす（iOS対策）
+  const on = new Set();
+  let onCanvas = false;
+  for (const t of e.touches) {
+    const b = btnAt(t.clientX, t.clientY);
+    if (b) on.add(b.dataset.k); else onCanvas = true;
+  }
+  for (const k of PAD_KEYS) keys[k] = on.has(k);
+  for (const b of padBtns) b.classList.toggle('on', on.has(b.dataset.k));
+  /* 画面（ボタン以外）のタップは、プレイ中以外なら決定として扱う */
+  padTapStart = onCanvas && G.state !== 'play';
+  if (padTapStart) keys.start = true;
+  else if (!on.has('start')) keys.start = false;
+}
+for (const ev of ['touchstart', 'touchmove', 'touchend', 'touchcancel'])
+  document.addEventListener(ev, applyTouches, { passive: false });
+/* マウスでも一応押せるように（タッチ端末では touch 側が処理する） */
+padBtns.forEach(b => {
   const k = b.dataset.k;
-  const on = e => { e.preventDefault(); keys[k] = true; }, off = e => { e.preventDefault(); keys[k] = false; };
-  b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off);
-  b.addEventListener('pointerleave', off); b.addEventListener('pointercancel', off);
+  const set = v => e => { if (e.pointerType === 'touch') return; e.preventDefault(); keys[k] = v; };
+  b.addEventListener('pointerdown', set(true));  b.addEventListener('pointerup', set(false));
+  b.addEventListener('pointerleave', set(false)); b.addEventListener('pointercancel', set(false));
 });
+addEventListener('contextmenu', e => { if (e.target.closest('#pad') || e.target.id === 'game') e.preventDefault(); });
 const hit = k => keys[k] && !prev[k];
 
 /* ============================================================================
@@ -163,6 +228,22 @@ const SFX = {
   die:   () => { tone(392, 0.15, 'square', 0.07, 330); tone(294, 0.5, 'square', 0.07, 110, 0.18); },
   boom:  () => { noise(0.5, 0.09); tone(90, 0.5, 'sawtooth', 0.07, 40); },
   firework:()=> { tone(600, 0.22, 'sine', 0.025, 1600); noise(0.3, 0.06); tone(120, 0.3, 'sawtooth', 0.05, 45, 0.02); },
+  /* ヨッシーの鳴き声「よっしー！」。BGMを止めて前に出すぶん、太く大きく鳴らす */
+  yoshiCry: () => {
+    /* よ */
+    tone(880, 0.22, 'square', 0.14, 1245);
+    tone(440, 0.22, 'triangle', 0.10, 622);
+    /* っ */
+    tone(1245, 0.14, 'square', 0.12, 988, 0.22);
+    /* しー↑ ── しゃくり上げてから long tone で伸ばす */
+    tone(740, 0.52, 'square', 0.15, 1568, 0.38);
+    tone(370, 0.52, 'triangle', 0.10, 784, 0.38);
+    tone(1112, 0.46, 'sawtooth', 0.05, 1480, 0.40);
+    noise(0.05, 0.05);
+    return 0.90;
+  },
+  gulp:  () => { tone(300, 0.10, 'sine', 0.06, 120); tone(150, 0.14, 'triangle', 0.05, 70, 0.07); },
+  slurp: () => tone(520, 0.12, 'sawtooth', 0.04, 240),
   select:() => tone(660, 0.06, 'square', 0.04),
   enter: () => [523,784,1047].forEach((f,i) => tone(f, 0.1, 'square', 0.05, null, i*0.06)),
   gameover: () => {
@@ -227,7 +308,9 @@ const BGM = {
             bass: [45,45,52,45, 45,45,52,45, 43,43,50,43, 43,43,50,43],
             lead: [81,85,88,85, 81,85,88,92, 79,83,86,83, 79,83,86,90] }
 };
-let bgmKey = 'over', bgmStep = 0, bgmT = 0;
+let bgmKey = 'over', bgmStep = 0, bgmT = 0, bgmHush = 0;
+/* 効果音を聴かせたい間だけBGMを黙らせる（鳴き声などの間はステップを進めない） */
+function hushBGM(t) { bgmHush = Math.max(bgmHush, t); }
 /* Cメジャーで2音下（3度下のハモリ） */
 const CMAJ = [0,2,4,5,7,9,11];
 function thirdBelow(n) {
@@ -239,6 +322,7 @@ function thirdBelow(n) {
   return oct*12 + CMAJ[idx];
 }
 function updateBGM(dt) {
+  if (bgmHush > 0) { bgmHush -= dt; return; }        // 鳴き声中はインターバルごと停止
   if (muted || G.state !== 'play') return;
   const b = BGM[bgmKey]; if (!b) return;
   const rush = (!lvl.room && G.time > 0 && G.time <= 100) ? 1.35 : 1;   // 残り時間が少ないと速くなる
@@ -793,7 +877,7 @@ function makePlayer(power) {
     inv: 0, star: 0, anim: 0, dead: false, growT: 0, crouch: false, fireT: 0, combo: 0,
     warpT: 0, skid: 0, dust: 0, squash: 0, land: 0, throwT: 0, swimT: 0, dropT: 0,
     climb: null, warpUp: false, entered: false,
-    yoshi: false, tongue: 0, flutterT: 0, yanim: 0, carry: null
+    yoshi: false, tongue: 0, tongueGrab: null, flutterT: 0, yanim: 0, carry: null, cjump: false, low: false, chew: 0
   };
 }
 
@@ -853,6 +937,13 @@ function dust(x, y, n, c) {
     x, y, vx: (Math.random()-0.5)*140, vy: -40 - Math.random()*90,
     r: 4 + Math.random()*4, t: 0.35 + Math.random()*0.2, rot: 0, c: c || 'rgba(255,255,255,.75)', soft: true });
 }
+/* 羽つきを踏んだときに、羽だけ左右へ飛ばす */
+function wingsOff(e) {
+  const cx = e.x + e.w/2, cy = e.y + 8;
+  for (const s of [-1, 1]) particles.push({
+    x: cx + s*10, y: cy, vx: s*150, vy: -210, r: 7, t: 0.55, rot: 0, c: '#f8f8f8' });
+  dust(cx, cy + 6, 3, 'rgba(255,255,255,.8)');
+}
 function smoke(x, y) {
   for (let i = 0; i < 8; i++) particles.push({
     x, y, vx: (Math.random()-0.5)*180, vy: -60 - Math.random()*140,
@@ -870,12 +961,23 @@ function bumpCoinAbove(cx, cy) {
     particles.push({ x: cx*TILE+16, y: ay*TILE, vx:0, vy:-420, r:8, t:0.55, coin:true, rot:0 });
   }
 }
+/* パワーアップ系の中身は、叩いたときのマリオの状態で変わる。
+   ちび→キノコ／スーパー→ファイア／ファイア→ヨッシー／ヨッシー騎乗中→スター */
+const POWER_ITEMS = { mush:1, flower:1, yoshi:1, star:1 };
+function stateItem(kind) {
+  if (!POWER_ITEMS[kind]) return kind;      // コイン・つた・1UPはそのまま
+  const p = player;
+  if (p.yoshi)        return 'star';
+  if (p.power >= 2)   return 'yoshi';
+  if (p.power === 1)  return 'flower';
+  return 'mush';
+}
 /* ブロックを叩く */
 function bumpTile(cx, cy) {
   const t = tileAt(cx, cy);
   bumpCoinAbove(cx, cy);
   if (t === '?') {
-    const key = cx + ',' + cy, kind = lvl.items[key] || 'coin';
+    const key = cx + ',' + cy, kind = stateItem(lvl.items[key] || 'coin');
     lvl.grid[cy][cx] = 'X';
     bumps.push({ cx, cy, t: 0.22 });
     if (kind === 'coin') {
@@ -904,8 +1006,7 @@ function bumpTile(cx, cy) {
       addPop(cx*TILE, cy*TILE - 14, 'YOSHI!', '#7cf87c');
       SFX.power();
     } else {
-      let k = kind;
-      if (k === 'mush' && player.power > 0) k = 'flower';
+      const k = kind;
       // ブロックから完全にせり上がってから右へ転がり出す
       const spd = k === 'star' ? 90 : 115;
       items.push({ type: k, x: cx*TILE+4, y: cy*TILE, w:24, h:24,
@@ -925,6 +1026,25 @@ function bumpTile(cx, cy) {
     }
   } else if (t === '#' || t === 'X' || t === '~') SFX.bump();
 }
+/* 蹴った甲羅が横から壁にぶつかったとき。
+   レンガは壊して突き抜け、ハテナは横叩きで発動させる（発動後は硬いので跳ね返る） */
+function shellSmash(e) {
+  const cx = Math.floor((e.kick > 0 ? e.x + e.w + 2 : e.x - 2)/TILE);
+  const y0 = Math.floor((e.y + 2)/TILE), y1 = Math.floor((e.y + e.h - 3)/TILE);
+  let broke = false;
+  for (let cy = y0; cy <= y1; cy++) {
+    const t = tileAt(cx, cy);
+    if (t === 'B') {
+      lvl.grid[cy][cx] = '.';
+      burst(cx, cy, lvl.theme.brick);
+      addScore(50); SFX.brick(); G.shake = 0.12;
+      broke = true;
+    } else if (t === '?') {
+      bumpTile(cx, cy);
+    }
+  }
+  return broke;
+}
 
 /* ============================================================================
    8. プレイヤー
@@ -933,22 +1053,50 @@ function bumpTile(cx, cy) {
    乗っている間は当たり判定を 52px（2タイルの隙間は通れる高さ）に固定し、
    舌で敵を食べる・ふんばりジャンプ・ダメージを1回肩代わりする */
 const YOSHI_H = 52;
-const TONGUE_MIN = 12, TONGUE_LEN = 69;   // 伸びきると 81px（元の1.5倍）
+const TONGUE_T = 0.36;                     // 舌を出しきって戻すまでの時間
+const TONGUE_MIN = 12, TONGUE_LEN = 96;    // 伸びきると 108px
+/* --- しゃがみジャンプ ---
+   飛んでいる間だけ当たり判定をちび状態の高さに縮める。
+   着地して ↓ を離したら、頭上に余裕があるところで元に戻す */
+function boxSolid(x, y, w, h) {
+  const x0 = Math.floor(x/TILE), x1 = Math.floor((x + w - 1)/TILE);
+  const y0 = Math.floor(y/TILE), y1 = Math.floor((y + h - 1)/TILE);
+  for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) if (solidAt(cx, cy)) return true;
+  return false;
+}
+/* しゃがみ中（しゃがみジャンプ中も）は、当たり判定の高さをちびマリオと同じ 28px にする。
+   これで大砲の弾などをしゃがんでやり過ごせる。頭上がふさがっているうちは縮んだまま */
+function updateLowBox() {
+  const p = player;
+  const want = p.power > 0 && !p.yoshi && (p.crouch || p.cjump);
+  if (want) {
+    if (!p.low) { p.y += p.h - 28; p.h = 28; p.low = true; }
+  } else if (p.low) {
+    if (p.power === 0 || p.yoshi) { p.low = false; return; }
+    if (boxSolid(p.x + 1, p.y - 24, p.w - 2, 24)) return;
+    p.y -= 24; p.h = 52; p.low = false;
+  }
+}
 function growBody() {   // ちび→スーパー。ヨッシーに乗っている間は高さを変えない
   const p = player;
   if (p.yoshi) return;
-  p.h = 52; p.y -= 24;
+  p.cjump = false; p.low = false;
+  p.y -= 52 - p.h; p.h = 52;
 }
 function mountYoshi() {
   const p = player;
+  p.cjump = false; p.low = false;
   p.y += p.h - YOSHI_H; p.h = YOSHI_H;
-  p.yoshi = true; p.tongue = 0; p.flutterT = 0.4; p.yanim = 0;
+  p.yoshi = true; p.tongue = 0; p.tongueGrab = null; p.flutterT = 0.4; p.yanim = 0;
   addPop(p.x, p.y - 16, 'YOSHI!', '#7cf87c');
-  SFX.grow(); freeze(0.05);
+  SFX.yoshiCry();
+  hushBGM(1.2);              // 鳴き声を聴かせる間、BGMのインターバルを1.2秒止める
+  freeze(0.05);
 }
 function dismountYoshi(flee) {
   const p = player;
   if (!p.yoshi) return;
+  releaseTongue();
   p.yoshi = false; p.tongue = 0;
   const nh = p.power > 0 ? 52 : 28;
   p.y += p.h - nh; p.h = nh;
@@ -958,23 +1106,72 @@ function dismountYoshi(flee) {
     dust(p.x + p.w/2, p.y + p.h, 5, 'rgba(140,240,150,.8)');
   }
 }
-/* 舌。伸びている間に触れた敵を食べる */
+/* 舌の伸び具合（0→1→0）と先端のX座標 */
+const tongueReach = () => TONGUE_MIN + (1 - Math.abs(player.tongue/TONGUE_T - 0.5)*2) * TONGUE_LEN;
+const tongueTipX  = r => player.face > 0 ? player.x + player.w - 4 + r : player.x + 4 - r;
+/* 捕まえた敵を離す（降りる・やられたとき） */
+function releaseTongue() {
+  const p = player;
+  if (!p.tongueGrab) return;
+  p.tongueGrab.grabbed = false;
+  p.tongueGrab = null;
+}
+/* 吸い込みきって飲み込む */
+function swallowGrabbed() {
+  const p = player, e = p.tongueGrab;
+  p.tongueGrab = null;
+  if (!e || e.remove) return;
+  e.grabbed = false; e.remove = true;
+  addScore(200, p.x + p.w/2, p.y);
+  /* 砕けたように見えないよう、飛び散る破片は出さずに口元で小さく吸い込む */
+  dust(p.x + (p.face > 0 ? p.w : 0), p.y + 22, 2, 'rgba(255,255,255,.6)');
+  p.chew = 0.45;                       // 口をもぐもぐさせる
+  SFX.gulp();
+}
+/* 舌で捕まえられる敵か */
+function canEat(e) {
+  if (!e || e.dead || e.remove || e.grabbed || e.type === 'boss') return false;
+  if (e.type === 'piranha' && e.out <= 0.2) return false;
+  return true;
+}
+/* 敵を舌に吸い付ける。以降 updateTongue が位置を持つので接触ダメージは起きない */
+function grabWithTongue(e) {
+  const p = player;
+  if (!canEat(e)) return false;
+  if (e === p.carry) { p.carry = null; e.carried = false; }
+  e.grabbed = true; e.vx = 0; e.vy = 0;
+  p.tongueGrab = e;
+  /* 今の舌の長さのまま引き戻しに移る。
+     一律に伸びきった長さへ入れ替えると、近くの敵が一度前へ飛び出して見えてしまう */
+  const t = clamp((tongueReach() - TONGUE_MIN) / TONGUE_LEN, 0, 1);
+  p.tongue = Math.max(0.06, Math.min(p.tongue, t*TONGUE_T/2));   // 密着していても必ず飲み込みまで見せる
+  SFX.kick();
+  return true;
+}
+/* 舌。伸びている間に触れた敵を吸い付け、戻りきったところで食べる */
 function updateTongue(dt) {
   const p = player;
-  if (p.tongue <= 0) return;
+  if (p.tongue <= 0) { if (p.tongueGrab) swallowGrabbed(); else releaseTongue(); return; }
   p.tongue -= dt;
-  const t = 1 - Math.abs(p.tongue/0.32 - 0.5)*2;         // 0→1→0 で伸び縮み
-  const reach = TONGUE_MIN + t*TONGUE_LEN;
+  const reach = tongueReach();
+
+  /* 吸い込み中：敵を舌の先にくっつけて口元まで引き寄せる */
+  if (p.tongueGrab) {
+    const e = p.tongueGrab;
+    if (e.remove || e.dead) { releaseTongue(); return; }
+    /* 舌が戻りきる＝口に入ったところで飲み込む。
+       吸い込み中の敵は当たり判定から外してあるので、重なってもダメージにはならない */
+    if (p.tongue <= 0) { swallowGrabbed(); return; }
+    const tip = tongueTipX(reach);
+    e.x = tip - e.w/2; e.y = p.y + 22 - e.h/2;
+    e.vx = 0; e.vy = 0; e.onGround = false;
+    return;
+  }
+
   const box = { x: p.face > 0 ? p.x + p.w - 4 : p.x + 4 - reach, y: p.y + 16, w: reach, h: 12 };
   for (const e of enemies) {
-    if (e.dead || e.remove || e.type === 'boss') continue;
-    if (e.type === 'piranha' && e.out <= 0.2) continue;
-    if (!overlap(box, e)) continue;
-    e.remove = true;
-    addScore(200, e.x, e.y);
-    for (let i = 0; i < 6; i++) particles.push({ x: e.x + e.w/2, y: e.y + e.h/2,
-      vx:(Math.random()-0.5)*180, vy:-60-Math.random()*160, r:4, t:0.4, rot:0, c:'#f8d000' });
-    SFX.kick(); p.tongue = Math.min(p.tongue, 0.1);
+    if (!canEat(e) || !overlap(box, e)) continue;
+    grabWithTongue(e);
     break;
   }
 }
@@ -1029,6 +1226,7 @@ function updatePlayer(dt) {
   if (ice) { accel *= 0.42; decel *= 0.14; skidDec *= 0.30; }
 
   p.crouch = p.power > 0 && p.onGround && keys.down && !water && !p.yoshi;
+  updateLowBox();
 
   let dir = 0;
   if (keys.left && !keys.right) dir = -1;
@@ -1067,7 +1265,8 @@ function updatePlayer(dt) {
   /* --- ヨッシーの舌 --- */
   if (p.yoshi) {
     p.yanim += Math.abs(p.vx)*dt*0.05;
-    if (hit('run') && p.tongue <= 0) { p.tongue = 0.32; tone(520, 0.12, 'sawtooth', 0.04, 240); }
+    if (p.chew > 0) p.chew -= dt;
+    if (hit('run') && p.tongue <= 0) { p.tongue = TONGUE_T; SFX.slurp(); }
     updateTongue(dt);
   }
 
@@ -1092,15 +1291,19 @@ function updatePlayer(dt) {
     if (p.vy > maxFallOf()) p.vy = maxFallOf();
     if (p.swimT > 0) p.swimT -= dt;
   } else {
-    /* すり抜け床の上で ↓ + ジャンプ → 飛ばずに下へ降りる */
-    if (p.jbuf > 0 && p.onGround && keys.down && p.groundTile === '=') {
+    /* 薄い台の上で ↓ を押す → その場で下へすり抜ける */
+    if (p.onGround && hit('down') && p.groundTile === '=') {
       p.dropT = 0.22; p.y += 3; p.vy = 80; p.onGround = false; p.jbuf = 0; p.coyote = 0;
       SFX.bump();
     }
     else if (p.jbuf > 0 && p.coyote > 0) {
-      p.vy = -650 - Math.min(Math.abs(p.vx), 350) * 0.35;
+      /* ↓ を押しながらジャンプ → しゃがみジャンプ。
+         低く飛ぶかわりに空中でも縮んだままなので、1マスの隙間に飛び込める */
+      const cj = p.crouch;
+      p.vy = (cj ? -520 : -650) - Math.min(Math.abs(p.vx), 350) * 0.35;
       p.onGround = false; p.coyote = 0; p.jbuf = 0; p.jumping = true;
       p.squash = -0.22;
+      if (cj) p.cjump = true;
       dust(p.x + p.w/2, p.y + p.h - 2, 3);
       SFX.jump();
     }
@@ -1119,6 +1322,8 @@ function updatePlayer(dt) {
 
   const wasAir = !p.onGround;
   moveEntity(p, dt);
+  if (p.onGround) p.cjump = false;   // 着地でしゃがみジャンプは終わり（↓を離すと立ち上がる）
+  updateLowBox();
   if (p.onGround && wasAir) {
     p.combo = 0; p.squash = 0.30; p.land = 0.12;
     if (!water) { dust(p.x + p.w/2, p.y + p.h - 2, 4); SFX.land(); }
@@ -1196,7 +1401,14 @@ function updatePlayer(dt) {
 
   if (p.y > lvl.rows*TILE + 60) killPlayer(true);
   if (G.state === 'play' && lvl.flagX != null && p.x + p.w/2 >= lvl.flagX*TILE + 8) reachFlag();
-  if (G.state === 'play' && lvl.room && lvl.exitX != null && p.x + p.w/2 >= lvl.exitX*TILE) exitRoom();
+  /* ボーナスルームは、出口より先で画面の右端を抜けきり、
+     さらに少し歩いたところで切り替える（カメラは ROOM_PAD ぶん手前で止めてある）。
+     自動スクロール面は画面外に出られないので、部屋の右端に着いたら終了 */
+  if (G.state === 'play' && lvl.room && lvl.exitX != null && p.x + p.w/2 >= lvl.exitX*TILE) {
+    const done = lvl.scroll ? (p.x + p.w >= lvl.w*TILE - 4)
+                            : (p.x >= cam.x + VW + 24);
+    if (done) exitRoom();
+  }
 }
 
 function dropCarry() {
@@ -1216,13 +1428,14 @@ function damagePlayer() {
   }
   if (p.power > 0) {
     p.power--;
-    if (p.power === 0) { p.h = 28; p.y += 24; }
+    if (p.power === 0) { p.y += p.h - 28; p.h = 28; p.cjump = false; p.low = false; }
     p.inv = 2.0; p.growT = 0.5; freeze(0.06); SFX.shrink();
   } else killPlayer(false);
 }
 function killPlayer(fell) {
   if (G.state !== 'play') return;
   G.state = 'dead'; G.timer = 0;
+  releaseTongue();
   player.yoshi = false; player.tongue = 0; dropCarry();
   player.dead = true; player.vy = fell ? 400 : -620; player.vx = 0;
   SFX.die();
@@ -1311,6 +1524,11 @@ function updateEnemies(dt) {
       if (e.dead <= 0) e.remove = true;
       continue;
     }
+    /* 消える予定の敵（食べられた・倒された）はもう当たり判定を持たない。
+       これが無いと、飲み込んだ直後の1フレームで接触ダメージが起きる */
+    if (e.remove) continue;
+    /* ヨッシーの舌に吸い付いている敵：位置は updateTongue が持つ */
+    if (e.grabbed) { e.anim += dt; continue; }
     /* 抱えられている甲羅：マリオの手元に追従し、当たった敵を倒す */
     if (e.carried) {
       const p = player;
@@ -1329,6 +1547,7 @@ function updateEnemies(dt) {
     if (e.type !== 'piranha' && !near) continue;
     e.anim += dt;
     if (e.kickGrace > 0) e.kickGrace -= dt;   // 蹴った直後の甲羅では被弾しない
+    if (e.stompT > 0) e.stompT -= dt;         // 踏んだ直後は、抜けきるまで蹴り出さない
 
     if (e.type === 'piranha') {
       e.ph += dt*0.8;
@@ -1403,6 +1622,10 @@ function updateEnemies(dt) {
       e.vy += gravOf()*dt;
       if (e.vy > maxFallOf()) e.vy = maxFallOf();
       moveEntity(e, dt);
+      /* 甲羅の体当たり：ブロックを壊せたら止まらずそのまま進む */
+      if (e.bumpedWall && e.kick && e.type === 'koopa' && shellSmash(e)) {
+        e.bumpedWall = false; e.vx = e.kick*300; e.x += e.kick*2;
+      }
       if (e.bumpedWall) { e.dir *= -1; if (e.kick) e.kick *= -1; }
 
       if (e.kick) {
@@ -1446,23 +1669,41 @@ function updateEnemies(dt) {
 
     const p = player;
     if (!p.dead && G.state === 'play' && p.warpT <= 0 && overlap(p, e)) {
+      /* 舌を出している最中に触れた敵は、ダメージではなく吸い込みにする */
+      if (p.yoshi && p.tongue > 0 && !p.tongueGrab && grabWithTongue(e)) continue;
       if (p.star > 0) flipEnemy(e);
       else {
         const stompMargin = (e.type === 'koopa' && e.shell <= 0) ? 32 : 24;
         const stomping = p.vy > 0 && (p.y + p.h) - e.y < stompMargin && !lvl.water;
         if (stomping) {
           if (e.type === 'goomba' || e.type === 'para' || e.type === 'cheep' || e.type === 'hammer' || e.type === 'ghost') {
-            if (e.type === 'para') { const k = spawnEnemy('koopa', e.x, e.y); k.dir = e.dir; enemies.push(k); }
-            e.dead = 0.5; e.squash = true; e.vx = 0;
-            stompEnemy(e);
+            if (e.type === 'para') {
+              /* 羽つきは踏まれた瞬間に消し、同じ位置に羽なしを出す。
+                 潰れ絵を残すと羽つきと羽なしが並んで見えてしまう */
+              const k = spawnEnemy('koopa', e.x, e.y + e.h - 40);
+              k.dir = e.dir; k.vx = e.dir*46; k.vy = 0;
+              enemies.push(k);
+              e.remove = true; e.dead = 0;
+              wingsOff(e);
+              stompEnemy(e);
+            }
+            else {
+              e.dead = 0.5; e.squash = true; e.vx = 0;
+              stompEnemy(e);
+            }
           } else if (e.shell > 0) {
-            if (e.kick) { e.kick = 0; e.vx = 0; e.shell = 6; }
-            else { e.kick = p.x + p.w/2 < e.x + e.w/2 ? 1 : -1; e.shell = 99; e.kickGrace = 0.35; SFX.kick(); stompEnemy(e); }
+            /* 甲羅は踏むとその場で止まり、加点はコンボとして伸びていく。
+               転がしたまま／外へ蹴り出すと甲羅が逃げてしまい踏み続けられないので、
+               階段の角などで踏み続けられるように「踏む＝足元で止める」にしてある。
+               蹴り出したいときは横から触れるか、ダッシュキーで持ち上げて投げる */
+            e.kick = 0; e.vx = 0; e.shell = 6; e.kickGrace = 0.35; e.stompT = 0.3;
+            SFX.kick(); stompEnemy(e);
           } else { e.shell = 6; e.kick = 0; e.h = 26; e.y += 14; e.vx = 0; stompEnemy(e); }
           p.vy = keys.jump ? -620 : -420; p.jumping = true; p.squash = -0.2;
           SFX.stomp();
         } else if (e.type === 'koopa' && e.shell > 0 && !e.kick) {
-          if (keys.run && !p.carry && !p.yoshi) {
+          if (e.stompT > 0) { /* 踏んだ直後、体が甲羅から抜けきるまでは何もしない */ }
+          else if (keys.run && !p.carry && !p.yoshi) {
             // マリオ3ふうの持ち上げ：ダッシュキーを押しながら触れると抱える
             e.carried = true; p.carry = e;
             tone(760, 0.07, 'square', 0.04, 420);
@@ -1593,7 +1834,18 @@ function updateFires(dt) {
     f.x += f.vx*dt; f.y += f.vy*dt;
     if (f.t <= 0 || f.x < cam.x - 120 || f.x > cam.x + VW + 120 || f.y > lvl.rows*TILE + 40) { f.remove = true; continue; }
     if (G.state === 'play' && player.warpT <= 0 && overlap(f, player)) {
-      if (player.star > 0) f.remove = true; else { damagePlayer(); f.remove = true; }
+      const p = player;
+      /* 黒いミサイル（大砲の弾）は上から踏んで壊せる。踏み台にもなる */
+      const stomping = f.bullet && !p.dead && p.vy > 0 && (p.y + p.h) - f.y < 26 && !lvl.water;
+      if (p.star > 0) { f.remove = true; addScore(200, f.x, f.y); SFX.kick(); }
+      else if (stomping) {
+        f.remove = true;
+        stompEnemy(f);
+        smoke(f.x + f.w/2, f.y + f.h/2);
+        p.vy = keys.jump ? -620 : -420; p.jumping = true; p.squash = -0.2;
+        SFX.stomp();
+      }
+      else { damagePlayer(); f.remove = true; }
     }
   }
   efires = efires.filter(f => !f.remove);
@@ -1621,9 +1873,10 @@ function updateItems(dt) {
       }
     }
     else if (it.type === 'yoshi') {
-      /* 乗られるまでその場をうろうろ。ダメージで逃げ出した直後は乗れない */
+      /* 乗られるまでその場をうろうろ。ダメージで逃げ出した直後は乗れないが、
+         落ち着けばまたその場に残るので、追いかければ乗り直せる */
       it.vy += gravOf()*dt;
-      if (it.flee > 0) { it.flee -= dt; if (it.flee <= 0) it.remove = true; }
+      if (it.flee > 0) { it.flee -= dt; if (it.flee <= 0) { it.flee = 0; it.vx = it.vx > 0 ? 40 : -40; } }
       const vx0 = it.vx;
       moveEntity(it, dt);
       if (it.bumpedWall) it.vx = -Math.sign(vx0 || 1) * Math.max(40, Math.abs(vx0));
@@ -1750,6 +2003,10 @@ function updateFx(dt) {
    ・横は先読みを入れない（向きを変えたり止まったりするたびに戻る動きが出るため）
    ・縦は接地している高さだけを追い、ジャンプ中は上下のデッドゾーンを出るまで動かさない */
 const CAM_UP = 210, CAM_DOWN = 170;
+/* ボーナスルームだけカメラを右端の手前で止めておき、
+   画面から抜けたあともしばらく歩ける「のりしろ」を作る（自動スクロール面は除く） */
+const ROOM_PAD = 96;
+const camPad = () => (lvl.room && !lvl.scroll) ? ROOM_PAD : 0;
 function camFocus(p) { return p.y + p.h; }
 function updateCamera(dt, snap) {
   const p = player;
@@ -1759,7 +2016,7 @@ function updateCamera(dt, snap) {
   else if (feet < camFocusY - CAM_UP) camFocusY = feet + CAM_UP;
   else if (feet > camFocusY + CAM_DOWN) camFocusY = feet - CAM_DOWN;
 
-  const maxX = Math.max(0, lvl.w*TILE - VW);
+  const maxX = Math.max(0, lvl.w*TILE - VW - camPad());
   const tx = clamp(p.x + p.w/2 - VW/2, 0, maxX);
   const maxY = Math.max(0, lvl.rows*TILE - VH);
   const ty = clamp(camFocusY - VH*0.62, 0, maxY);
@@ -2178,7 +2435,9 @@ function drawYoshi(o, ride) {
   px(6, 18, 16, 8, BELLY);                     // お腹
   px(2, 20, 6, 8, G1);                         // しっぽ
   px(18, 0, 14, 14, G1);                       // 頭
-  px(28, 5, 6, 6, G2);                         // 鼻先
+  const chew = ride && player.chew > 0 && Math.floor(G.t*22) % 2;
+  px(28, 5 + (chew ? 2 : 0), 6, 6, G2);        // 鼻先（食べた直後はもぐもぐ）
+  if (chew) px(24, 9, 8, 4, G1);               // ほおのふくらみ
   px(24, 3, 5, 6, '#fff'); px(26, 5, 3, 4, '#202030');   // 目
   px(17, -3, 8, 4, '#e04040');                 // 頭のトサカ
   if (ride) { px(8, 10, 14, 5, '#e04040'); px(9, 8, 12, 3, '#f8d000'); }   // サドル
@@ -2186,8 +2445,7 @@ function drawYoshi(o, ride) {
   else { px(6 + (step?2:0), 28, 9, 6, SHOE); px(17 - (step?2:0), 28, 9, 6, SHOE); }
   /* 舌 */
   if (ride && player.tongue > 0) {
-    const t = 1 - Math.abs(player.tongue/0.32 - 0.5)*2;
-    const reach = TONGUE_MIN + t*TONGUE_LEN;
+    const reach = tongueReach();
     ctx.fillStyle = '#f05070';
     const tx = f > 0 ? x + w - 2 : x + 2 - reach;
     ctx.fillRect(tx|0, (y + 10)|0, reach|0, 5);
@@ -2213,14 +2471,15 @@ function drawMario(p, dy) {
   ctx.translate(-(p.x + p.w/2), -(p.y + p.h));
   if (p.growT > 0) ctx.globalAlpha = Math.floor(G.t*30) % 2 ? 0.55 : 1;
 
-  const f = -p.face, x = p.x, y = p.y + (dy || 0);   // 左右の絵を反転（右向き入力で左向きの絵を描く）
+  // 左右の絵を反転（右向き入力で左向きの絵を描く）。しゃがみジャンプ中は縮んだ判定に絵を合わせる
+  const f = -p.face, x = p.x, y = p.y + (dy || 0) - (p.low ? 18 : 0);
   const px = (a, b, w, h, c) => { ctx.fillStyle = c; ctx.fillRect((f > 0 ? x + a : x + p.w - a - w)|0, (y + b)|0, w, h); };
   const skid = p.skid > 0, air = !p.onGround, thr = p.throwT > 0;
   const swing = air ? 0.6 : Math.sin(p.anim*2);
   const armUp = thr ? -8 : (air ? -6 : 0);
 
   if (big) {
-    if (p.crouch) {
+    if (p.crouch || p.low) {
       px(2, 18, 22, 8, RED); px(3, 26, 20, 14, BLUE); px(2, 38, 22, 6, BROWN); px(5, 24, 14, 6, SKIN);
     } else {
       px(3, 0, 20, 6, RED); px(1, 4, 24, 5, RED);
@@ -2359,7 +2618,6 @@ function drawBoss(b) {
 function drawItem(it) {
   const x = it.x, y = it.y;
   if (it.type === 'yoshi') {
-    if (it.flee > 0 && Math.floor(G.t*16) % 2 && it.flee < 0.8) return;   // 逃げ際に点滅
     drawYoshi(it, false);
     return;
   }
@@ -2488,8 +2746,9 @@ function drawTitle() {
   ctx.fillText('PRESS  ENTER  TO  START', VW/2, 214);
   ctx.font = '14px monospace';
   ctx.fillText('全7ステージ ／ スターコイン21枚 ／ ボス戦', VW/2, 250);
-  ctx.fillText('← →  移動      SPACE  ジャンプ      SHIFT  ダッシュ / ファイア', VW/2, 278);
-  ctx.fillText('↓  しゃがみ・土管      P  ポーズ      R  やり直し      M  BGM', VW/2, 302);
+  ctx.fillText('← →  移動      SPACE  ジャンプ      SHIFT  ダッシュ / ファイア', VW/2, 270);
+  ctx.fillText('↓  しゃがみ・土管・薄い台から降りる   ↓+ジャンプ  しゃがみジャンプ', VW/2, 292);
+  ctx.fillText('P  ポーズ      R  やり直し      M  BGM', VW/2, 314);
   ctx.fillStyle = '#ffd040';
   ctx.fillText('TOP ' + String(save.best).padStart(6, '0') + '   ★ ' + totalCoinsGot() + ' / ' + (LEVELS.length*3), VW/2, 336);
   const demo = { x: VW/2 - 12, y: 400 - 52 + Math.sin(G.t*3)*6, w: 26, h: 52, power: 1, face: 1,
