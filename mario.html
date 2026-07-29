@@ -43,28 +43,36 @@
     #hint { display: none; }
     /* 画面いっぱいに敷いた透明レイヤーの上にボタンを置く（ボタン以外はタップを通す） */
     #pad { display: block; position: fixed; inset: 0; pointer-events: none; }
-    #pad .grp { position: fixed; display: flex; gap: 14px; align-items: flex-end; pointer-events: auto; }
+    #pad .grp { position: fixed; display: flex; gap: clamp(6px, 2.5vw, 14px); align-items: flex-end; pointer-events: auto; }
     #pad .l { left: max(10px, env(safe-area-inset-left)); bottom: max(10px, env(safe-area-inset-bottom)); }
     #pad .r { right: max(10px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom)); }
     #pad .sys { top: max(8px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right)); gap: 8px; }
-    #pad button { width: 72px; height: 72px; font-size: 22px; opacity: .8; }
-    #pad .jump { width: 86px; height: 86px; margin-bottom: 16px; }
+    /* 十字キー3個＋B＋Aが横一列に並ぶので、画面幅に対する割合で決めて重ならないようにする。
+       狭い端末（幅320px）でも 左214px＋右132px＋余白 で収まる */
+    #pad button { width: clamp(48px, 15vw, 72px); height: clamp(48px, 15vw, 72px);
+                  font-size: clamp(15px, 4.5vw, 22px); opacity: .8; }
+    #pad .jump { width: clamp(58px, 18vw, 86px); height: clamp(58px, 18vw, 86px); margin-bottom: 16px; }
     /* HUDに重なるので、システム系は小さく薄く */
     #pad .sys { gap: 6px; }
     #pad .sys button { width: auto; height: 30px; padding: 0 10px; border-radius: 15px; font-size: 11px; opacity: .5; }
     #pad .sys button.on { opacity: .9; }
   }
-  /* 縦持ちのときだけ出る「横向きにしてね」の案内 */
+  /* 縦持ちのときだけ出る「横向きにしてね」の案内。
+     ゲーム画面に重ねると遊びの邪魔になるので、canvas の下（黒帯の中）に並べて置く */
   #rot { display: none; }
   @media (pointer: coarse) and (orientation: portrait) {
-    #rot { display: block; position: fixed; top: 50%; left: 0; right: 0; transform: translateY(-50%);
-           text-align: center; font-size: 15px; color: #cfcfe4; background: rgba(13,13,22,.86);
-           padding: 18px 10px; z-index: 5; pointer-events: none; }
+    #wrap { flex-direction: column; }
+    #rot { display: block; margin-top: 16px; padding: 0 14px;
+           text-align: center; font-size: 15px; line-height: 1.6;   /* #wrap の line-height:0 を打ち消す */
+           color: #cfcfe4; pointer-events: none; }
   }
 </style>
 </head>
 <body>
-<div id="wrap"><canvas id="game" width="800" height="480"></canvas></div>
+<div id="wrap">
+  <canvas id="game" width="800" height="480"></canvas>
+  <div id="rot">スマホは横向きにすると大きく遊べます</div>
+</div>
 <div id="hint">
   <b>← →</b> 移動 &nbsp;|&nbsp; <b>SPACE / ↑</b> ジャンプ・泳ぐ &nbsp;|&nbsp; <b>SHIFT</b> ダッシュ・ファイア &nbsp;|&nbsp; <b>↓</b> しゃがみ・土管・薄い台から降りる &nbsp;|&nbsp; <b>↓+ジャンプ</b> しゃがみジャンプ<br>
   <b>ENTER</b> 決定 &nbsp;|&nbsp; <b>P</b> ポーズ &nbsp;|&nbsp; <b>R</b> やり直し &nbsp;|&nbsp; <b>M</b> BGM &nbsp;|&nbsp; <b>ESC</b> マップへ
@@ -81,7 +89,6 @@
     <button data-k="restart">R</button><button data-k="back">MAP</button><button data-k="mute">♪</button>
   </div>
 </div>
-<div id="rot">スマホは横向きにすると大きく遊べます</div>
 
 <script>
 (() => {
@@ -727,7 +734,8 @@ function buildLevel(def) {
     }
     else if (t === 'plat')   { const [,x,y,w,ax,range,spd] = p;
       L.plats.push({ x: x*TILE, y: y*TILE, bx: x*TILE, by: y*TILE, w: w*TILE, h: 16, ax, range: range*TILE, spd, ph: x*0.7 }); }
-    else if (t === 'spring') { const [,x,y] = p; L.springs.push({ x: x*TILE, y: y*TILE, w: 28, h: 32, c: 0 }); }
+    else if (t === 'spring') { const [,x,y] = p; L.springs.push({ type:'spring', isSpring:true, x: x*TILE, y: y*TILE, w: 28, h: 32, c: 0,
+                                                                 vx:0, vy:0, onGround:true, carried:false, grabbed:false, held:false, kickGrace:0 }); }
     else if (t === 'cannon') { const [,x,y] = p; put(x, y, '#'); put(x, y+1, '#'); L.cannons.push({ cx:x, cy:y, t: 1 + Math.random()*2 }); }
     else if (t === 'firebar'){ const [,x,y,len] = p; put(x, y, '#'); L.firebars.push({ cx:x, cy:y, len, ph: x*0.5, spd: 1.5 }); }
     else if (t === 'dossun') { const [,x,y] = p; L.dossuns.push({ x: x*TILE, y: y*TILE, by: y*TILE, w: 56, h: 56, st:'wait', t:0, vy:0 }); }
@@ -880,7 +888,7 @@ function makePlayer(power) {
     warpT: 0, skid: 0, dust: 0, squash: 0, land: 0, throwT: 0, swimT: 0, dropT: 0,
     climb: null, warpUp: false, entered: false,
     yoshi: false, tongue: 0, tongueGrab: null, flutterT: 0, yanim: 0, carry: null, cjump: false, low: false,
-    chew: 0, mouth: null
+    chew: 0, mouth: null, mouthObj: null
   };
 }
 
@@ -967,6 +975,18 @@ function bumpCoinAbove(cx, cy) {
     particles.push({ x: cx*TILE+16, y: ay*TILE, vx:0, vy:-420, r:8, t:0.55, coin:true, rot:0 });
   }
 }
+/* ブロックの真上に乗っているアイテムは、下から叩くと跳ね上がる。
+   フラワーはその場から動かない仕様なので対象外 */
+function bumpItemsAbove(cx, cy) {
+  const mid = cx*TILE + 16, top = cy*TILE;
+  for (const it of items) {
+    if (it.remove || it.birth > 0 || it.type === 'flower') continue;
+    if (Math.abs((it.x + it.w/2) - mid) > 22) continue;
+    if (Math.abs((it.y + it.h) - top) > 10) continue;   // ちょうどこのブロックに乗っている
+    it.y -= 2; it.vy = -430; it.onGround = false;   // 1タイルぶんほど跳ね上がる
+    dust(it.x + it.w/2, it.y + it.h, 2);
+  }
+}
 /* パワーアップ系の中身は、叩いたときのマリオの状態で変わる。
    ちび→キノコ／スーパー→ファイア／ファイア→ヨッシー／ヨッシー騎乗中→スター */
 const POWER_ITEMS = { mush:1, flower:1, yoshi:1, star:1 };
@@ -982,6 +1002,7 @@ function stateItem(kind) {
 function bumpTile(cx, cy) {
   const t = tileAt(cx, cy);
   bumpCoinAbove(cx, cy);
+  bumpItemsAbove(cx, cy);
   if (t === '?') {
     const key = cx + ',' + cy, kind = stateItem(lvl.items[key] || 'coin');
     lvl.grid[cy][cx] = 'X';
@@ -1099,7 +1120,10 @@ function mountYoshi() {
   hushBGM(1.2);              // 鳴き声を聴かせる間、BGMのインターバルを1.2秒止める
   freeze(0.05);
 }
-function dismountYoshi(flee) {
+/* ヨッシーから降りる。
+   'flee' … ダメージの身代わりになって逃げ出す（しばらく乗り直せない）
+   'hop'  … 自分から飛び降りる。その場に残るので追いつけば乗り直せる */
+function dismountYoshi(mode) {
   const p = player;
   if (!p.yoshi) return;
   releaseTongue();
@@ -1107,10 +1131,12 @@ function dismountYoshi(flee) {
   p.yoshi = false; p.tongue = 0;
   const nh = p.power > 0 ? 52 : 28;
   p.y += p.h - nh; p.h = nh;
-  if (flee) {
+  if (mode === 'flee' || mode === 'hop') {
+    const away = mode === 'flee';
     items.push({ type:'yoshi', x: p.x, y: p.y + (nh - 30), w:30, h:30,
-                 vx: -p.face*260, vy: -280, onGround:false, birth: 0, flee: 2.2, ph: 0 });
-    dust(p.x + p.w/2, p.y + p.h, 5, 'rgba(140,240,150,.8)');
+                 vx: away ? -p.face*260 : -p.face*70, vy: away ? -280 : -140,
+                 onGround:false, birth: 0, flee: away ? 2.2 : 0.3, ph: 0 });
+    dust(p.x + p.w/2, p.y + p.h, away ? 5 : 3, 'rgba(140,240,150,.8)');
   }
 }
 /* 舌の伸び具合（0→1→0）と先端のX座標 */
@@ -1125,12 +1151,22 @@ function releaseTongue() {
 }
 /* 甲羅を持つ敵は飲み込まず、口にためて吐き出せる */
 const SPIT_TYPES = { koopa: 1, para: 1 };
-/* 吸い込みきって飲み込む（ノコノコ系は口の中へ） */
+/* 吸い込みきって飲み込む（ノコノコ系とバネは口の中へ） */
 function swallowGrabbed() {
   const p = player, e = p.tongueGrab;
   p.tongueGrab = null;
   if (!e || e.remove) return;
-  e.grabbed = false; e.remove = true;
+  e.grabbed = false;
+  /* バネは壊さず口にためる。世界から消さずに held で隠しておき、吐いた場所に置き直す */
+  if (e.isSpring) {
+    if (p.mouth) { e.held = false; return; }        // すでに何か含んでいるならそのまま落とす
+    p.mouth = 'spring'; p.mouthObj = e; e.held = true; e.vx = 0; e.vy = 0;
+    p.chew = 0.3;
+    dust(p.x + (p.face > 0 ? p.w : 0), p.y + 22, 2, 'rgba(255,255,255,.6)');
+    SFX.slurp();
+    return;
+  }
+  e.remove = true;
   if (SPIT_TYPES[e.type] && !p.mouth) {
     p.mouth = 'shell';                 // もう一度ダッシュキーで甲羅として吐き出す
     p.chew = 0.3;
@@ -1144,15 +1180,25 @@ function swallowGrabbed() {
   p.chew = 0.45;                       // 口をもぐもぐさせる
   SFX.gulp();
 }
-/* 口にためた甲羅を吐き出す。蹴った甲羅と同じように転がって敵をなぎ倒す */
+/* 口にためたものを吐き出す。甲羅は蹴ったように転がり、バネはその先に着地する */
 function spitMouth() {
   const p = player;
   if (!p.mouth) return;
+  const what = p.mouth;
   p.mouth = null; p.chew = 0;
-  const e = spawnEnemy('koopa', p.x + (p.face > 0 ? p.w - 4 : -22), p.y + 12);
-  e.shell = 99; e.h = 26; e.kick = p.face; e.dir = p.face;
-  e.vx = p.face*340; e.vy = -60; e.kickGrace = 0.35;
-  enemies.push(e);
+  if (what === 'spring') {
+    const s = p.mouthObj; p.mouthObj = null;
+    if (s) {
+      s.held = false; s.grabbed = false; s.carried = false; s.onGround = false; s.kickGrace = 0.4;
+      s.x = p.x + (p.face > 0 ? p.w : -s.w); s.y = p.y + 6;
+      s.vx = p.face*280; s.vy = -150;
+    }
+  } else {
+    const e = spawnEnemy('koopa', p.x + (p.face > 0 ? p.w - 4 : -22), p.y + 12);
+    e.shell = 99; e.h = 26; e.kick = p.face; e.dir = p.face;
+    e.vx = p.face*340; e.vy = -60; e.kickGrace = 0.35;
+    enemies.push(e);
+  }
   dust(p.x + (p.face > 0 ? p.w : 0), p.y + 20, 3, 'rgba(255,220,180,.8)');
   SFX.kick();
 }
@@ -1160,6 +1206,7 @@ function spitMouth() {
 function canEat(e) {
   if (!e || e.dead || e.remove || e.grabbed || e.type === 'boss') return false;
   if (e.type === 'piranha' && e.out <= 0.2) return false;
+  if (e.isSpring && (e.held || player.mouth)) return false;   // 口がふさがっているときは吸えない
   return true;
 }
 /* 敵を舌に吸い付ける。以降 updateTongue が位置を持つので接触ダメージは起きない */
@@ -1200,7 +1247,12 @@ function updateTongue(dt) {
   for (const e of enemies) {
     if (!canEat(e) || !overlap(box, e)) continue;
     grabWithTongue(e);
-    break;
+    return;
+  }
+  for (const s of lvl.springs) {                    // バネも舌で吸い寄せられる
+    if (!canEat(s) || !overlap(box, s)) continue;
+    grabWithTongue(s);
+    return;
   }
 }
 
@@ -1284,7 +1336,12 @@ function updatePlayer(dt) {
     else if (!keys.run) {
       s.carried = false; s.kickGrace = 0.4;
       s.x = p.x + (p.face > 0 ? p.w + 2 : -s.w - 2);
-      if (keys.down && p.onGround) { s.kick = 0; s.shell = 6; s.vx = 0; }   // しゃがみ中はそっと置く
+      if (s.isSpring) {
+        /* バネは転がらないので、しゃがみ中はその場に置き、そうでなければ放り投げる */
+        if (keys.down && p.onGround) { s.vx = 0; s.vy = 0; }
+        else { s.vx = p.face*260; s.vy = -190; s.onGround = false; SFX.kick(); }
+      }
+      else if (keys.down && p.onGround) { s.kick = 0; s.shell = 6; s.vx = 0; }   // しゃがみ中はそっと置く
       else { s.kick = p.face; s.shell = 99; s.vx = p.face*300; SFX.kick(); }
       p.carry = null;
     }
@@ -1341,9 +1398,17 @@ function updatePlayer(dt) {
     if (p.vy < 0 && keys.jump && p.jumping) p.vy += GRAV_HOLD*dt;
     else { p.vy += GRAV*dt; p.jumping = false; }
     if (p.vy > MAXFALL) p.vy = MAXFALL;
-    /* ふんばりジャンプ：落下中にジャンプを押しっぱなしにするとしばらく踏ん張る */
+    /* ヨッシーに乗っている間のジャンプキー。
+       押しっぱなし … ふんばりジャンプ（落下中にしばらく踏ん張る）
+       空中で押し直し … ヨッシーから飛び降りる。ヨッシーはその場に残る */
     if (p.yoshi) {
       if (p.onGround) p.flutterT = 0.4;
+      else if (p.jbuf > 0 && hit('jump')) {
+        p.jbuf = 0;
+        dismountYoshi('hop');
+        p.vy = -560; p.jumping = true; p.squash = -0.22;
+        SFX.jump();
+      }
       else if (keys.jump && p.vy > 0 && p.flutterT > 0) {
         p.flutterT -= dt; p.vy = Math.min(p.vy, 55);
         if (Math.floor(G.t*20) % 2 === 0) dust(p.x + p.w/2, p.y + p.h - 4, 1, 'rgba(200,255,200,.6)');
@@ -1380,11 +1445,16 @@ function updatePlayer(dt) {
       if (wasAir) { p.combo = 0; p.squash = 0.25; }
     }
   }
-  /* バネ */
+  /* バネ。上から踏めば跳ね、横からダッシュキーで触れれば抱え上げる */
   for (const s of lvl.springs) {
+    if (s.carried || s.grabbed || s.held) continue;
     if (p.vy >= 0 && overlap(p, { x: s.x, y: s.y, w: s.w, h: 16 }) && p.prevBottom <= s.y + 10) {
       p.y = s.y - p.h; p.vy = keys.jump ? -1080 : -760; s.c = 0.25;
       p.jumping = true; p.squash = -0.3; SFX.spring();
+    }
+    else if (keys.run && !p.carry && !p.yoshi && s.kickGrace <= 0 && overlap(p, s)) {
+      s.carried = true; p.carry = s;
+      tone(760, 0.07, 'square', 0.04, 420);
     }
   }
 
@@ -1445,7 +1515,9 @@ function updatePlayer(dt) {
 function dropCarry() {
   const p = player;
   if (!p.carry) return;
-  p.carry.carried = false; p.carry.kick = 0; p.carry.shell = 6; p.carry.vx = 0;
+  const s = p.carry;
+  s.carried = false; s.vx = 0; s.kickGrace = 0.4;
+  if (!s.isSpring) { s.kick = 0; s.shell = 6; }
   p.carry = null;
 }
 function damagePlayer() {
@@ -1453,7 +1525,7 @@ function damagePlayer() {
   if (p.inv > 0 || p.star > 0 || G.state !== 'play') return;
   dropCarry();
   if (p.yoshi) {            // ヨッシーが身代わりになって逃げ出す
-    dismountYoshi(true);
+    dismountYoshi('flee');
     p.inv = 1.8; freeze(0.06); SFX.shrink();
     return;
   }
@@ -1467,7 +1539,9 @@ function killPlayer(fell) {
   if (G.state !== 'play') return;
   G.state = 'dead'; G.timer = 0;
   releaseTongue();
-  player.yoshi = false; player.tongue = 0; player.mouth = null; dropCarry();
+  if (player.mouthObj) player.mouthObj.held = false;      // 口の中のバネを世界に戻す
+  player.yoshi = false; player.tongue = 0; player.mouth = null; player.mouthObj = null;
+  dropCarry();
   player.dead = true; player.vy = fell ? 400 : -620; player.vx = 0;
   SFX.die();
 }
@@ -1497,6 +1571,10 @@ function launchFirework() {
 
 function enterRoom(key, back) {
   if (G.state !== 'play') return;
+  /* この先で player を作り直すので、抱えたまま／口に入れたまま入ると
+     元の面に戻ったときに置き去り（バネなら二度と使えない）になる。先に手放しておく */
+  dropCarry(); releaseTongue();
+  if (player.mouthObj) { player.mouthObj.held = false; player.mouthObj = null; }
   saveRoom = { lvl, enemies, items, fires, efires, boss, camx: cam.x, camy: cam.y, time: G.time,
                rows: ROWS, ground: GROUND_ROW, back };
   lvl = buildLevel(BONUS[key]);
@@ -1763,6 +1841,31 @@ function updateEnemies(dt) {
   enemies = enemies.filter(e => !e.remove);
 }
 
+/* --- バネ ---
+   置いてあるだけの仕掛けではなく、甲羅と同じように抱えて運べる。
+   抱えている間・ヨッシーの舌や口の中にある間は物理を止めて、跳ね返しの判定も切る */
+function updateSprings(dt) {
+  const p = player;
+  for (const s of lvl.springs) {
+    if (s.c > 0) s.c -= dt;
+    if (s.held || s.grabbed) continue;              // 口の中／舌の先。位置は持ち主が決める
+    if (s.kickGrace > 0) s.kickGrace -= dt;
+    if (s.carried) {
+      s.x = p.face > 0 ? p.x + p.w - 8 : p.x - s.w + 8;
+      s.y = p.y + (p.power > 0 || p.yoshi ? 6 : -6);
+      s.vx = 0; s.vy = 0;
+      continue;
+    }
+    s.vy += gravOf()*dt;
+    if (s.vy > maxFallOf()) s.vy = maxFallOf();
+    moveEntity(s, dt);
+    if (s.bumpedWall) s.vx = 0;
+    if (s.onGround) s.vx *= Math.pow(0.02, dt);     // 着地したらすぐ止まる
+    if (Math.abs(s.vx) < 6) s.vx = 0;
+    if (s.y > lvl.rows*TILE + 80) { s.x = -9999; s.vx = 0; s.vy = 0; }   // 落ちたら画面外へ退避
+  }
+}
+
 function updateGimmicks(dt) {
   /* つたの成長 */
   for (const v of lvl.vines) if (v.h < v.maxH) v.h = Math.min(v.maxH, v.h + 130*dt);
@@ -1774,7 +1877,6 @@ function updateGimmicks(dt) {
     const nx = pl.bx + (pl.ax === 'x' ? o : 0), ny = pl.by + (pl.ax === 'y' ? o : 0);
     pl.dx = nx - pl.x; pl.dy = ny - pl.y; pl.x = nx; pl.y = ny;
   }
-  for (const s of lvl.springs) if (s.c > 0) s.c -= dt;
 
   /* 大砲 */
   for (const c of lvl.cannons) {
@@ -2025,8 +2127,13 @@ function updateBoss(dt) {
 
   const p = player;
   if (G.state === 'play' && !p.dead && p.warpT <= 0 && overlap(p, b)) {
+    const stomping = p.vy > 0 && (p.y + p.h) - b.y < 34;
     if (p.star > 0) hurtBoss(3);
-    else if (p.vy > 0 && (p.y + p.h) - b.y < 30) { hurtBoss(1); p.vy = -560; p.jumping = true; }
+    /* ひるんで点滅している間は当たっても無害。
+       踏んだ直後の数フレームはまだ重なったままで、しかも跳ね上がって vy がマイナスなので、
+       ここで通さないと「側面に触れた」扱いになって踏むたびにパワーダウンしてしまう */
+    else if (b.hurt > 0) { if (stomping) { p.vy = -560; p.jumping = true; } }
+    else if (stomping) { hurtBoss(1); p.vy = -560; p.jumping = true; p.squash = -0.2; }
     else damagePlayer();
   }
 }
@@ -2162,6 +2269,7 @@ function update(dt) {
     updateGimmicks(dt);
     updatePlayer(dt);
     updateEnemies(dt);
+    updateSprings(dt);
     updateBoss(dt);
     updateItems(dt);
     updateFires(dt);
@@ -2347,6 +2455,7 @@ function drawTiles() {
   }
   /* バネ */
   for (const s of lvl.springs) {
+    if (s.held) continue;                       // ヨッシーの口の中
     if (s.x < cam.x - 60 || s.x > cam.x + VW + 60) continue;
     const sq = s.c > 0 ? 12 : 0;
     R(s.x, s.y + 20 + sq, 28, Math.max(2, 12 - sq*0.3), '#d0d0e0');
@@ -2484,7 +2593,13 @@ function drawYoshi(o, ride) {
   const chew = ride && player.chew > 0 && Math.floor(G.t*22) % 2;
   px(28, 5 + (chew ? 2 : 0), 6, 6, G2);        // 鼻先（食べた直後はもぐもぐ）
   if (chew) px(24, 9, 8, 4, G1);               // ほおのふくらみ
-  if (hold) { px(22, 8, 10, 7, G2); px(24, 9, 6, 5, '#2ca82c'); }   // ふくらんだほおに甲羅が透ける
+  /* ふくらんだほおに、含んでいるもの（甲羅／バネ）が透ける。
+     中身はヨッシーの地の緑（G1/G2）と紛れない色にしないと、ふくらんだことが伝わらない */
+  if (hold) {
+    px(22, 8, 10, 7, G2);
+    if (player.mouth === 'spring') px(24, 9, 6, 5, '#d0d0e0');
+    else { px(24, 9, 6, 5, '#f8e8a0'); px(24, 11, 6, 2, '#0a6c1c'); }   // 甲羅：ふちのクリーム色＋緑の帯
+  }
   px(24, 3, 5, 6, '#fff'); px(26, 5, 3, 4, '#202030');   // 目
   px(17, -3, 8, 4, '#e04040');                 // 頭のトサカ
   if (ride) { px(8, 10, 14, 5, '#e04040'); px(9, 8, 12, 3, '#f8d000'); }   // サドル
