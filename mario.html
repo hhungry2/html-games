@@ -445,7 +445,7 @@ const LEVELS = [
       ['checkpoint', 96],
       ['solid', 98, 10, 3, 1], ['solid', 106, 9, 3, 1],
       ['brick', 112, 7, 4], ['q', 114, 7, 'star'],
-      ['pipe', 120, 4, { piranha: 1 }],
+      ['pipe', 120, 4, { piranha: 'fire' }],
       ['plat', 128, 8, 3, 'x', 5, 0.5],
       ['brick', 136, 9, 2], ['coins', 136, 8, 2],
       ['semi', 144, 8, 6], ['coins', 144, 7, 6],
@@ -521,6 +521,7 @@ const LEVELS = [
       ['checkpoint', 96],
       ['plat', 102, 10, 3, 'y', 3, 0.5],
       ['brick', 112, 7, 5], ['q', 114, 7, 'star'],
+      ['pipe', 108, 3, { piranha: 'fire' }],
       ['cannon', 120, 11],
       ['firebar', 124, 10, 5],
       ['plat', 130, 9, 3, 'x', 3, 0.6],
@@ -537,7 +538,7 @@ const LEVELS = [
       ['stair', 194, 4, 1],
       ['goomba', 18], ['koopa', 26], ['goomba', 44], ['goomba', 45],
       ['koopa', 60], ['para', 74, 6], ['goomba', 90], ['goomba', 91],
-      ['koopa', 108], ['goomba', 116], ['para', 124, 7],
+      ['koopa', 105], ['goomba', 116], ['para', 124, 7],
       ['goomba', 142], ['goomba', 143], ['koopa', 160], ['goomba', 168],
       ['para', 182, 6], ['goomba', 192],
       ['ghost', 66, 6], ['ghost', 134, 7]
@@ -566,6 +567,7 @@ const LEVELS = [
       ['brick', 114, 9, 3],
       ['blink', 122, 10, 3],
       ['semi', 130, 9, 5], ['coins', 130, 8, 5],
+      ['pipe', 136, 3, { piranha: 'fire' }],
       ['plat', 140, 10, 3, 'x', 4, 0.55],
       ['scoin', 143, 6],
       ['brick', 152, 9, 4], ['q', 154, 9, 'coin10'],
@@ -716,7 +718,7 @@ function buildLevel(def) {
       const [,x,h,opt] = p;
       for (let i=0;i<h;i++) { put(x, groundRow-1-i, 'P'); put(x+1, groundRow-1-i, 'P'); }
       L.pipes.push({ x, top: groundRow - h, h });
-      if (opt && opt.piranha) L.spawns.push({ type:'piranha', x, y: groundRow - h });
+      if (opt && opt.piranha) L.spawns.push({ type: opt.piranha === 'fire' ? 'firepiranha' : 'piranha', x, y: groundRow - h });
       if (opt && opt.warp) L.warps.push({ x, top: groundRow - h, to: opt.warp });
     }
     else if (t === 'stair')  {
@@ -877,7 +879,8 @@ function makePlayer(power) {
     inv: 0, star: 0, anim: 0, dead: false, growT: 0, crouch: false, fireT: 0, combo: 0,
     warpT: 0, skid: 0, dust: 0, squash: 0, land: 0, throwT: 0, swimT: 0, dropT: 0,
     climb: null, warpUp: false, entered: false,
-    yoshi: false, tongue: 0, tongueGrab: null, flutterT: 0, yanim: 0, carry: null, cjump: false, low: false, chew: 0
+    yoshi: false, tongue: 0, tongueGrab: null, flutterT: 0, yanim: 0, carry: null, cjump: false, low: false,
+    chew: 0, mouth: null
   };
 }
 
@@ -909,7 +912,10 @@ function spawnEntities(power, fromCheckpoint) {
 function spawnEnemy(type, x, y) {
   if (type === 'goomba') return { type, x, y, w:26, h:26, vx:-50, vy:0, dir:-1, dead:0, onGround:false, anim:0 };
   if (type === 'para')   return { type, x, y, w:26, h:38, vx:0, vy:0, dir:-1, dead:0, base:y, ph:Math.random()*6, anim:0 };
-  if (type === 'piranha')return { type, x: x+20, y, w:24, h:56, vx:0, vy:0, dead:0, out:0, ph:Math.random()*3, anim:0, top:y, hold:false };
+  /* ファイアパックンは火を吐くだけで、当たり判定も倒し方もパックンフラワーと同じ */
+  if (type === 'piranha' || type === 'firepiranha')
+    return { type:'piranha', fire: type === 'firepiranha', x: x+20, y, w:24, h:56, vx:0, vy:0,
+             dead:0, out:0, ph:Math.random()*3, anim:0, top:y, hold:false, fireT: 1.4 + Math.random(), spit:0 };
   if (type === 'cheep')  return { type, x, y, w:30, h:24, vx:-60, vy:0, dir:-1, dead:0, base:y, ph:Math.random()*6, anim:0 };
   if (type === 'ghost')  return { type, x, y, w:30, h:30, vx:0, vy:0, dir:-1, dead:0, anim:0, shy:0, ph:Math.random()*6 };
   if (type === 'hammer') return { type, x, y, w:28, h:44, vx:0, vy:0, dir:-1, dead:0, base:x, ph:0, anim:0,
@@ -1097,6 +1103,7 @@ function dismountYoshi(flee) {
   const p = player;
   if (!p.yoshi) return;
   releaseTongue();
+  if (p.mouth) spitMouth();          // 口にためたままにせず、降りるときに吐き出す
   p.yoshi = false; p.tongue = 0;
   const nh = p.power > 0 ? 52 : 28;
   p.y += p.h - nh; p.h = nh;
@@ -1116,17 +1123,38 @@ function releaseTongue() {
   p.tongueGrab.grabbed = false;
   p.tongueGrab = null;
 }
-/* 吸い込みきって飲み込む */
+/* 甲羅を持つ敵は飲み込まず、口にためて吐き出せる */
+const SPIT_TYPES = { koopa: 1, para: 1 };
+/* 吸い込みきって飲み込む（ノコノコ系は口の中へ） */
 function swallowGrabbed() {
   const p = player, e = p.tongueGrab;
   p.tongueGrab = null;
   if (!e || e.remove) return;
   e.grabbed = false; e.remove = true;
+  if (SPIT_TYPES[e.type] && !p.mouth) {
+    p.mouth = 'shell';                 // もう一度ダッシュキーで甲羅として吐き出す
+    p.chew = 0.3;
+    dust(p.x + (p.face > 0 ? p.w : 0), p.y + 22, 2, 'rgba(255,255,255,.6)');
+    SFX.slurp();
+    return;
+  }
   addScore(200, p.x + p.w/2, p.y);
   /* 砕けたように見えないよう、飛び散る破片は出さずに口元で小さく吸い込む */
   dust(p.x + (p.face > 0 ? p.w : 0), p.y + 22, 2, 'rgba(255,255,255,.6)');
   p.chew = 0.45;                       // 口をもぐもぐさせる
   SFX.gulp();
+}
+/* 口にためた甲羅を吐き出す。蹴った甲羅と同じように転がって敵をなぎ倒す */
+function spitMouth() {
+  const p = player;
+  if (!p.mouth) return;
+  p.mouth = null; p.chew = 0;
+  const e = spawnEnemy('koopa', p.x + (p.face > 0 ? p.w - 4 : -22), p.y + 12);
+  e.shell = 99; e.h = 26; e.kick = p.face; e.dir = p.face;
+  e.vx = p.face*340; e.vy = -60; e.kickGrace = 0.35;
+  enemies.push(e);
+  dust(p.x + (p.face > 0 ? p.w : 0), p.y + 20, 3, 'rgba(255,220,180,.8)');
+  SFX.kick();
 }
 /* 舌で捕まえられる敵か */
 function canEat(e) {
@@ -1266,7 +1294,10 @@ function updatePlayer(dt) {
   if (p.yoshi) {
     p.yanim += Math.abs(p.vx)*dt*0.05;
     if (p.chew > 0) p.chew -= dt;
-    if (hit('run') && p.tongue <= 0) { p.tongue = TONGUE_T; SFX.slurp(); }
+    if (hit('run')) {
+      if (p.mouth) spitMouth();                                    // 口にためた甲羅を吐き出す
+      else if (p.tongue <= 0) { p.tongue = TONGUE_T; SFX.slurp(); }
+    }
     updateTongue(dt);
   }
 
@@ -1436,7 +1467,7 @@ function killPlayer(fell) {
   if (G.state !== 'play') return;
   G.state = 'dead'; G.timer = 0;
   releaseTongue();
-  player.yoshi = false; player.tongue = 0; dropCarry();
+  player.yoshi = false; player.tongue = 0; player.mouth = null; dropCarry();
   player.dead = true; player.vy = fell ? 400 : -620; player.vx = 0;
   SFX.die();
 }
@@ -1552,13 +1583,27 @@ function updateEnemies(dt) {
     if (e.type === 'piranha') {
       e.ph += dt*0.8;
       const cycle = (Math.sin(e.ph) + 1)/2;
-      /* マリオが土管の上にいるときは「引っ込んでいれば出てこない」だけにする。
+      /* マリオが土管に触れている間は「引っ込んでいれば出てこない」だけにする。
+         上に乗っているときも横に立っているときも顔を出さないので、土管づたいに歩ける。
          すでに顔を出している最中はそのまま伸び続けるので、飛び越えると当たる */
-      const above = Math.abs((player.x + player.w/2) - (e.x + e.w/2)) < 40 && player.y + player.h < e.top + 8;
-      if (above && e.out <= 0.03) e.hold = true;
-      else if (!above && cycle <= 0.03) e.hold = false;
+      const onPipe = Math.abs((player.x + player.w/2) - (e.x + e.w/2)) < 52;
+      if (onPipe && e.out <= 0.03) e.hold = true;
+      else if (!onPipe && cycle <= 0.03) e.hold = false;
       e.out = e.hold ? 0 : cycle;
       e.y = e.top - e.h*e.out;
+      /* ファイアパックン：伸びきったところでマリオへ火を吐く */
+      if (e.fire) {
+        if (e.spit > 0) e.spit -= dt;
+        e.fireT -= dt;
+        if (e.fireT <= 0 && e.out > 0.8 && near && !player.dead && G.state === 'play') {
+          e.fireT = 2.4 + Math.random()*0.8; e.spit = 0.4;
+          const mx = e.x + e.w/2, my = e.y + 10;
+          const dx = (player.x + player.w/2) - mx, dy = (player.y + player.h/2) - my;
+          const d = Math.hypot(dx, dy) || 1;
+          efires.push({ x: mx - 10, y: my - 7, w:20, h:14, vx: dx/d*210, vy: dy/d*210, t: 4, anim: 0 });
+          SFX.fire();
+        }
+      }
       if (e.out > 0.25 && overlap(player, { x: e.x - 5, y: e.y, w: e.w + 10, h: e.h*e.out })) {
         if (player.star > 0) { e.dead = 0.5; addScore(200, e.x, e.y); SFX.kick(); } else damagePlayer();
       }
@@ -2435,9 +2480,11 @@ function drawYoshi(o, ride) {
   px(6, 18, 16, 8, BELLY);                     // お腹
   px(2, 20, 6, 8, G1);                         // しっぽ
   px(18, 0, 14, 14, G1);                       // 頭
+  const hold = ride && player.mouth;           // 甲羅を口にためている
   const chew = ride && player.chew > 0 && Math.floor(G.t*22) % 2;
   px(28, 5 + (chew ? 2 : 0), 6, 6, G2);        // 鼻先（食べた直後はもぐもぐ）
   if (chew) px(24, 9, 8, 4, G1);               // ほおのふくらみ
+  if (hold) { px(22, 8, 10, 7, G2); px(24, 9, 6, 5, '#2ca82c'); }   // ふくらんだほおに甲羅が透ける
   px(24, 3, 5, 6, '#fff'); px(26, 5, 3, 4, '#202030');   // 目
   px(17, -3, 8, 4, '#e04040');                 // 頭のトサカ
   if (ride) { px(8, 10, 14, 5, '#e04040'); px(9, 8, 12, 3, '#f8d000'); }   // サドル
@@ -2526,11 +2573,16 @@ function drawEnemy(e) {
     const h = e.h*(e.out || 0);
     if (h > 2) {
       const top = e.top - h;
-      R(x + 8, top + 16, 8, Math.max(0, h - 16), '#2ce04c');
-      R(x, top, 24, 18, '#e03050');
+      /* ファイアパックンは橙色の頭に黒い斑点。火を吐く瞬間だけ口を大きく開ける */
+      const head = e.fire ? '#f07818' : '#e03050', stem = e.fire ? '#1ba83c' : '#2ce04c';
+      const open = e.fire && e.spit > 0;
+      R(x + 8, top + 16, 8, Math.max(0, h - 16), stem);
+      R(x, top, 24, 18, head);
       R(x + 2, top + 4, 20, 6, '#fff');
-      R(x + 4, top + 12, 6, 5, '#fff'); R(x + 14, top + 12, 6, 5, '#fff');
-      R(x - 2, top + 6, 4, 5, '#e03050'); R(x + 22, top + 6, 4, 5, '#e03050');
+      if (e.fire) { R(x + 4, top + 1, 5, 4, '#2a1408'); R(x + 15, top + 1, 5, 4, '#2a1408'); }
+      if (open) { R(x + 3, top + 11, 18, 7, '#5a1408'); R(x + 7, top + 13, 10, 4, '#ffd050'); }
+      else { R(x + 4, top + 12, 6, 5, '#fff'); R(x + 14, top + 12, 6, 5, '#fff'); }
+      R(x - 2, top + 6, 4, 5, head); R(x + 22, top + 6, 4, 5, head);
     }
   } else if (e.type === 'para') {
     const flap = Math.floor(e.anim*10) % 2;
