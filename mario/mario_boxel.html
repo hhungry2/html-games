@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
-<title>SUPER CLONE BROS. DX</title>
+<title>SUPER CLONE BROS. VOXEL</title>
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent;
       -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
@@ -75,7 +75,7 @@
 </div>
 <div id="hint">
   <b>← →</b> 移動 &nbsp;|&nbsp; <b>SPACE / ↑</b> ジャンプ・泳ぐ &nbsp;|&nbsp; <b>SHIFT</b> ダッシュ・ファイア &nbsp;|&nbsp; <b>↓</b> しゃがみ・土管・薄い台から降りる &nbsp;|&nbsp; <b>↓+ジャンプ</b> しゃがみジャンプ<br>
-  <b>ENTER</b> 決定 &nbsp;|&nbsp; <b>P</b> ポーズ &nbsp;|&nbsp; <b>R</b> やり直し &nbsp;|&nbsp; <b>M</b> BGM &nbsp;|&nbsp; <b>ESC</b> マップへ
+  <b>V</b> ボクセルの厚み切替 &nbsp;|&nbsp; <b>ENTER</b> 決定 &nbsp;|&nbsp; <b>P</b> ポーズ &nbsp;|&nbsp; <b>R</b> やり直し &nbsp;|&nbsp; <b>M</b> BGM &nbsp;|&nbsp; <b>ESC</b> マップへ
 </div>
 <div id="pad">
   <div class="grp l">
@@ -99,7 +99,8 @@
    ============================================================================ */
 const TILE = 32, VW = 800, VH = 480;
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
+/* ボクセル描画のため、描画先を一時的にオフスクリーンへ差し替えられるように let にしている */
+let ctx = canvas.getContext('2d');
 ctx.imageSmoothingEnabled = false;
 
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -111,7 +112,7 @@ const KEYMAP = {
   ArrowLeft:'left', KeyA:'left', ArrowRight:'right', KeyD:'right',
   ArrowDown:'down', KeyS:'down', ArrowUp:'jump', KeyW:'jump', Space:'jump', KeyK:'jump',
   ShiftLeft:'run', ShiftRight:'run', KeyJ:'run',
-  Enter:'start', KeyP:'pause', KeyR:'restart', KeyM:'mute', Escape:'back'
+  Enter:'start', KeyP:'pause', KeyR:'restart', KeyM:'mute', Escape:'back', KeyV:'vox'
 };
 addEventListener('keydown', e => { const k = KEYMAP[e.code]; if (k) { e.preventDefault(); keys[k] = true; } });
 addEventListener('keyup',   e => { const k = KEYMAP[e.code]; if (k) { e.preventDefault(); keys[k] = false; } });
@@ -2221,6 +2222,8 @@ function gameOver() {
 function update(dt) {
   G.t += dt;
   if (hit('mute')) muted = !muted;
+  /* ボクセルの厚み：普通 → 厚い → 平面（ドット絵）を切り替える */
+  if (hit('vox')) voxDepth = voxDepth === VOX_D ? 10 : voxDepth === 10 ? 0 : VOX_D;
   G.fade = clamp(G.fade + G.fadeDir*dt*3, 0, 1);
 
   if (G.state === 'title') {
@@ -2325,6 +2328,55 @@ function update(dt) {
    ============================================================================ */
 const R = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(x|0, y|0, w|0, h|0); };
 
+/* ----------------------------------------------------------------------------
+   ボクセル化
+   ドット絵をそのままオフスクリーンに描き、そのシルエットを
+   ・右上（斜め）へ伸ばした暗いコピー  → 立方体の側面
+   ・真上へ伸ばした明るいコピー        → 立方体の上面
+   の順に重ねてから本体を乗せることで、全部が積み木でできたように見せる。
+   絵ごとに面を作らずシルエットからまとめて押し出すので、
+   ブロックの継ぎ目に変な線が出ず、描画順もそのまま保たれる。
+   ---------------------------------------------------------------------------- */
+const VOX_D = 6;                       // 押し出しの厚み（px）
+const VOX_SIDE = 'rgba(8,10,26,.46)';  // 側面の陰り
+const VOX_TOP  = 'rgba(255,248,225,.34)'; // 上面の照り
+const mkbuf = () => { const c = document.createElement('canvas'); c.width = VW; c.height = VH; return c; };
+const voxBuf = mkbuf(), voxBufCtx = voxBuf.getContext('2d');
+const voxTint = mkbuf(), voxTintCtx = voxTint.getContext('2d');
+/* スマホは合成の回数がそのまま負荷になるので、厚みを浅くしておく */
+let voxDepth = matchMedia('(pointer: coarse)').matches ? 4 : VOX_D;
+
+/* オフスクリーンの絵を、アルファを保ったまま一色寄せにしたコピーを作る */
+function voxTintBuf(css) {
+  const t = voxTintCtx;
+  t.setTransform(1, 0, 0, 1, 0, 0);
+  t.globalCompositeOperation = 'source-over';
+  t.clearRect(0, 0, VW, VH);
+  t.drawImage(voxBuf, 0, 0);
+  t.globalCompositeOperation = 'source-atop';
+  t.fillStyle = css; t.fillRect(0, 0, VW, VH);
+  t.globalCompositeOperation = 'source-over';
+}
+
+/* fn の描画をひとかたまりの立体として画面へ合成する。
+   fn の中では ctx がオフスクリーンに差し替わっているだけなので、
+   元の描画コードには一切手を入れなくていい。 */
+function voxLayer(fn, depth) {
+  const real = ctx, D = depth == null ? voxDepth : depth;
+  const b = voxBufCtx;
+  b.setTransform(1, 0, 0, 1, 0, 0);
+  b.clearRect(0, 0, VW, VH);
+  b.globalAlpha = 1; b.textAlign = 'left'; b.shadowOffsetY = 0; b.shadowColor = 'rgba(0,0,0,0)';
+  ctx = b;
+  try { fn(); } finally { ctx = real; }
+
+  voxTintBuf(VOX_SIDE);                                   // 側面（右上へ）
+  for (let i = D; i >= 1; i--) ctx.drawImage(voxTint, i, -i);
+  voxTintBuf(VOX_TOP);                                    // 上面（真上へ）
+  for (let i = D; i >= 1; i--) ctx.drawImage(voxTint, 0, -i);
+  ctx.drawImage(voxBuf, 0, 0);                            // 正面
+}
+
 function drawBackground() {
   const th = lvl.theme;
   const g = ctx.createLinearGradient(0, 0, 0, VH);
@@ -2352,6 +2404,9 @@ function drawBackground() {
       R(x, VH - y, 5, 5, 'rgba(180,230,255,.25)');
     }
   }
+}
+/* 遠景の飾り。ボクセル層として別に描くので背景（空）と分けている */
+function drawDecor() {
   ctx.save();
   ctx.translate(-cam.x*0.55, -cam.y*0.55);
   for (const d of lvl.decor) {
@@ -2368,12 +2423,17 @@ function drawCloud(x, y, s) {
   [[0,8,26,18],[18,0,30,26],[42,10,24,16]].forEach(([a,b,c,d]) => ctx.fillRect(x+a*s, y+b*s, c*s, d*s));
   ctx.fillStyle = 'rgba(223,233,255,.95)'; ctx.fillRect(x, y + 20*s, 66*s, 6*s);
 }
+/* 丘は三角形ではなく、積み木を段々に積んだピラミッドにする */
 function drawHill(x, y, big) {
-  const w = big ? 128 : 84, h = big ? 76 : 52;
-  ctx.fillStyle = lvl.themeKey === 'ice' ? '#cfeeff' : '#3ba32b';
-  ctx.beginPath(); ctx.moveTo(x - w/2, y); ctx.lineTo(x, y - h); ctx.lineTo(x + w/2, y); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = lvl.themeKey === 'ice' ? '#a8d8f0' : '#2d7d21';
-  ctx.beginPath(); ctx.moveTo(x, y - h); ctx.lineTo(x + w/2, y); ctx.lineTo(x + w/6, y); ctx.closePath(); ctx.fill();
+  const ice = lvl.themeKey === 'ice';
+  const cell = 16, n = big ? 5 : 4;
+  const c1 = ice ? '#cfeeff' : '#3ba32b', c2 = ice ? '#a8d8f0' : '#2d7d21';
+  for (let r = 0; r < n; r++) {
+    const wide = (n - r)*2 - 1;
+    const bx = x - wide*cell/2, by = y - (r + 1)*cell;
+    R(bx, by, wide*cell, cell, c1);
+    R(bx + wide*cell - cell, by, cell, cell, c2);   // 右端だけ影を落として丸みを出す
+  }
 }
 function drawBush(x, y) {
   ctx.fillStyle = lvl.themeKey === 'ice' ? '#dff4ff' : '#3ba32b';
@@ -2906,15 +2966,20 @@ function drawTitle() {
   const g = ctx.createLinearGradient(0, 0, 0, VH);
   g.addColorStop(0, '#5c94fc'); g.addColorStop(1, '#a8d4ff');
   ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
-  R(0, 400, VW, 80, '#9c4a00'); R(0, 400, VW, 8, '#3ba32b');
-  drawCloud(110, 60, 1.1); drawCloud(580, 36, 0.9);
+  /* 地面・雲・ロゴ・デモのマリオはまとめて積み木にする */
+  const demo = { x: VW/2 - 12, y: 400 - 52 + Math.sin(G.t*3)*6, w: 26, h: 52, power: 1, face: 1,
+                 onGround: true, anim: G.t*8, inv: 0, star: 0, growT: 0, crouch: false, squash: 0, skid: 0, throwT: 0 };
+  voxLayer(() => {
+    R(0, 400, VW, 80, '#9c4a00'); R(0, 400, VW, 8, '#3ba32b');
+    drawCloud(110, 60, 1.1); drawCloud(580, 36, 0.9);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 52px monospace';
+    ctx.fillText('SUPER CLONE BROS.', VW/2, 120);
+    ctx.font = 'bold 30px monospace'; ctx.fillStyle = '#ffd040';
+    ctx.fillText('- VOXEL -', VW/2, 160);
+    drawMario(demo);
+  }, 7);
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#fff'; ctx.font = 'bold 52px monospace';
-  ctx.shadowColor = '#000'; ctx.shadowOffsetY = 4;
-  ctx.fillText('SUPER CLONE BROS.', VW/2, 120);
-  ctx.font = 'bold 30px monospace'; ctx.fillStyle = '#ffd040';
-  ctx.fillText('- DELUXE -', VW/2, 160);
-  ctx.shadowOffsetY = 0;
   ctx.fillStyle = '#fff'; ctx.font = 'bold 18px monospace';
   ctx.fillText('PRESS  ENTER  TO  START', VW/2, 214);
   ctx.font = '14px monospace';
@@ -2924,9 +2989,6 @@ function drawTitle() {
   ctx.fillText('P  ポーズ      R  やり直し      M  BGM', VW/2, 314);
   ctx.fillStyle = '#ffd040';
   ctx.fillText('TOP ' + String(save.best).padStart(6, '0') + '   ★ ' + totalCoinsGot() + ' / ' + (LEVELS.length*3), VW/2, 336);
-  const demo = { x: VW/2 - 12, y: 400 - 52 + Math.sin(G.t*3)*6, w: 26, h: 52, power: 1, face: 1,
-                 onGround: true, anim: G.t*8, inv: 0, star: 0, growT: 0, crouch: false, squash: 0, skid: 0, throwT: 0 };
-  drawMario(demo);
 }
 
 /* --- ワールドマップ --- */
@@ -2943,6 +3005,8 @@ function drawMap() {
   ctx.fillText('WORLD  MAP', VW/2, 60);
 
   const n = LEVELS.length, x0 = 90, dx = (VW - 180)/(n - 1), y = 250;
+  voxLayer(() => {
+  ctx.textAlign = 'center';
   ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 4;
   ctx.beginPath();
   for (let i = 0; i < n; i++) {
@@ -2978,6 +3042,7 @@ function drawMap() {
       ctx.fillStyle = '#f8b088'; ctx.fillRect(px - 5, py - 38 + bob, 10, 8);
     }
   }
+  }, 4);
 
   const st = save.stages[G.cursor] || {};
   ctx.fillStyle = '#fff'; ctx.font = 'bold 20px monospace';
@@ -3008,22 +3073,33 @@ function render() {
   if (G.shake > 0) ctx.translate((Math.random()-0.5)*10*G.shake*4, (Math.random()-0.5)*10*G.shake*4);
   drawBackground();
 
-  ctx.save();
-  ctx.translate(-Math.round(cam.x), -Math.round(cam.y));
-  drawTiles();
-  for (const it of items) drawItem(it);
-  for (const e of enemies) drawEnemy(e);
-  if (boss) drawBoss(boss);
-  drawFires();
-  if (player.warpT > 0) ctx.globalAlpha = Math.max(0, player.warpT/0.8);
-  // 死亡演出で落下しきった後、および城のドアに入った後は描かない
-  if (player.y - cam.y < VH + 160 && !player.entered) {
-    if (player.yoshi) { drawYoshi(player, true); drawMario(player, -22); }
-    else drawMario(player);
-  }
-  ctx.globalAlpha = 1;
-  drawFx();
-  ctx.restore();
+  /* 地形（遠景の飾りも含めて1枚の積み木として押し出す） */
+  voxLayer(() => {
+    drawDecor();
+    ctx.save();
+    ctx.translate(-Math.round(cam.x), -Math.round(cam.y));
+    drawTiles();
+    ctx.restore();
+  });
+
+  /* マリオ・敵・アイテム。地形より手前の層なので、別の立体として重ねる */
+  voxLayer(() => {
+    ctx.save();
+    ctx.translate(-Math.round(cam.x), -Math.round(cam.y));
+    for (const it of items) drawItem(it);
+    for (const e of enemies) drawEnemy(e);
+    if (boss) drawBoss(boss);
+    drawFires();
+    if (player.warpT > 0) ctx.globalAlpha = Math.max(0, player.warpT/0.8);
+    // 死亡演出で落下しきった後、および城のドアに入った後は描かない
+    if (player.y - cam.y < VH + 160 && !player.entered) {
+      if (player.yoshi) { drawYoshi(player, true); drawMario(player, -22); }
+      else drawMario(player);
+    }
+    ctx.globalAlpha = 1;
+    drawFx();
+    ctx.restore();
+  });
 
   if (lvl.water) { ctx.fillStyle = 'rgba(30,110,180,.20)'; ctx.fillRect(0, 0, VW, VH); }
   if (lvl.theme.dark > 0) {

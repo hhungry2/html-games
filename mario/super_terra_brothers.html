@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Super Terra Brothers</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #111827; color: #fff8e7; font-family: "Trebuchet MS", system-ui, sans-serif; }
+  .shell { width: min(100%, 1050px); padding: 18px; }
+  .topbar { display: flex; align-items: end; justify-content: space-between; gap: 16px; padding: 0 4px 12px; }
+  h1 { margin: 0; color: #ffca55; font-size: clamp(1.35rem, 3vw, 2.1rem); line-height: .95; letter-spacing: .04em; text-shadow: 3px 3px 0 #9a3e27; }
+  .subtitle { margin: 6px 0 0; color: #a5c9cc; font-size: .78rem; letter-spacing: .14em; }
+  .readout { display: flex; gap: clamp(10px, 3vw, 28px); color: #b8e1df; font-family: ui-monospace, Consolas, monospace; font-size: .75rem; text-align: right; }
+  .readout b { display: block; color: #fff8e7; font-size: 1rem; letter-spacing: .08em; }
+  .frame { position: relative; overflow: hidden; border: 4px solid #f6d287; border-radius: 10px; box-shadow: 0 0 0 5px #2b354f, 0 24px 50px #0008; background: #76c1cf; }
+  canvas { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; image-rendering: pixelated; touch-action: none; }
+  .hint { margin: 10px 2px 0; color: #b5bbc8; text-align: center; font-size: .82rem; }
+  kbd { padding: 1px 5px; border: 1px solid #738096; border-bottom-width: 2px; border-radius: 4px; color: #fff; font-family: inherit; }
+  .touch { display: none; position: absolute; inset: auto 12px 12px; justify-content: space-between; pointer-events: none; }
+  .touch-group { display: flex; gap: 10px; }
+  .touch button { width: 58px; height: 54px; border: 2px solid #fff8e7aa; border-radius: 14px; background: #17243ac9; color: #fff8e7; font: 700 1.35rem system-ui; pointer-events: auto; touch-action: none; }
+  .touch button:active { transform: translateY(2px); background: #d86143; }
+  @media (pointer: coarse), (max-width: 700px) { .touch { display: flex; } .hint { font-size: .72rem; } .shell { padding: 10px; } .topbar { padding-bottom: 8px; } }
+  @media (max-width: 460px) { .readout { gap: 8px; font-size: .62rem; } .readout b { font-size: .82rem; } .topbar { align-items: center; } .subtitle { display: none; } }
+</style>
+</head>
+<body>
+<main class="shell">
+  <header class="topbar">
+    <div><h1>SUPER TERRA BROTHERS</h1><p class="subtitle">THE LITTLE ADVENTURE OF A BIG BLUE WORLD</p></div>
+    <div class="readout"><span>GEMS<b id="gems">00</b></span><span>TIME<b id="timer">300</b></span><span>TRIES<b id="tries">03</b></span></div>
+  </header>
+  <section class="frame" aria-label="Super Terra Brothers game">
+    <canvas id="game" width="960" height="540" aria-label="Platform game. Move with arrow keys or A D, jump with space."></canvas>
+    <div class="touch" aria-label="Touch controls"><div class="touch-group"><button data-key="left" aria-label="Move left">&#9664;</button><button data-key="right" aria-label="Move right">&#9654;</button></div><button data-key="jump" aria-label="Jump">&#9650;</button></div>
+  </section>
+  <p class="hint"><kbd>A</kbd> <kbd>D</kbd> / <kbd>&larr;</kbd> <kbd>&rarr;</kbd> move &nbsp; <kbd>SPACE</kbd> jump &nbsp; <kbd>R</kbd> restart</p>
+</main>
+<script>
+(() => {
+  const canvas = document.querySelector('#game');
+  const ctx = canvas.getContext('2d');
+  const gemsNode = document.querySelector('#gems'), timerNode = document.querySelector('#timer'), triesNode = document.querySelector('#tries');
+  const W = canvas.width, H = canvas.height, FLOOR = 466, WORLD = 7040;
+  const keys = { left: false, right: false, jump: false, jumpPressed: false };
+  let audio, state = 'title', camera = 0, last = 0, elapsed = 0, gemCount = 0, tries = 3, shake = 0;
+  const player = { x: 80, y: 300, w: 30, h: 42, vx: 0, vy: 0, grounded: false, face: 1, coyote: 0 };
+  const solids = [];
+  const gems = [];
+  const foes = [];
+  const clouds = [[100, 90, 1.0], [560, 70, .7], [980, 130, 1.2], [1500, 75, .9], [2190, 110, 1.15], [2920, 80, .8], [3690, 126, 1], [4380, 66, .75], [5280, 115, 1.2], [6040, 84, .9]];
+  const addBlock = (x, y, w, h, type = 'earth') => solids.push({ x, y, w, h, type });
+  const addGem = (x, y) => gems.push({ x, y, taken: false, phase: Math.random() * 6.28 });
+  const addFoe = (x, y, dir = -1) => foes.push({ x, y, w: 34, h: 29, vx: dir * 58, alive: true, squash: 0 });
+  function level() {
+    solids.length = gems.length = foes.length = 0;
+    [[0,760],[840,1180],[2120,1110],[3340,1020],[4510,920],[5560,1480]].forEach(([x,w]) => addBlock(x, FLOOR, w, 100));
+    [[260,382,170],[520,315,110],[910,370,130],[1190,312,155],[1465,386,130],[1660,326,170],[1880,256,105],[2210,380,130],[2435,316,200],[2720,365,120],[2960,290,160],[3380,378,170],[3660,320,120],[3880,250,160],[4200,356,170],[4615,390,170],[4930,315,130],[5190,245,180],[5610,372,155],[5920,310,145],[6220,365,180]].forEach(([x,y,w]) => addBlock(x,y,w,26,'stone'));
+    [[330,330],[570,265],[960,315],[1230,260],[1300,260],[1510,330],[1710,274],[1780,274],[1930,205],[2260,325],[2500,260],[2580,260],[2760,310],[3000,235],[3070,235],[3440,330],[3710,272],[3930,200],[4020,200],[4260,306],[4680,340],[4980,265],[5250,195],[5330,195],[5650,324],[5960,260],[6270,318],[6370,318]].forEach(p => addGem(...p));
+    [[650,437], [1080,437], [1560,437], [1830,437], [2290,437], [2840,437], [3530,437], [4070,437], [4740,437], [5430,437], [6100,437], [6490,437]].forEach((p,i) => addFoe(...p, i % 2 ? 1 : -1));
+    addBlock(6760, 270, 24, 196, 'beacon');
+  }
+  level();
+  function reset(full = false) {
+    player.x = 80; player.y = 300; player.vx = player.vy = 0; player.grounded = false; player.coyote = 0; camera = 0; elapsed = 0; gemCount = 0;
+    gems.forEach(g => g.taken = false); foes.forEach((f, i) => { f.alive = true; f.squash = 0; f.x = [650,1080,1560,1830,2290,2840,3530,4070,4740,5430,6100,6490][i]; });
+    if (full) tries = 3;
+    state = 'playing'; updateHud();
+  }
+  function updateHud() { gemsNode.textContent = String(gemCount).padStart(2, '0'); timerNode.textContent = String(Math.max(0, 300 - Math.floor(elapsed))).padStart(3, '0'); triesNode.textContent = String(tries).padStart(2, '0'); }
+  function tone(freq, duration = .07, type = 'square') {
+    try { audio ||= new AudioContext(); const o = audio.createOscillator(), g = audio.createGain(); o.type = type; o.frequency.value = freq; g.gain.setValueAtTime(.05, audio.currentTime); g.gain.exponentialRampToValueAtTime(.001, audio.currentTime + duration); o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime + duration); } catch (_) {}
+  }
+  function collide(a, b) { return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
+  function movePlayer(dt) {
+    const acceleration = player.grounded ? 1900 : 1000;
+    if (keys.left) { player.vx = Math.max(-260, player.vx - acceleration * dt); player.face = -1; }
+    else if (keys.right) { player.vx = Math.min(260, player.vx + acceleration * dt); player.face = 1; }
+    else player.vx *= player.grounded ? Math.pow(.0003, dt) : Math.pow(.08, dt);
+    if (keys.jumpPressed && (player.grounded || player.coyote > 0)) { player.vy = -510; player.grounded = false; player.coyote = 0; tone(390, .09); }
+    keys.jumpPressed = false;
+    player.vy = Math.min(780, player.vy + 1450 * dt);
+    player.x += player.vx * dt;
+    for (const s of solids) if (collide(player, s)) { if (player.vx > 0) player.x = s.x - player.w; else if (player.vx < 0) player.x = s.x + s.w; player.vx = 0; }
+    const oldBottom = player.y + player.h; player.y += player.vy * dt; player.grounded = false;
+    for (const s of solids) if (collide(player, s)) { if (player.vy >= 0 && oldBottom <= s.y + 12) { player.y = s.y - player.h; player.vy = 0; player.grounded = true; } else if (player.vy < 0) { player.y = s.y + s.h; player.vy = 0; } }
+    player.coyote = player.grounded ? .09 : Math.max(0, player.coyote - dt);
+    if (player.y > H + 120) hurt();
+  }
+  function hurt() { if (state !== 'playing') return; tries--; shake = .38; tone(110, .25, 'sawtooth'); if (tries <= 0) { state = 'gameover'; } else { state = 'respawn'; setTimeout(() => reset(), 850); } updateHud(); }
+  function update(dt) {
+    if (state !== 'playing') return;
+    elapsed += dt; if (elapsed >= 300) { state = 'gameover'; tone(100,.3); }
+    movePlayer(dt);
+    for (const gem of gems) if (!gem.taken && collide(player, { x: gem.x - 10, y: gem.y - 12, w: 20, h: 26 })) { gem.taken = true; gemCount++; tone(760, .05, 'triangle'); }
+    for (const foe of foes) {
+      if (!foe.alive) continue;
+      foe.x += foe.vx * dt; const probe = { x: foe.x + (foe.vx > 0 ? foe.w : -5), y: foe.y + 8, w: 5, h: foe.h - 12 };
+      if (solids.some(s => collide(probe, s))) foe.vx *= -1;
+      if (collide(player, foe)) { if (player.vy > 0 && player.y + player.h - player.vy * dt <= foe.y + 12) { foe.alive = false; foe.squash = .3; player.vy = -310; tone(210, .08); } else hurt(); }
+    }
+    if (player.x > 6740) { state = 'win'; tone(523,.1,'triangle'); setTimeout(() => tone(659,.12,'triangle'), 120); setTimeout(() => tone(784,.25,'triangle'), 260); }
+    camera += (Math.max(0, Math.min(WORLD - W, player.x - W * .35)) - camera) * Math.min(1, dt * 5);
+    shake = Math.max(0, shake - dt); updateHud();
+  }
+  function rect(x,y,w,h,c) { ctx.fillStyle=c; ctx.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h)); }
+  function drawCloud(x,y,scale) { ctx.fillStyle = '#e6f5ed'; ctx.beginPath(); ctx.arc(x,y,18*scale,0,7); ctx.arc(x+25*scale,y-10*scale,24*scale,0,7); ctx.arc(x+54*scale,y,17*scale,0,7); ctx.fill(); rect(x-13*scale,y,78*scale,19*scale,'#e6f5ed'); }
+  function drawBlock(s) { const x=s.x-camera, y=s.y; if (x+s.w < -10 || x > W+10) return; if (s.type === 'beacon') { rect(x,y,s.w,s.h,'#e8e6d3'); rect(x+4,y,s.w-8,s.h,'#3d4764'); rect(x-12,y-28,48,26,'#efc457'); rect(x-8,y-24,40,18,'#e8593f'); return; } if (s.type === 'earth') { rect(x,y,s.w,s.h,'#71423a'); rect(x,y,s.w,10,'#6fae5c'); rect(x,y+10,s.w,5,'#b7d76c'); for(let i=12;i<s.w;i+=35) rect(x+i,y+25+(i%3)*9,7,7,'#9a6048'); } else { rect(x,y,s.w,s.h,'#c76a48'); rect(x+3,y+3,s.w-6,s.h-6,'#e88b55'); rect(x+5,y+5,s.w-10,4,'#f4b06a'); ctx.strokeStyle='#9d493b'; ctx.lineWidth=3; ctx.strokeRect(x+2,y+2,s.w-4,s.h-4); } }
+  function drawHero() { const x=player.x-camera, y=player.y; ctx.save(); ctx.translate(x+player.w/2,y+player.h/2); ctx.scale(player.face,1); ctx.translate(-player.w/2,-player.h/2); rect(6,0,19,8,'#f0c553'); rect(3,7,25,8,'#d85542'); rect(7,14,18,16,'#f7c797'); rect(3,20,6,9,'#3d553d'); rect(21,20,7,9,'#3d553d'); rect(5,30,9,11,'#314d75'); rect(17,30,9,11,'#314d75'); rect(3,39,12,4,'#28334d'); rect(16,39,12,4,'#28334d'); rect(18,17,3,3,'#24334a'); ctx.restore(); }
+  function drawFoe(f) { if (!f.alive) return; const x=f.x-camera, y=f.y; rect(x+4,y+5,f.w-8,f.h-5,'#58476a'); rect(x,y+10,f.w,f.h-10,'#765568'); rect(x+5,y+13,5,5,'#f6e9d3'); rect(x+23,y+13,5,5,'#f6e9d3'); rect(x+7,y+14,2,3,'#1e263b'); rect(x+24,y+14,2,3,'#1e263b'); rect(x+3,y+25,11,4,'#283047'); rect(x+20,y+25,11,4,'#283047'); }
+  function drawGem(g, now) { if(g.taken) return; const x=g.x-camera, y=g.y+Math.sin(now/210+g.phase)*4; ctx.save(); ctx.translate(x,y); ctx.rotate(Math.PI/4); rect(-8,-8,16,16,'#ffe078'); rect(-4,-4,8,8,'#fff7c4'); ctx.restore(); }
+  function text(label, y, sub) { ctx.save(); ctx.textAlign='center'; ctx.fillStyle='#17243a'; ctx.font='900 56px Trebuchet MS'; ctx.fillText(label,W/2+4,y+5); ctx.fillStyle='#fff0ba'; ctx.fillText(label,W/2,y); if(sub){ ctx.font='700 18px Trebuchet MS'; ctx.fillStyle='#17243a'; ctx.fillText(sub,W/2+2,y+43); ctx.fillStyle='#eef6dc'; ctx.fillText(sub,W/2,y+40); } ctx.restore(); }
+  function draw(now) {
+    const sx=shake ? (Math.random()-.5)*12 : 0; ctx.save(); ctx.translate(sx,0);
+    rect(0,0,W,H,'#77c7d2'); ctx.fillStyle='#b7e1d1'; ctx.beginPath(); ctx.arc(120,480,220,Math.PI,0); ctx.arc(610,500,270,Math.PI,0); ctx.arc(930,485,180,Math.PI,0); ctx.fill();
+    clouds.forEach(c => drawCloud(c[0]-camera*.16,c[1],c[2]));
+    ctx.fillStyle='#4b917c'; for(let x=-200-(camera*.35%180);x<W+200;x+=180){ctx.beginPath();ctx.moveTo(x,466);ctx.lineTo(x+90,260);ctx.lineTo(x+180,466);ctx.fill();}
+    solids.forEach(drawBlock); gems.forEach(g => drawGem(g,now)); foes.forEach(drawFoe); drawHero();
+    if (state === 'title') { rect(0,0,W,H,'#17243a88'); text('SUPER TERRA BROTHERS',210,'A tiny journey across the terra'); text('PRESS SPACE TO START',325,'or tap the screen'); }
+    if (state === 'respawn') { rect(0,0,W,H,'#17243a77'); text('TRY AGAIN',260,'Keep your boots moving'); }
+    if (state === 'gameover') { rect(0,0,W,H,'#17243abb'); text('ADVENTURE PAUSED',235,'Press R to begin again'); }
+    if (state === 'win') { rect(0,0,W,H,'#17243a9b'); text('TERRA SAVED!',220,`${gemCount} gems gathered - ${Math.max(0,300-Math.floor(elapsed))} seconds left`); text('PRESS R TO PLAY AGAIN',330,'The hills will remember you'); }
+    ctx.restore();
+  }
+  function frame(now) { const dt=Math.min(.033,(now-last)/1000||0); last=now; update(dt); draw(now); requestAnimationFrame(frame); }
+  function press(action, down) { if(action === 'jump' && down && !keys.jump) keys.jumpPressed=true; keys[action]=down; if(down && state !== 'playing') { if(state === 'title') reset(true); else if(state === 'gameover'||state === 'win') reset(true); } if(down) { try { audio?.resume(); } catch (_) {} } }
+  const map = { ArrowLeft:'left', KeyA:'left', ArrowRight:'right', KeyD:'right', Space:'jump', ArrowUp:'jump', KeyW:'jump' };
+  addEventListener('keydown', e => { if(e.code === 'KeyR') { reset(true); return; } const action=map[e.code]; if(action){e.preventDefault();press(action,true);} });
+  addEventListener('keyup', e => { const action=map[e.code]; if(action){e.preventDefault();press(action,false);} });
+  document.querySelectorAll('[data-key]').forEach(button => { const action=button.dataset.key; button.addEventListener('pointerdown',e=>{e.preventDefault();press(action,true);}); ['pointerup','pointercancel','pointerleave'].forEach(type=>button.addEventListener(type,e=>{e.preventDefault();press(action,false);})); });
+  canvas.addEventListener('pointerdown', () => { if(state !== 'playing') reset(true); });
+  updateHud(); requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
