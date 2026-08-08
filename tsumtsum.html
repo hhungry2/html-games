@@ -41,6 +41,13 @@
   #timeP{width:104px;text-align:center}
   #time{font-size:26px;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums}
   #time.warn{color:#ff6b6b;animation:blink .6s infinite}
+  #score.bump{animation:bump .3s ease-out}
+  @keyframes bump{0%{transform:scale(1)}32%{transform:scale(1.24)}100%{transform:scale(1)}}
+  body.fever #score,body.fever #time{color:#ffd77a;text-shadow:0 0 14px rgba(255,190,90,.95)}
+  body.fever .panel{border-color:rgba(255,214,130,.6);box-shadow:0 0 18px rgba(255,180,70,.35)}
+  @media (prefers-reduced-motion:reduce){
+    #score.bump,#time.warn,#skillBtn.ready,#feverFlash.on{animation:none}
+  }
   @keyframes blink{50%{opacity:.35}}
   #tbarWrap{height:5px;background:rgba(0,0,0,.35);border-radius:3px;overflow:hidden;margin-top:3px}
   #tbar{height:100%;width:100%;background:linear-gradient(90deg,#7ee8fa,#3aa0ff);border-radius:3px}
@@ -124,9 +131,9 @@
       <div class="ttl">ツムパズル</div>
       <div class="sub">
         同じツムを<b>3つ以上</b>なぞってつなげよう！<br>
-        7つ以上つなげると<b>ボム</b>が出現💣<br>
+        <b>5つ以上</b>つなげると<b>ボム</b>が出現💣<br>
         ゲージが満タンで<b>フィーバー</b>＆<b>スキル</b>！<br>
-        制限時間 60 秒でハイスコアをめざせ！
+        制限時間 <b>75秒</b>でハイスコアをめざせ！
       </div>
       <button class="btn" id="startBtn">スタート</button>
       <div class="sub" style="opacity:.6;font-size:11px">ハイスコア <span id="bestTitle">0</span></div>
@@ -163,7 +170,10 @@ const WALL = 10, FLOOR = H - 8;     // 壁・床
 const R = 27;                       // ツム半径
 const TARGET = 46;                  // 場に出すツム数
 const GRAV = 0.62;
-const GAME_TIME = 60;
+const GAME_TIME = 75;               // 制限時間（やさしめ）
+const LINK_DIST = R*2 + 26;         // つなげられる距離（広め）
+const HIT_SCALE = 1.16;             // 指の当たり判定（広め）
+const CLUSTER_RATE = 0.45;          // 補充時に多い色を出す確率＝そろいやすさ
 
 const cv = document.getElementById('cv');
 const ctx = cv.getContext('2d');
@@ -175,17 +185,26 @@ const TYPES = [
   {name:'アカ',  body:'#f2635c', dark:'#c93f3c', muzzle:'#ffe2dc', ear:'top',   eye:'oval'},
   {name:'ミズ',  body:'#59c2ef', dark:'#2f96c9', muzzle:'#e2f6ff', ear:'side',  eye:'round'},
   {name:'ミドリ',body:'#78cf72', dark:'#4aa348', muzzle:'#e8ffe3', ear:'top',   eye:'sleepy'},
-  {name:'モモ',  body:'#f79bc4', dark:'#d16b9c', muzzle:'#ffe8f3', ear:'side',  eye:'oval'},
+];
+// 掛け声（消した数に応じて）
+const PRAISE = [
+  {n:20, txt:'WONDERFUL!!', color:'#ffd24a'},
+  {n:15, txt:'AMAZING!',    color:'#ff8ad0'},
+  {n:10, txt:'EXCELLENT!',  color:'#7ee8fa'},
+  {n:7,  txt:'GREAT!',      color:'#9dff8a'},
+  {n:5,  txt:'NICE!',       color:'#ffffff'},
 ];
 
 /* ---------- 状態 ---------- */
-let tsums = [], fx = [], texts = [];
+let tsums = [], fx = [], texts = [], rings = [];
 let chain = [];
+let banner = null, flash = 0, hitstop = 0, scoreDisp = 0;
 let score = 0, combo = 0, comboTimer = 0, maxCombo = 0, popped = 0;
 let timeLeft = GAME_TIME;
 let feverGauge = 0, feverActive = false, feverTime = 0;
 let skillGauge = 0;
 let playing = false, shake = 0, idSeq = 0;
+const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const store = {
   get(){ try{ return +(localStorage.getItem('tsum_best') || 0); }catch(e){ return 0; } },
   set(v){ try{ localStorage.setItem('tsum_best', v); }catch(e){} }
@@ -193,7 +212,7 @@ const store = {
 let best = store.get();
 document.getElementById('bestTitle').textContent = best.toLocaleString();
 
-const FEVER_NEED = 70, SKILL_NEED = 40, FEVER_DUR = 10;
+const FEVER_NEED = 42, SKILL_NEED = 26, FEVER_DUR = 12;
 
 /* ---------- キャンバス解像度 ---------- */
 function fitCanvas(){
@@ -229,13 +248,44 @@ function noise(dur=0.18, vol=0.25){
   s.connect(f); f.connect(g); g.connect(a.destination); s.start();
 }
 
+// 上昇アルペジオ（消したときの気持ちよさ担当）
+function arpeggio(count, fever){
+  const scale = [523.25,587.33,659.25,783.99,880,1046.5,1174.7,1318.5,1568,1760,2093];
+  const n = Math.min(scale.length, 3 + Math.floor(count/2));
+  for(let i=0;i<n;i++){
+    setTimeout(() => beep(scale[i]*(fever?1.5:1), .18, 'triangle', .12), i*42);
+  }
+}
+function boomSound(){
+  noise(0.42, 0.34);
+  const a = ac(); if(!a) return;
+  const o = a.createOscillator(), g = a.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(220, a.currentTime);
+  o.frequency.exponentialRampToValueAtTime(38, a.currentTime + 0.42);
+  g.gain.setValueAtTime(0.3, a.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.45);
+  o.connect(g); g.connect(a.destination); o.start(); o.stop(a.currentTime + 0.46);
+}
+
 /* =========================================================
    ツム生成 / 物理
    ========================================================= */
+// 場にある色に寄せて出す＝同じツムがそろいやすい（難易度緩和）
+// ただし1色に偏りすぎると単調なので、3割を超えている色は選ばない
+function pickType(){
+  const live = tsums.filter(p => p.state === 'live');
+  if(live.length > 6 && Math.random() < CLUSTER_RATE){
+    const pick = live[Math.floor(Math.random()*live.length)].t;
+    let n = 0; for(const p of live) if(p.t === pick) n++;
+    if(n / live.length < 0.3) return pick;
+  }
+  return Math.floor(Math.random()*TYPES.length);
+}
 function makeTsum(highY){
   return {
     id: ++idSeq,
-    t: Math.floor(Math.random()*TYPES.length),
+    t: pickType(),
     x: WALL + R + Math.random()*(W - WALL*2 - R*2),
     y: highY !== undefined ? highY : -R - Math.random()*260,
     vx: (Math.random()-0.5)*1.5, vy: 0,
@@ -299,9 +349,10 @@ function physics(){
 function drawTsum(p){
   const T = TYPES[p.t];
   let s = 1;
-  if(p.state === 'pop'){ s = 1 + p.pt*2.6; }
+  if(p.state === 'pop'){ s = p.pt < 0 ? 1 + p.pt*0.7 : 1 + p.pt*2.8; }  // 溜め→弾け
   if(p.sel) s *= 1.06 + Math.sin(p.wob*2)*0.03;
-  const alpha = p.state === 'pop' ? Math.max(0, 1 - p.pt/0.22) : 1;
+  const alpha = p.state === 'pop'
+    ? Math.max(0, Math.min(1, 1 - Math.max(0, p.pt)/0.22)) : 1;
 
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -414,15 +465,35 @@ function drawTsum(p){
 /* =========================================================
    エフェクト
    ========================================================= */
-function burst(x, y, color, n=10, pw=1){
+function burst(x, y, color, n=10, pw=1, star=false){
   for(let i=0;i<n;i++){
     const a = Math.random()*6.29, sp = (1.5 + Math.random()*4)*pw;
     fx.push({x, y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp - 1.2,
-             r: 2 + Math.random()*4*pw, life:1, color});
+             r: 2 + Math.random()*4*pw, life:1, color,
+             star: star || Math.random() < 0.3, rot: Math.random()*6.29, vr:(Math.random()-.5)*.4});
   }
 }
 function popText(x, y, txt, color, size=20){
+  if(texts.length > 7) texts.shift();   // 出しすぎて画面が読めなくならないように
   texts.push({x, y, txt, color, size, life:1});
+}
+// 衝撃波リング
+function ring(x, y, max, color, width=6){
+  rings.push({x, y, r: max*0.12, max, color, width, life:1});
+}
+// 中央の大きな掛け声
+function showBanner(txt, color){
+  banner = {txt, color, life:1};
+}
+// 爆風：周囲のツムを物理的に吹き飛ばす
+function shockwave(x, y, radius, power){
+  for(const p of tsums){
+    if(p.state !== 'live') continue;
+    const dx = p.x-x, dy = p.y-y, d = Math.hypot(dx, dy);
+    if(d > radius || d < 0.001) continue;
+    const f = (1 - d/radius) * power;
+    p.vx += dx/d * f; p.vy += dy/d * f - f*0.35;
+  }
 }
 
 /* =========================================================
@@ -433,7 +504,7 @@ function tsumAt(x, y){
   for(const p of tsums){
     if(p.state !== 'live') continue;
     const d = Math.hypot(p.x-x, p.y-y);
-    if(d < p.r*1.02 && d < bd){ bd = d; best = p; }
+    if(d < p.r*HIT_SCALE && d < bd){ bd = d; best = p; }
   }
   return best;
 }
@@ -450,8 +521,9 @@ function tryAdd(p){
   const last = chain[chain.length-1];
   if(p.t !== last.t && !p.bomb && !last.bomb) return;
   if(p.t !== last.t) return;                       // ボムも同色チェインで繋ぐ
-  if(Math.hypot(p.x-last.x, p.y-last.y) > R*2 + 16) return;
+  if(Math.hypot(p.x-last.x, p.y-last.y) > LINK_DIST) return;
   chain.push(p); p.sel = true;
+  ring(p.x, p.y, p.r*1.9, TYPES[p.t].body, 3);
   beep(480 + Math.min(chain.length,16)*38, .05, 'triangle', .13);
 }
 function clearChain(){ for(const p of chain) p.sel = false; chain = []; }
@@ -468,8 +540,14 @@ function releaseChain(){
   let bombCount = 0;
   while(queue.length){
     const b = queue.shift(); bombCount++;
-    burst(b.x, b.y, '#ffd24a', 26, 1.8);
-    shake = Math.max(shake, 12);
+    burst(b.x, b.y, '#ffd24a', 34, 2.2, true);
+    ring(b.x, b.y, 150, '#ffd24a', 12);
+    ring(b.x, b.y, 105, '#fff3c4', 6);
+    shockwave(b.x, b.y, 190, 13);
+    shake = Math.max(shake, 22);
+    flash = Math.max(flash, 0.55);
+    hitstop = Math.max(hitstop, 0.1);
+    boomSound();
     for(const p of tsums){
       if(p.state !== 'live' || set.has(p.id)) continue;
       if(Math.hypot(p.x-b.x, p.y-b.y) < 105){
@@ -480,7 +558,7 @@ function releaseChain(){
   }
 
   // スコア計算
-  combo++; comboTimer = 2.2;
+  combo++; comboTimer = 3.6;
   maxCombo = Math.max(maxCombo, combo);
   const total = list.length;
   let base = total * (100 + (total-3)*22);
@@ -494,13 +572,22 @@ function releaseChain(){
   popText(cx, cy - 20, '+' + base.toLocaleString(), feverActive ? '#ffd24a' : '#fff', total>=10?26:20);
   if(combo >= 2) popText(cx, cy + 12, combo + ' COMBO!', '#ff7ba8', 16);
 
-  // 消滅
-  for(const p of list){
-    p.state = 'pop'; p.pt = 0; p.sel = false;
-    burst(p.x, p.y, TYPES[p.t].body, 9);
-  }
+  // 消滅（1個ずつ時間差で弾けさせて連続ヒット感を出す）
+  list.forEach((p, i) => {
+    p.state = 'pop'; p.pt = -Math.min(i, 14) * 0.024; p.sel = false; p.bursted = false;
+  });
+  // 消えた場所から周りのツムを吹き飛ばす
+  shockwave(cx, cy, 90 + total*11, Math.min(7, 2.6 + total*0.3));
+  shake = Math.max(shake, Math.min(20, 3 + total*0.85));
+  flash = Math.max(flash, Math.min(0.4, total*0.022));
+  if(total >= 8) hitstop = Math.max(hitstop, 0.07 + Math.min(0.1, total*0.005));
+
+  // 掛け声
+  const pr = PRAISE.find(v => total >= v.n);
+  if(pr) showBanner(pr.txt, pr.color);
+
   noise(0.16, 0.2);
-  beep(300 + Math.min(total,20)*26, .16, 'square', .13);
+  arpeggio(total, feverActive);
 
   // ゲージ
   if(!feverActive){
@@ -509,9 +596,10 @@ function releaseChain(){
   }
   skillGauge = Math.min(SKILL_NEED, skillGauge + total*0.75);
 
-  // ボム生成（7つ以上）
-  if(n >= 7 && bombCount === 0){
+  // ボム生成（5つ以上）
+  if(n >= 5 && bombCount === 0){
     setTimeout(() => {
+      if(tsums.filter(p => p.bomb && p.state === 'live').length >= 4) return;  // 出しすぎ防止
       const cand = tsums.filter(p => p.state === 'live' && !p.bomb);
       if(cand.length){
         const b = cand[Math.floor(Math.random()*cand.length)];
@@ -523,6 +611,7 @@ function releaseChain(){
   }
   void typeIdx;
   chain = [];
+  $score.classList.remove('bump'); void $score.offsetWidth; $score.classList.add('bump');
   updateHUD();
 }
 
@@ -531,16 +620,23 @@ function releaseChain(){
    ========================================================= */
 function startFever(){
   feverActive = true; feverTime = FEVER_DUR; feverGauge = FEVER_NEED;
-  timeLeft = Math.min(GAME_TIME, timeLeft + 3);
+  timeLeft = Math.min(GAME_TIME, timeLeft + 5);
   document.getElementById('feverFlash').classList.add('on');
-  popText(W/2, H/2 - 60, 'FEVER!!', '#ffd24a', 40);
+  document.body.classList.add('fever');
+  showBanner('FEVER!!', '#ffd24a');
+  popText(W/2, H/2 + 24, 'TIME +5', '#fff', 22);
+  flash = 1; shake = Math.max(shake, 16); hitstop = 0.12;
+  ring(W/2, H/2, W*1.5, '#ffd24a', 20);
+  ring(W/2, H/2, W*1.1, '#ff7ba8', 12);
+  shockwave(W/2, H*0.8, 400, 6);
   beep(660,.1,'square',.16); setTimeout(()=>beep(880,.1,'square',.16),110);
-  setTimeout(()=>beep(1170,.22,'square',.16),220);
-  for(let i=0;i<40;i++) burst(Math.random()*W, H*0.4 + Math.random()*H*0.5, '#ffd24a', 3, 1.4);
+  setTimeout(()=>beep(1170,.28,'square',.16),220);
+  for(let i=0;i<60;i++) burst(Math.random()*W, H*0.35 + Math.random()*H*0.6, '#ffd24a', 3, 1.6, true);
 }
 function endFever(){
   feverActive = false; feverGauge = 0;
   document.getElementById('feverFlash').classList.remove('on');
+  document.body.classList.remove('fever');
 }
 function useSkill(){
   if(!playing || skillGauge < SKILL_NEED) return;
@@ -552,8 +648,10 @@ function useSkill(){
   const list = tsums.filter(p => p.state === 'live' && p.t === bi);
   if(list.length < 3) return;
   chain = list;
-  popText(W/2, H/2 - 90, 'SKILL!', '#7ee8fa', 34);
-  shake = Math.max(shake, 10);
+  showBanner('SKILL!', '#7ee8fa');
+  flash = Math.max(flash, 0.7); shake = Math.max(shake, 18); hitstop = 0.1;
+  ring(W/2, H*0.62, W*1.4, '#7ee8fa', 16);
+  for(const p of list) burst(p.x, p.y, '#bff4ff', 8, 1.4, true);
   releaseChain();
   updateHUD();
 }
@@ -596,7 +694,7 @@ const $score = document.getElementById('score'), $time = document.getElementById
 const $tbar = document.getElementById('tbar'), $fbar = document.getElementById('feverBar');
 const $skillBtn = document.getElementById('skillBtn'), $skillPct = document.getElementById('skillPct');
 function updateHUD(){
-  $score.textContent = score.toLocaleString();
+  $score.textContent = Math.round(scoreDisp).toLocaleString();
   const t = Math.max(0, Math.ceil(timeLeft));
   $time.textContent = t;
   $time.classList.toggle('warn', t <= 10);
@@ -612,7 +710,8 @@ function updateHUD(){
    ========================================================= */
 function startGame(){
   ac();
-  tsums = []; fx = []; texts = []; chain = [];
+  tsums = []; fx = []; texts = []; rings = []; chain = [];
+  banner = null; flash = 0; hitstop = 0; scoreDisp = 0;
   score = 0; combo = 0; comboTimer = 0; maxCombo = 0; popped = 0;
   timeLeft = GAME_TIME; feverGauge = 0; feverTime = 0;
   endFever(); skillGauge = 0; shake = 0;
@@ -624,11 +723,12 @@ function startGame(){
 }
 function endGame(){
   playing = false; dragging = false; clearChain(); endFever();
+  scoreDisp = score; banner = null; updateHUD();
   if(score > best){ best = score; store.set(best); }
-  const rank = score >= 120000 ? 'S ランク　神業！' :
-               score >=  80000 ? 'A ランク　すごい！' :
-               score >=  50000 ? 'B ランク　いい感じ' :
-               score >=  25000 ? 'C ランク　まずまず' : 'D ランク　練習あるのみ';
+  const rank = score >= 500000 ? 'S ランク　神業！' :
+               score >= 300000 ? 'A ランク　すごい！' :
+               score >= 160000 ? 'B ランク　いい感じ' :
+               score >=  70000 ? 'C ランク　まずまず' : 'D ランク　次はもっといける！';
   document.getElementById('finalScore').textContent = score.toLocaleString();
   document.getElementById('rankTxt').textContent = rank;
   document.getElementById('statTxt').innerHTML =
@@ -647,6 +747,7 @@ function loop(now){
   let dt = Math.min(0.05, (now - last)/1000); last = now;
   requestAnimationFrame(loop);
   if(document.hidden) return;   // 非表示中は時間を進めない
+  if(hitstop > 0){ hitstop -= dt; dt *= 0.22; }   // 大量消しの瞬間だけスロー
 
   if(playing){
     timeLeft -= dt;
@@ -666,6 +767,11 @@ function loop(now){
     const p = tsums[i];
     if(p.state === 'pop'){
       p.pt += dt;
+      if(!p.bursted && p.pt >= 0){       // 時間差で1個ずつ弾ける
+        p.bursted = true;
+        burst(p.x, p.y, TYPES[p.t].body, 11, 1.15, true);
+        ring(p.x, p.y, p.r*2.7, TYPES[p.t].body, 5);
+      }
       if(p.pt > 0.22) tsums.splice(i,1);
     } else if(p.y > H + 200){
       tsums.splice(i,1);
@@ -676,9 +782,19 @@ function loop(now){
   // パーティクル
   for(let i=fx.length-1;i>=0;i--){
     const f = fx[i];
-    f.vy += 0.22; f.x += f.vx; f.y += f.vy; f.life -= dt*1.6;
+    f.vy += 0.22; f.x += f.vx; f.y += f.vy; f.rot += f.vr; f.life -= dt*1.6;
     if(f.life <= 0) fx.splice(i,1);
   }
+  for(let i=rings.length-1;i>=0;i--){
+    const g = rings[i];
+    g.r += (g.max - g.r) * Math.min(1, dt*9);
+    g.life -= dt*2.2;
+    if(g.life <= 0) rings.splice(i,1);
+  }
+  if(banner){ banner.life -= dt*0.85; if(banner.life <= 0) banner = null; }
+  if(flash > 0) flash = Math.max(0, flash - dt*3.2);
+  scoreDisp += (score - scoreDisp) * Math.min(1, dt*9);
+  if(Math.abs(score - scoreDisp) < 1) scoreDisp = score;
   for(let i=texts.length-1;i>=0;i--){
     const t = texts[i];
     t.y -= 34*dt; t.life -= dt*0.95;
@@ -691,7 +807,7 @@ function loop(now){
 function draw(){
   ctx.save();
   ctx.clearRect(0,0,W,H);
-  if(shake > 0) ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake);
+  if(shake > 0 && !REDUCE) ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake);
 
   // 背景
   const bg = ctx.createLinearGradient(0,0,0,H);
@@ -707,6 +823,20 @@ function draw(){
   for(let i=0;i<9;i++){
     const bx = ((i*97)%W), by = ((i*151)%H);
     ctx.beginPath(); ctx.arc(bx, by, 26 + (i%3)*14, 0, 6.29); ctx.fill();
+  }
+
+  // フィーバー中の集中線
+  if(feverActive){
+    ctx.save();
+    ctx.translate(W/2, H*0.55);
+    const rot = performance.now()*0.0004;
+    for(let i=0;i<18;i++){
+      const a = rot + i*(6.2832/18);
+      ctx.fillStyle = i%2 ? 'rgba(255,255,255,.30)' : 'rgba(255,210,120,.26)';
+      ctx.beginPath(); ctx.moveTo(0,0);
+      ctx.arc(0, 0, 640, a, a + 0.14); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
   }
 
   // 容器の縁
@@ -732,11 +862,31 @@ function draw(){
   for(const p of tsums) if(p.state === 'live') drawTsum(p);
   for(const p of tsums) if(p.state === 'pop')  drawTsum(p);
 
-  // パーティクル
+  // 衝撃波リング
+  for(const g of rings){
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, g.life) * 0.85;
+    ctx.strokeStyle = g.color; ctx.lineWidth = g.width * Math.max(0.25, g.life);
+    ctx.beginPath(); ctx.arc(g.x, g.y, g.r, 0, 6.29); ctx.stroke();
+    ctx.restore();
+  }
+
+  // パーティクル（丸ときらめき）
   for(const f of fx){
     ctx.globalAlpha = Math.max(0, f.life);
     ctx.fillStyle = f.color;
-    ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, 6.29); ctx.fill();
+    if(f.star){
+      const rr = f.r*2.1;
+      ctx.beginPath();
+      for(let i=0;i<4;i++){
+        const a = f.rot + i*1.5708, b = a + 0.7854;
+        ctx.lineTo(f.x + Math.cos(a)*rr, f.y + Math.sin(a)*rr);
+        ctx.lineTo(f.x + Math.cos(b)*rr*0.32, f.y + Math.sin(b)*rr*0.32);
+      }
+      ctx.closePath(); ctx.fill();
+    }else{
+      ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, 6.29); ctx.fill();
+    }
   }
   ctx.globalAlpha = 1;
 
@@ -774,6 +924,35 @@ function draw(){
     ctx.lineWidth = t.size*0.22; ctx.strokeStyle = 'rgba(40,30,60,.6)';
     ctx.strokeText(t.txt, t.x, t.y);
     ctx.fillStyle = t.color; ctx.fillText(t.txt, t.x, t.y);
+    ctx.restore();
+  }
+
+  // 掛け声バナー（飛び込んで→ゆっくり拡大→フェード）
+  if(banner){
+    const k = 1 - banner.life;                 // 0→1
+    const pop = k < 0.16 ? k/0.16 : 1;         // 立ち上がり
+    const sc = 0.5 + pop*0.62 + k*0.20;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, banner.life*2.2);
+    ctx.translate(W/2, H*0.42);
+    ctx.rotate((1-pop) * -0.35);
+    ctx.scale(sc, sc);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '900 54px system-ui';
+    ctx.lineWidth = 14; ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(40,25,70,.75)'; ctx.strokeText(banner.txt, 0, 0);
+    const bgrad = ctx.createLinearGradient(0, -30, 0, 30);
+    bgrad.addColorStop(0, '#ffffff'); bgrad.addColorStop(1, banner.color);
+    ctx.fillStyle = bgrad; ctx.fillText(banner.txt, 0, 0);
+    ctx.restore();
+  }
+
+  // 画面フラッシュ
+  if(flash > 0){
+    ctx.save();
+    ctx.globalAlpha = Math.min(0.85, flash) * (REDUCE ? 0.25 : 1);
+    ctx.fillStyle = feverActive ? '#fff4d8' : '#ffffff';
+    ctx.fillRect(-30, -30, W+60, H+60);
     ctx.restore();
   }
 
