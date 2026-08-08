@@ -381,10 +381,12 @@ class Fighter{
     this.crouch=false; this.blocking=false; this.air=false;
     this.hitstun=0; this.knock=0; this.dizzyT=0; this.win=0; this.fbCool=0;
     this.invuln=0; this.hitNum=0;
+    this.koed=false; this.bounce=0; this.settle=0;
     this.hist=[]; this.anim=Math.random()*100; this.flash=0; this.chargeFx=0;
   }
   get dir(){ return this.face; }               // 前方向
-  get busy(){ return this.state==='atk'||this.state==='hurt'||this.state==='down'; }
+  get busy(){ return this.state==='atk'||this.state==='hurt'||this.state==='down'||this.state==='ko'; }
+  get downed(){ return this.state==='down'||this.state==='ko'; }
 
   // ---- 入力（numpad表記）を履歴に記録
   logDir(d){
@@ -456,10 +458,18 @@ class Fighter{
     this.meter=Math.min(100,this.meter+2);
     this.vx=(fromX>this.x?-1:1)*push*0.6;
   }
+  // KO：大きく吹き飛んで回転しながら倒れ、そのまま起き上がらない
+  koDown(fromX){
+    this.koed=true; this.state='ko'; this.t=0; this.move=null;
+    this.face = fromX>this.x?1:-1;
+    this.vx = (fromX>this.x?-1:1)*7.5;
+    this.vy = -13.5; this.air=true;
+    this.hitstun=9999; this.bounce=0; this.settle=0; this.flash=10; this.koT=0;
+  }
 
   // ---- 当たり判定用ボックス（ワールド座標）
   hurtbox(){
-    if(this.state==='down') return {x:this.x-46,y:this.y-46,w:92,h:46};
+    if(this.downed) return {x:this.x-46,y:this.y-46,w:92,h:46};
     const h = this.crouch&&!this.air ? 96 : 168;
     return {x:this.x-30,y:this.y-h,w:60,h:h};
   }
@@ -503,6 +513,9 @@ let shake=0, hitStop=0;
 let P1,P2, balls=[], frame=0, mode=1;
 let phase='menu';   // menu / intro / fight / ko / result
 let phaseT=0, timer=ROUND_TIME*60, round=1, banner='', bannerT=0, winner=null;
+// KO演出
+let koTarget=null, koFlash=0, slowmo=0, slowAcc=0;
+function setBanner(s){ if(banner!==s){ banner=s; bannerT=0; } }
 
 function makeFighters(){
   P1=new Fighter({name:'RYO', col:'#f4f4ef', skin:'#e8b48c', hair:'#2b1c12', band:'#e02b2b', side:0, x:300});
@@ -519,7 +532,8 @@ function newRound(){
   P1.reset(300); P2.reset(660); P2.cpu=(mode===1);
   P1.win=W1; P2.win=W2;
   balls=[]; fx.length=0; timer=ROUND_TIME*60;
-  phase='intro'; phaseT=0; banner='ROUND '+round; bannerT=0; winner=null;
+  phase='intro'; phaseT=0; banner=''; setBanner('ROUND '+round); winner=null;
+  koTarget=null; koFlash=0; slowmo=0; slowAcc=0;
   SFX.bell();
 }
 let W1=0,W2=0;
@@ -648,7 +662,17 @@ function physics(f){
         // 昇竜拳・竜巻旋風脚は着地した時点で硬直へ移行
         else if(f.move.rise){ f.t=Math.max(f.t,f.move.start+f.move.act); f.vx*=.3; }
       }
-      if(f.state==='down'){ f.t=0; f.hitstun=Math.max(f.hitstun,42); spark(f.x,GROUND-6,10,'#c9b28a',4); shake=6; }
+      if(f.state==='ko'){
+        // 1回だけバウンドしてから地面に伏せる
+        if(f.bounce<1){
+          f.bounce++; f.air=true; f.vy=-5.6; f.vx*=.55; f.t=0;
+          SFX.big(); spark(f.x,GROUND-6,16,'#d8c39a',6); ring(f.x,GROUND-6,'#ffd9a0',90); shake=12;
+        }else{
+          f.vx*=.12; f.settle=1;
+          spark(f.x,GROUND-4,10,'#c9b28a',4); shake=7;
+        }
+      }
+      else if(f.state==='down'){ f.t=0; f.hitstun=Math.max(f.hitstun,42); spark(f.x,GROUND-6,10,'#c9b28a',4); shake=6; }
       else spark(f.x,GROUND-2,4,'#c9b28a',3);
     }
   }
@@ -682,6 +706,7 @@ function physics(f){
   }
   else if(f.state==='hurt'||f.state==='guard'){ if(f.hitstun<=0) f.state='idle'; }
   else if(f.state==='down'){ if(!f.air&&f.hitstun<=0) f.state='idle'; }
+  if(f.state==='ko') f.koT=(f.koT||0)+1;
   if(f.flash>0) f.flash--;
   if(f.chargeFx>0) f.chargeFx--;
   if(f.fbCool>0) f.fbCool--;
@@ -692,7 +717,7 @@ function overlap(a,b){ return a&&b&&a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a
 
 function combat(a,b){
   const hb=a.hitbox(); if(!hb||a.hasHit) return;
-  if(b.state==='down'||b.invuln>0) return;
+  if(b.downed||b.invuln>0) return;
   if(!overlap(hb,b.hurtbox())) return;
   a.hasHit=true; a.hitNum++;
   const m=hb.m;
@@ -730,7 +755,7 @@ function ballHits(){
       }
     }
     if(bl.dead) continue;
-    if(bl.cool>0 || tgt.state==='down' || tgt.invuln>0) continue;
+    if(bl.cool>0 || tgt.downed || tgt.invuln>0) continue;
     if(overlap(bl.box(),tgt.hurtbox())){
       const canGuard = tgt.blocking && !tgt.air;
       if(canGuard){
@@ -751,6 +776,7 @@ function ballHits(){
 }
 
 function pushApart(){
+  if(P1.koed||P2.koed) return;          // 倒れているキャラは押し合わない
   const d=P2.x-P1.x, min=64;
   if(Math.abs(d)<min){
     const ov=(min-Math.abs(d))/2, s=d>=0?1:-1;
@@ -803,11 +829,12 @@ function update(){
   for(let i=fx.length-1;i>=0;i--) if(fx[i].t>fx[i].l) fx.splice(i,1);
 
   // --- フェーズ管理
-  phaseT++;
+  phaseT++; bannerT++;
+  if(koFlash>0) koFlash--;
   if(phase==='intro'){
-    if(phaseT===1) banner='ROUND '+round;
-    if(phaseT===80){ banner='FIGHT!'; SFX.bell(); }
-    if(phaseT>120){ phase='fight'; banner=''; }
+    if(phaseT===1) setBanner('ROUND '+round);
+    if(phaseT===80){ setBanner('FIGHT!'); SFX.bell(); }
+    if(phaseT>120){ phase='fight'; setBanner(''); }
   }
   else if(phase==='fight'){
     timer--;
@@ -815,12 +842,25 @@ function update(){
       let w = P1.hp<=0&&P2.hp<=0 ? 0 : P2.hp<=0 ? 1 : P1.hp<=0 ? 2 :
               (P1.hp>P2.hp?1:P1.hp<P2.hp?2:0);
       winner=w; if(w===1)W1++; else if(w===2)W2++; else {W1++;W2++;}
-      banner = timer<=0&&P1.hp>0&&P2.hp>0 ? 'TIME UP' : 'K.O.';
+      const isKO = P1.hp<=0 || P2.hp<=0;
+      setBanner(isKO ? 'K.O.' : 'TIME UP');
       phase='ko'; phaseT=0; hitStop=14; shake=14; SFX.ko();
+      // --- KO演出：敗者が吹き飛んで倒れる
+      if(isKO){
+        if(P1.hp<=0) P1.koDown(P2.x);
+        if(P2.hp<=0) P2.koDown(P1.x);
+        koTarget = P1.hp<=0 ? P1 : P2;
+        koFlash=16; slowmo=70; slowAcc=0;
+      }
     }
   }
   else if(phase==='ko'){
-    if(phaseT===70) banner = winner===0?'DRAW GAME':(winner===1?P1.name+' WINS':P2.name+' WINS');
+    // 決着後に勝者が勝ちポーズ
+    if(phaseT===64){
+      const win = winner===1?P1 : winner===2?P2 : null;
+      if(win && !win.koed && !win.air){ win.state='pose'; win.t=0; }
+    }
+    if(phaseT===70) setBanner(winner===0?'DRAW GAME':(winner===1?P1.name+' WINS':P2.name+' WINS'));
     if(phaseT>190){
       if(W1>=WIN_ROUNDS||W2>=WIN_ROUNDS){ phase='result'; phaseT=0; }
       else { round++; newRound(); }
@@ -892,6 +932,20 @@ function poseOf(f){
   }
   if(s==='hurt'){ p.lean=-16; p.aF=[-50,20]; p.aB=[-120,20]; p.head=-3; }
   if(s==='down'){ p.lean=-70; p.aF=[-70,10]; p.aB=[-110,10]; p.lF=[10,50]; p.lB=[35,40]; }
+  if(s==='ko'){
+    // 吹き飛びながら回転し、仰向けに倒れる
+    const kr=Math.min(1,(f.koT||0)*0.036);
+    p.spin=-Math.PI/2*kr; p.hip=70*kr; p.head=-2; p.lean=0;
+    p.aF=[lerp(-40,-96,kr), lerp(20,18,kr)];
+    p.aB=[lerp(-132,-70,kr), 12];
+    p.lF=[lerp(38,86,kr), lerp(62,14,kr)];
+    p.lB=[lerp(92,66,kr), lerp(28,26,kr)];
+  }
+  if(s==='pose'){                                   // 勝ちポーズ
+    const b=Math.sin(f.t*0.09)*3;
+    p.aF=[-84+b,-16]; p.aB=[-104+b,-10]; p.lean=-4; p.head=-1;
+    p.lF=[74,18]; p.lB=[106,-16];
+  }
   if(s==='atk'&&m){
     const ph = t<m.start?0 : t<m.start+m.act?1:2;
     const k  = ph===0? t/Math.max(1,m.start) : ph===1?1 : 1-(t-m.start-m.act)/Math.max(1,m.rec);
@@ -963,14 +1017,14 @@ function drawFighter(f){
   const gi = f.flash>0 && f.flash%2 ? '#ffffff' : f.col;
   const skin= f.flash>0 && f.flash%2 ? '#ffffff' : f.skin;
 
+  const hipY=-84+p.hip, shY=-140+p.hip*0.75;
   X.rotate(p.lean*Math.PI/180*0.35);
-  if(p.spin){ X.translate(0,-84); X.rotate(p.spin); X.translate(0,84); }
+  if(p.spin){ X.translate(0,hipY); X.rotate(p.spin); X.translate(0,-hipY); }
   // 無敵中（昇竜拳の上昇）は淡く光る
   if(f.invuln>0){
     X.save(); X.globalAlpha=.35; X.fillStyle='#ffe6a0';
     X.beginPath(); X.ellipse(4,-86,44,92,0,0,7); X.fill(); X.restore();
   }
-  const hipY=-84+p.hip, shY=-140+p.hip*0.75;
 
   // 後ろ脚 / 後ろ腕
   limb(-6,hipY,p.lB[0],40,p.lB[1],42,15,12,shade(gi,-38),dark);
@@ -1145,6 +1199,10 @@ function drawBanner(){
   if(!banner) return;
   X.save(); X.textAlign='center';
   const y=H/2-30;
+  // 叩きつけるように大きく出て縮む
+  const sc = bannerT<16 ? 3.4-2.4*(bannerT/16) : (bannerT<22 ? 1+0.06*Math.sin((bannerT-16)*1.1) : 1);
+  X.translate(W/2,y); X.scale(sc,sc); X.translate(-W/2,-y);
+  if(bannerT<16){ X.globalAlpha=Math.min(1,bannerT/5); }
   X.font='bold 76px Impact,Arial Black';
   X.lineWidth=10; X.strokeStyle='#1a0d0d'; X.strokeText(banner,W/2,y);
   const g=X.createLinearGradient(0,y-60,0,y+14);
@@ -1176,6 +1234,15 @@ function drawResult(){
 //============================================================ 描画本体
 function render(){
   X.save();
+  // --- KO演出：倒れた側にゆっくり寄る
+  if(koTarget && phase==='ko'){
+    const t=phaseT;
+    const k = t<24 ? (t/24)*(t/24) : (t<130 ? 1 : Math.max(0,1-(t-130)/45));
+    const cx=Math.max(240,Math.min(W-240,koTarget.x));
+    const cy=Math.max(180,Math.min(H-120,koTarget.y-50));
+    const s=1+0.38*k;
+    X.translate(cx,cy); X.scale(s,s); X.translate(-cx,-cy);
+  }
   if(shake>.4){ X.translate((Math.random()-.5)*shake*2,(Math.random()-.5)*shake*2); }
   drawBG();
 
@@ -1185,12 +1252,25 @@ function render(){
   for(const b of balls) drawBall(b);
   drawFX();
 
+  // KO演出：倒れた側にスポットライト
+  if(koTarget && phase==='ko' && phaseT>12){
+    const a=Math.min(.6,(phaseT-12)/45*.6);
+    const g=X.createRadialGradient(koTarget.x,koTarget.y-40,50,koTarget.x,koTarget.y-40,430);
+    g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,'rgba(0,0,0,'+a+')');
+    X.fillStyle=g; X.fillRect(-200,-200,W+400,H+400);
+  }
+
   // スーパー演出
   if((P1.state==='atk'&&P1.move===MOVES.shinku&&P1.t<10)||(P2.state==='atk'&&P2.move===MOVES.shinku&&P2.t<10)){
     X.fillStyle='rgba(255,255,255,'+(0.5-((P1.move===MOVES.shinku?P1.t:P2.t)/22))+')';
     X.fillRect(0,0,W,H);
   }
   X.restore();
+
+  // KO の瞬間のフラッシュ
+  if(koFlash>0){
+    X.fillStyle='rgba(255,255,255,'+(koFlash/16*0.9)+')'; X.fillRect(0,0,W,H);
+  }
 
   drawHUD();
   if(phase==='intro'||phase==='ko') drawBanner();
@@ -1224,9 +1304,15 @@ function loop(now){
   acc+=dt;
   const STEP=1000/60;
   while(acc>=STEP){
+    acc-=STEP;
+    // KO直後はスローモーション（実時間は進むがゲームは間引いて進行）
+    if(slowmo>0){
+      slowmo--; slowAcc+=0.34;
+      if(slowAcc<1) continue;
+      slowAcc-=1;
+    }
     update();
     for(const k in pressed) delete pressed[k];
-    acc-=STEP;
   }
   render();
 }
