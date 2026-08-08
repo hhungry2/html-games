@@ -29,10 +29,11 @@
     max-width: 100%;
     max-height: calc(100vh - 176px);
   }
-  /* BGMボタンは方向キーの上の段に置く */
+  /* 一時停止 / BGM ボタンは方向キーの上の段に置く */
   #ctrl {
     display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
   }
+  #padTop { display: flex; gap: 10px; }
   #pad {
     display: flex; gap: 10px;
   }
@@ -44,7 +45,7 @@
     font-size: 18px; font-weight: bold;
     cursor: pointer;
   }
-  .btn.mini { width: 78px; height: 32px; font-size: 13px; border-radius: 8px; }
+  .btn.mini { width: 100px; height: 32px; font-size: 13px; border-radius: 8px; }
   .btn:active { background: #3d6a99; transform: translateY(2px); }
   #hint { font-size: 12px; color: #8ba7c0; text-align: center; line-height: 1.5; }
 </style>
@@ -53,7 +54,10 @@
 <div id="wrap">
   <canvas id="cv" width="520" height="660"></canvas>
   <div id="ctrl">
-    <div class="btn mini" id="bM">♪ BGM</div>
+    <div id="padTop">
+      <div class="btn mini" id="bP">⏸ PAUSE</div>
+      <div class="btn mini" id="bM">♪ BGM</div>
+    </div>
     <div id="pad">
       <div class="btn" id="bL">◀</div>
       <div class="btn" id="bR">▶</div>
@@ -61,7 +65,7 @@
       <div class="btn" id="bS">入替</div>
     </div>
   </div>
-  <div id="hint">←→ 移動 ／ スペース・↑ 入替 ／ ↓ 落下 ／ M・♪ でBGM切替<br>たまごの殻で敵をはさむとヨッシーが誕生！</div>
+  <div id="hint">←→ 移動 ／ スペース・↑ 入替 ／ ↓ 落下 ／ P・⏸ で一時停止 ／ M・♪ でBGM切替<br>たまごの殻で敵をはさむとヨッシーが誕生！</div>
 </div>
 <script>
 (function () {
@@ -82,7 +86,7 @@
 
   let board, active, cursor, state, score, hiScore, dropped, level, chain;
   let clearFx, hatchFx, timer, fastDrop, gameOverAt, titleT = 0, hatch = null;
-  let nextPair = null, swapAnim = 0, marioBack = false, hatchCount = 0;
+  let nextPair = null, swapAnim = 0, marioBack = false, hatchCount = 0, paused = false;
 
   /* ---------- 効果音 ---------- */
   let ac = null, sfxGain = null;
@@ -248,10 +252,20 @@
       bgmStep = 0; bgmNextT = ac.currentTime + 0.1; bgmPlaying = true;
     } catch (e) { bgmPlaying = false; }
   }
-  function bgmStop() { bgmPlaying = false; }
+  function bgmStop() {
+    bgmPlaying = false;
+    if (bgmGain) bgmGain.gain.value = 0;      // 予約済みの音も含めて黙らせる
+  }
+  /* 一時停止から戻ったときにBGMを鳴らし直す */
+  function bgmResume() {
+    if (!ac || !bgmGain) return;
+    bgmGain.gain.value = bgmOn ? 1.05 : 0;
+    bgmNextT = ac.currentTime + 0.05;
+    bgmPlaying = true;
+  }
   function bgmToggle() {
     bgmOn = !bgmOn;
-    if (bgmGain) bgmGain.gain.value = bgmOn ? 1.05 : 0;
+    if (bgmGain) bgmGain.gain.value = bgmOn && !paused ? 1.05 : 0;
   }
   function bgmTick() {
     if (!bgmPlaying || !ac) return;
@@ -283,6 +297,7 @@
     swapAnim = 0;
     marioBack = false;
     hatchCount = 0;
+    paused = false;
     timer = 0;
     fastDrop = false;
     hiScore = Number(localStorage.getItem("yoshiEggHi") || 0);
@@ -330,6 +345,7 @@
 
   function swapColumns() {
     if (state !== "play") return;
+    if (paused) return;
     const a = cursor, b = cursor + 1;
     for (let r = 0; r < ROWS; r++) {
       const t = board[r][a]; board[r][a] = board[r][b]; board[r][b] = t;
@@ -945,9 +961,9 @@
         drawPiece(board[r][c], cx(c), cy(r));
       }
     }
-    // 落下中
+    // 落下中（枠は盤面に確定してから付くので、ここでは絵だけ）
     for (const p of active) {
-      if (p.y > -0.9) { cellFrame(p.col, p.y); drawPiece(p.type, cx(p.col), BY + p.y * CELL + CELL / 2); }
+      if (p.y > -0.9) drawPiece(p.type, cx(p.col), BY + p.y * CELL + CELL / 2);
     }
     // 消滅エフェクト
     for (const f of clearFx) {
@@ -982,6 +998,17 @@
     ctx.restore();
     drawMario(mx, FLOOR_Y + 44);
 
+    if (paused) {
+      ctx.fillStyle = "rgba(0,0,0,0.7)";
+      ctx.fillRect(0, cv.height / 2 - 64, cv.width, 128);
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#ffe14d"; ctx.font = "bold 38px 'Courier New', monospace";
+      ctx.fillText("PAUSE", cv.width / 2, cv.height / 2);
+      ctx.fillStyle = "#bcd"; ctx.font = "14px sans-serif";
+      ctx.fillText("P キー / ⏸ ボタンで再開", cv.width / 2, cv.height / 2 + 34);
+      ctx.textAlign = "left";
+    }
+
     if (state === "over") {
       ctx.fillStyle = "rgba(0,0,0,0.72)";
       ctx.fillRect(0, cv.height / 2 - 80, cv.width, 160);
@@ -997,8 +1024,15 @@
 
   /* ---------- 入力 ---------- */
   function move(d) {
-    if (state !== "play") return;
+    if (state !== "play" || paused) return;
     cursor = Math.max(0, Math.min(COLS - 2, cursor + d));
+  }
+  /* 一時停止。プレイ中の演出も含めて止め、BGMも黙らせる */
+  function togglePause() {
+    if (state === "title" || state === "over") return;
+    paused = !paused;
+    if (paused) { fastDrop = false; bgmStop(); }
+    else bgmResume();
   }
   function restart() {
     if (state === "title") { startGame(); return; }
@@ -1009,8 +1043,10 @@
     const k = e.key;
     if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " "].indexOf(k) >= 0) e.preventDefault();
     if (k === "m" || k === "M") { bgmToggle(); return; }
+    if (k === "p" || k === "P") { togglePause(); return; }
     if (state === "title") { startGame(); return; }
     if (state === "over") { if (k === "r" || k === "R" || k === " ") restart(); return; }
+    if (paused) return;
     if (k === "ArrowLeft") move(-1);
     else if (k === "ArrowRight") move(1);
     else if (k === " " || k === "ArrowUp" || k === "z" || k === "Z") swapColumns();
@@ -1031,13 +1067,16 @@
   hook("bL", () => move(-1));
   hook("bR", () => move(1));
   hook("bS", () => swapColumns());
-  hook("bD", () => { fastDrop = true; }, () => { fastDrop = false; });
-  (function () {                       // ♪ ボタンはタイトル中でもBGM切替だけ行う
-    const el = document.getElementById("bM");
-    const t = e => { e.preventDefault(); e.stopPropagation(); bgmToggle(); };
+  hook("bD", () => { if (!paused) fastDrop = true; }, () => { fastDrop = false; });
+  /* ♪ と ⏸ はタイトル中にゲームを開始させず、自分の役目だけを果たす */
+  function hookTap(id, fn) {
+    const el = document.getElementById(id);
+    const t = e => { e.preventDefault(); e.stopPropagation(); fn(); };
     el.addEventListener("touchstart", t, { passive: false });
     el.addEventListener("mousedown", t);
-  })();
+  }
+  hookTap("bM", bgmToggle);
+  hookTap("bP", togglePause);
   cv.addEventListener("pointerdown", restart);
 
   /* ---------- ループ ---------- */
@@ -1045,6 +1084,7 @@
   function frame(now) {
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
+    if (paused) { draw(); requestAnimationFrame(frame); return; }
     bgmTick();
     update(dt);
     draw();
