@@ -382,6 +382,8 @@ class Fighter{
     this.hitstun=0; this.knock=0; this.dizzyT=0; this.win=0; this.fbCool=0;
     this.invuln=0; this.hitNum=0;
     this.koed=false; this.bounce=0; this.settle=0;
+    this.koT=0;
+    this.aiT=0; this.aiInp=null; this.spCool=0; this.atkCool=0; this.dpCool=0;
     this.hist=[]; this.anim=Math.random()*100; this.flash=0; this.chargeFx=0;
   }
   get dir(){ return this.face; }               // 前方向
@@ -450,7 +452,7 @@ class Fighter{
     this.state = knockdown||this.hp<=0 ? 'down':'hurt';
     this.t=0; this.hitstun=stun; this.flash=6;
     this.vx = (fromX>this.x?-1:1)*(knockdown?7:3.2);
-    if(knockdown||this.hp<=0){ this.vy=-11; this.air=true; }
+    if(knockdown||this.hp<=0){ this.vy=-11; this.air=true; this.koT=0; }
     this.move=null;
   }
   guard(bstun,push,fromX){
@@ -541,55 +543,72 @@ let W1=0,W2=0;
 //============================================================ AI
 function aiThink(me,foe){
   const d=Math.abs(me.x-foe.x), toward = foe.x>me.x?1:-1;
+  const F = toward>0?'r':'l', B = toward>0?'l':'r';   // 前 / 後ろ
   const inp={l:false,r:false,u:false,d:false,p:false,k:false,h:false,s:false,dp:false,tk:false};
-  if(me.busy||me.hitstun>0) return inp;
-  const lv = 0.55 + Math.min(0.35, (round-1)*0.12);   // ラウンドが進むと強くなる
   me.aiT=(me.aiT||0)-1;
+  // クールタイムは「手が空いている間」だけ進める。技の硬直で消化されると連発になる
+  if(!me.busy && me.hitstun<=0){
+    me.spCool=(me.spCool||0)-1; me.atkCool=(me.atkCool||0)-1; me.dpCool=(me.dpCool||0)-1;
+  }
+  // 行動中・のけぞり中は入力を出さず、保留していた判断も破棄する（硬直明けの即再発動を防ぐ）
+  if(me.busy||me.hitstun>0){ me.aiInp=null; me.aiT=0; return inp; }
+
+  const lv = 0.55 + Math.min(0.35, (round-1)*0.12);   // ラウンドが進むと強くなる
+  const canSP = me.spCool<=0, canATK = me.atkCool<=0;
+  const hold = t => { me.aiInp=inp; me.aiT=t; return inp; };
+  // 必殺技を出したら次まで大きく間を置く
+  const sp = () => { me.spCool=Math.round((120+Math.random()*90)*(1.3-lv*0.55)); me.atkCool=40; };
+  // 通常技を出したら小さく間を置く
+  const atk = () => { me.atkCool=Math.round((28+Math.random()*38)*(1.3-lv*0.55)); };
 
   // 飛び道具を警戒（自分に向かって飛んでくる弾）
   const danger = balls.find(b=> b.owner!==me && Math.sign(b.vx)===-toward && Math.abs(b.x-me.x)<300);
-  if(danger){
-    if(Math.abs(danger.x-me.x)<190 && Math.random()<lv){
-      if(Math.random()<0.35){ inp.u=true; inp[toward>0?'r':'l']=true; }      // 飛び越える
-      else { inp[toward>0?'l':'r']=true; inp.d=Math.random()<.4; }           // ガード
-      return inp;
-    }
+  if(danger && Math.abs(danger.x-me.x)<190 && Math.random()<lv){
+    if(Math.random()<0.32){ inp.u=true; inp[F]=true; }        // 飛び越える
+    else { inp[B]=true; inp.d=Math.random()<.4; }             // ガード
+    return hold(8);
   }
-  // 対空：飛び込んできた相手に昇竜拳
-  if(foe.air && foe.y<GROUND-45 && d<165 && Math.random()<0.30*lv+0.18){
-    inp.dp=true; me.aiInp=inp; me.aiT=5; return inp;
+  // 対空：飛び込んできた相手に昇竜拳（反撃なので必殺技の間隔とは別枠、ただし専用の間隔を持つ）
+  if(foe.air && foe.y<GROUND-45 && d<165 && me.dpCool<=0 && Math.random()<0.26*lv+0.16){
+    inp.dp=true;
+    me.dpCool=Math.round(70+Math.random()*50); me.atkCool=Math.max(me.atkCool,30);
+    me.spCool=Math.max(me.spCool,50);
+    return hold(4);
   }
   if(me.aiT>0){ // 直前の判断を継続
     Object.assign(inp,me.aiInp||{}); return inp;
   }
-  const r=Math.random(), canFB = me.fbCool<=0;
-  if(d>330){
-    if(r<0.30*lv && canFB){ inp.h=true; }            // 波動拳
-    else if(r<0.80){ inp[toward>0?'r':'l']=true; }
-    else if(r<0.90){ inp.tk=true; }                  // 竜巻旋風脚で距離を詰める
-    else { inp.u=true; inp[toward>0?'r':'l']=true; }
-  }else if(d>170){
-    if(me.meter>=100 && r<0.25){ inp.s=true; }
-    else if(r<0.20*lv && canFB){ inp.h=true; }
-    else if(r<0.40*lv+.12){ inp.tk=true; }           // 竜巻旋風脚で突っ込む
-    else if(r<0.68){ inp[toward>0?'r':'l']=true; }
-    else if(r<0.80){ inp.u=true; inp[toward>0?'r':'l']=true; inp.k=true; }
-    else { inp[toward>0?'l':'r']=true; }             // 様子見バック
-  }else if(d>60){
-    if(r<0.26*lv+.05) inp.p=true;
-    else if(r<0.46*lv+.10) inp.k=true;
-    else if(r<0.60){ inp.d=true; inp.k=true; }        // 足払い
-    else if(r<0.60+0.16*lv){ inp.dp=true; }           // 至近距離で昇竜拳をぶっ放す
-    else if(r<0.90){ inp[toward>0?'l':'r']=true; }    // ガード気味に下がる
-    else inp[toward>0?'r':'l']=true;
-  }else{
-    if(r<0.42) inp.p=true;
-    else if(r<0.60){ inp.d=true; inp.k=true; }
-    else if(r<0.60+0.18*lv){ inp.dp=true; }
-    else inp[toward>0?'l':'r']=true;
+  const r=Math.random(), canFB = canSP && me.fbCool<=0;
+  if(d>330){                                          // 遠距離
+    if(canFB && r<0.34*lv){ inp.h=true; sp(); }
+    else if(r<0.86){ inp[F]=true; }
+    else { inp.u=true; inp[F]=true; }
+  }else if(d>170){                                    // 中距離
+    if(me.meter>=100 && canSP && r<0.22){ inp.s=true; sp(); }
+    else if(canFB && r<0.24*lv){ inp.h=true; sp(); }
+    else if(canSP && r<0.22*lv+.06){ inp.tk=true; sp(); }
+    else if(r<0.72){ inp[F]=true; }
+    else if(r<0.82){ inp.u=true; inp[F]=true; inp.k=true; }
+    else { inp[B]=true; }                             // 様子見バック
+  }else if(d>120){                                    // 打撃が届かない間合い：踏み込む
+    if(canSP && r<0.14*lv){ inp.tk=true; sp(); }
+    else if(r<0.64){ inp[F]=true; }
+    else if(r<0.76){ inp.u=true; inp[F]=true; inp.k=true; }
+    else { inp[B]=true; }
+  }else if(d>60){                                     // 打撃間合い
+    if(canATK && r<0.24*lv+.06){ inp.p=true; atk(); }
+    else if(canATK && r<0.42*lv+.10){ inp.k=true; atk(); }
+    else if(canATK && r<0.56){ inp.d=true; inp.k=true; atk(); }   // 足払い
+    else if(canSP && r<0.62){ inp.dp=true; sp(); }
+    else if(r<0.86){ inp[B]=true; }                   // ガード気味に下がる
+    else inp[F]=true;
+  }else{                                              // 至近距離
+    if(canATK && r<0.40){ inp.p=true; atk(); }
+    else if(canATK && r<0.56){ inp.d=true; inp.k=true; atk(); }
+    else if(canSP && r<0.64){ inp.dp=true; sp(); }
+    else inp[B]=true;
   }
-  me.aiInp=inp; me.aiT=6+Math.floor(Math.random()*10);
-  return inp;
+  return hold(6+Math.floor(Math.random()*10));
 }
 
 //============================================================ 1体分の更新
@@ -706,7 +725,7 @@ function physics(f){
   }
   else if(f.state==='hurt'||f.state==='guard'){ if(f.hitstun<=0) f.state='idle'; }
   else if(f.state==='down'){ if(!f.air&&f.hitstun<=0) f.state='idle'; }
-  if(f.state==='ko') f.koT=(f.koT||0)+1;
+  if(f.state==='ko'||f.state==='down') f.koT=(f.koT||0)+1;
   if(f.flash>0) f.flash--;
   if(f.chargeFx>0) f.chargeFx--;
   if(f.fbCool>0) f.fbCool--;
@@ -931,10 +950,11 @@ function poseOf(f){
     if(f.crouch){ p.hip=42; p.lF=[45,95]; p.lB=[130,-95]; }
   }
   if(s==='hurt'){ p.lean=-16; p.aF=[-50,20]; p.aB=[-120,20]; p.head=-3; }
-  if(s==='down'){ p.lean=-70; p.aF=[-70,10]; p.aB=[-110,10]; p.lF=[10,50]; p.lB=[35,40]; }
-  if(s==='ko'){
-    // 吹き飛びながら回転し、仰向けに倒れる
-    const kr=Math.min(1,(f.koT||0)*0.036);
+  // ダウンとKOは同じ倒れ方（吹き飛びながら回転して仰向けに倒れる）
+  if(s==='down'||s==='ko'){
+    let kr=Math.min(1,(f.koT||0)*0.036);
+    // 通常ダウンはのけぞりが切れる直前に起き上がる
+    if(s==='down' && !f.air && f.hitstun<14) kr*=Math.max(0,f.hitstun/14);
     p.spin=-Math.PI/2*kr; p.hip=70*kr; p.head=-2; p.lean=0;
     p.aF=[lerp(-40,-96,kr), lerp(20,18,kr)];
     p.aB=[lerp(-132,-70,kr), 12];
