@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>ツムパズル - ツムツム風パズルゲーム</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    background:radial-gradient(ellipse at 50% 0%,#2a3f6e 0%,#16203c 55%,#0d1326 100%);
+    font-family:"Hiragino Maru Gothic ProN","Hiragino Sans","Yu Gothic UI",system-ui,sans-serif;
+    color:#fff;display:flex;align-items:center;justify-content:center;
+    overflow:hidden;touch-action:none;user-select:none;
+  }
+  /* 盤面比率(430:660)を保ったまま、スマホは幅基準・PCは高さ基準でスケール */
+  #app{
+    position:relative;
+    width:min(100vw, calc((100dvh - 130px) * 0.66), 470px);
+    height:100dvh;max-height:1000px;
+    display:flex;flex-direction:column;
+    padding:6px 8px calc(10px + env(safe-area-inset-bottom,0px));
+  }
+  @media (pointer:fine){
+    canvas{cursor:grab}
+    canvas:active{cursor:grabbing}
+    .btn:hover{filter:brightness(1.06)}
+    #skillBtn.ready:hover{filter:brightness(1.06)}
+  }
+  /* ---------- HUD ---------- */
+  #hud{display:flex;gap:6px;align-items:stretch;margin-bottom:6px}
+  .panel{
+    background:linear-gradient(180deg,rgba(255,255,255,.16),rgba(255,255,255,.06));
+    border:1px solid rgba(255,255,255,.25);border-radius:14px;padding:5px 10px;
+    box-shadow:0 3px 10px rgba(0,0,0,.3) inset,0 2px 6px rgba(0,0,0,.25);
+  }
+  .lbl{font-size:10px;letter-spacing:.12em;opacity:.75;line-height:1.2}
+  #scoreP{flex:1}
+  #score{font-size:26px;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums;
+    text-shadow:0 2px 0 rgba(0,0,0,.35)}
+  #timeP{width:104px;text-align:center}
+  #time{font-size:26px;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums}
+  #time.warn{color:#ff6b6b;animation:blink .6s infinite}
+  @keyframes blink{50%{opacity:.35}}
+  #tbarWrap{height:5px;background:rgba(0,0,0,.35);border-radius:3px;overflow:hidden;margin-top:3px}
+  #tbar{height:100%;width:100%;background:linear-gradient(90deg,#7ee8fa,#3aa0ff);border-radius:3px}
+  /* ---------- canvas ---------- */
+  #stage{position:relative;flex:1;min-height:0;display:flex;justify-content:center}
+  canvas{
+    width:100%;height:100%;object-fit:contain;display:block;
+    border-radius:18px;
+    background:linear-gradient(180deg,#f2f7ff 0%,#dbe8ff 40%,#c9dcff 100%);
+    box-shadow:0 10px 30px rgba(0,0,0,.45),0 0 0 3px rgba(255,255,255,.18);
+  }
+  /* ---------- bottom ---------- */
+  #bottom{display:flex;gap:8px;align-items:center;margin-top:8px}
+  #feverWrap{flex:1}
+  #feverBarBg{height:16px;background:rgba(0,0,0,.4);border-radius:9px;overflow:hidden;
+    border:1px solid rgba(255,255,255,.25)}
+  #feverBar{height:100%;width:0%;border-radius:9px;
+    background:linear-gradient(90deg,#ffd05a,#ff8a3d,#ff4d6d);transition:width .15s}
+  #feverTxt{font-size:10px;letter-spacing:.14em;opacity:.8;margin-bottom:3px}
+  #skillBtn{
+    width:78px;height:52px;border-radius:16px;border:1px solid rgba(255,255,255,.3);
+    background:linear-gradient(180deg,#4b5a86,#333f63);color:#9fb0d6;font-weight:800;
+    font-size:12px;line-height:1.25;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:1px;cursor:pointer;
+  }
+  #skillBtn.ready{
+    background:linear-gradient(180deg,#ffe58a,#ffab35);color:#5a2d00;
+    box-shadow:0 0 14px rgba(255,190,80,.8);animation:pulse 1s infinite;border-color:#fff3c4
+  }
+  @keyframes pulse{50%{transform:scale(1.045)}}
+  #skillPct{font-size:15px;font-weight:900}
+  /* ---------- overlay ---------- */
+  .ov{
+    position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:14px;background:rgba(10,16,32,.82);backdrop-filter:blur(6px);
+    border-radius:18px;z-index:5;text-align:center;padding:20px;
+  }
+  .ov.hide{display:none}
+  .ttl{font-size:34px;font-weight:900;letter-spacing:.04em;
+    background:linear-gradient(180deg,#fff,#ffd478);-webkit-background-clip:text;background-clip:text;
+    -webkit-text-fill-color:transparent;filter:drop-shadow(0 3px 4px rgba(0,0,0,.5))}
+  .sub{font-size:13px;line-height:1.8;opacity:.9}
+  .btn{
+    margin-top:6px;padding:13px 34px;border:none;border-radius:999px;font-size:17px;font-weight:900;
+    background:linear-gradient(180deg,#ffe38a,#ff9f2e);color:#5a2d00;cursor:pointer;
+    box-shadow:0 5px 0 #c96f00,0 8px 18px rgba(0,0,0,.4);
+  }
+  .btn:active{transform:translateY(3px);box-shadow:0 2px 0 #c96f00}
+  #finalScore{font-size:46px;font-weight:900;font-variant-numeric:tabular-nums;
+    text-shadow:0 3px 0 rgba(0,0,0,.4)}
+  .rank{font-size:20px;font-weight:800;color:#ffd478}
+  #feverFlash{
+    position:absolute;inset:0;pointer-events:none;border-radius:18px;opacity:0;
+    background:radial-gradient(ellipse at 50% 50%,rgba(255,180,60,.35),rgba(255,60,120,.15) 60%,transparent 75%);
+    z-index:3;transition:opacity .3s
+  }
+  #feverFlash.on{opacity:1;animation:fev 1.2s infinite}
+  @keyframes fev{50%{opacity:.55}}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="hud">
+    <div class="panel" id="scoreP">
+      <div class="lbl">SCORE</div>
+      <div id="score">0</div>
+    </div>
+    <div class="panel" id="timeP">
+      <div class="lbl">TIME</div>
+      <div id="time">60</div>
+      <div id="tbarWrap"><div id="tbar"></div></div>
+    </div>
+  </div>
+
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="feverFlash"></div>
+
+    <div class="ov" id="titleOv">
+      <div class="ttl">ツムパズル</div>
+      <div class="sub">
+        同じツムを<b>3つ以上</b>なぞってつなげよう！<br>
+        7つ以上つなげると<b>ボム</b>が出現💣<br>
+        ゲージが満タンで<b>フィーバー</b>＆<b>スキル</b>！<br>
+        制限時間 60 秒でハイスコアをめざせ！
+      </div>
+      <button class="btn" id="startBtn">スタート</button>
+      <div class="sub" style="opacity:.6;font-size:11px">ハイスコア <span id="bestTitle">0</span></div>
+    </div>
+
+    <div class="ov hide" id="resultOv">
+      <div class="lbl" style="letter-spacing:.3em">RESULT</div>
+      <div id="finalScore">0</div>
+      <div class="rank" id="rankTxt"></div>
+      <div class="sub" id="statTxt"></div>
+      <button class="btn" id="retryBtn">もう一度</button>
+    </div>
+  </div>
+
+  <div id="bottom">
+    <div id="feverWrap">
+      <div id="feverTxt">FEVER GAUGE</div>
+      <div id="feverBarBg"><div id="feverBar"></div></div>
+    </div>
+    <button id="skillBtn"><span id="skillPct">0%</span><span>スキル</span></button>
+  </div>
+
+</div>
+
+<script>
+"use strict";
+/* =========================================================
+   ツムツム風パズル  ─  1ファイル完結
+   物理(位置ベース) + なぞりチェイン + コンボ/フィーバー/ボム/スキル
+   ========================================================= */
+
+const W = 430, H = 660;             // キャンバス論理サイズ
+const WALL = 10, FLOOR = H - 8;     // 壁・床
+const R = 27;                       // ツム半径
+const TARGET = 46;                  // 場に出すツム数
+const GRAV = 0.62;
+const GAME_TIME = 60;
+
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+
+/* ---------- ツムの種類 ---------- */
+const TYPES = [
+  {name:'クロ',  body:'#3a3a46', dark:'#22222c', muzzle:'#ffe6c9', ear:'top',   eye:'round'},
+  {name:'キイロ',body:'#ffcf4a', dark:'#e6a92b', muzzle:'#fff3cf', ear:'side',  eye:'oval'},
+  {name:'アカ',  body:'#f2635c', dark:'#c93f3c', muzzle:'#ffe2dc', ear:'top',   eye:'oval'},
+  {name:'ミズ',  body:'#59c2ef', dark:'#2f96c9', muzzle:'#e2f6ff', ear:'side',  eye:'round'},
+  {name:'ミドリ',body:'#78cf72', dark:'#4aa348', muzzle:'#e8ffe3', ear:'top',   eye:'sleepy'},
+  {name:'モモ',  body:'#f79bc4', dark:'#d16b9c', muzzle:'#ffe8f3', ear:'side',  eye:'oval'},
+];
+
+/* ---------- 状態 ---------- */
+let tsums = [], fx = [], texts = [];
+let chain = [];
+let score = 0, combo = 0, comboTimer = 0, maxCombo = 0, popped = 0;
+let timeLeft = GAME_TIME;
+let feverGauge = 0, feverActive = false, feverTime = 0;
+let skillGauge = 0;
+let playing = false, shake = 0, idSeq = 0;
+const store = {
+  get(){ try{ return +(localStorage.getItem('tsum_best') || 0); }catch(e){ return 0; } },
+  set(v){ try{ localStorage.setItem('tsum_best', v); }catch(e){} }
+};
+let best = store.get();
+document.getElementById('bestTitle').textContent = best.toLocaleString();
+
+const FEVER_NEED = 70, SKILL_NEED = 40, FEVER_DUR = 10;
+
+/* ---------- キャンバス解像度 ---------- */
+function fitCanvas(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  cv.width = W * dpr; cv.height = H * dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+fitCanvas();
+addEventListener('resize', fitCanvas);
+
+/* =========================================================
+   サウンド（WebAudio 簡易）
+   ========================================================= */
+let AC = null;
+function ac(){ if(!AC){ try{ AC = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } return AC; }
+function beep(freq, dur=0.08, type='sine', vol=0.16){
+  const a = ac(); if(!a) return;
+  const o = a.createOscillator(), g = a.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(vol, a.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + dur);
+  o.connect(g); g.connect(a.destination);
+  o.start(); o.stop(a.currentTime + dur);
+}
+function noise(dur=0.18, vol=0.25){
+  const a = ac(); if(!a) return;
+  const buf = a.createBuffer(1, a.sampleRate*dur, a.sampleRate);
+  const d = buf.getChannelData(0);
+  for(let i=0;i<d.length;i++) d[i] = (Math.random()*2-1) * (1 - i/d.length);
+  const s = a.createBufferSource(); s.buffer = buf;
+  const g = a.createGain(); g.gain.value = vol;
+  const f = a.createBiquadFilter(); f.type='lowpass'; f.frequency.value=1400;
+  s.connect(f); f.connect(g); g.connect(a.destination); s.start();
+}
+
+/* =========================================================
+   ツム生成 / 物理
+   ========================================================= */
+function makeTsum(highY){
+  return {
+    id: ++idSeq,
+    t: Math.floor(Math.random()*TYPES.length),
+    x: WALL + R + Math.random()*(W - WALL*2 - R*2),
+    y: highY !== undefined ? highY : -R - Math.random()*260,
+    vx: (Math.random()-0.5)*1.5, vy: 0,
+    r: R, rot: (Math.random()-0.5)*0.5, vrot: 0,
+    bomb: false, state: 'live', pt: 0, sel: false, wob: Math.random()*6.28
+  };
+}
+function refill(){
+  let live = 0;
+  for(const p of tsums) if(p.state === 'live') live++;
+  let need = TARGET - live;
+  while(need-- > 0) tsums.push(makeTsum());
+}
+function physics(){
+  for(const p of tsums){
+    if(p.state !== 'live'){ continue; }
+    p.vy += GRAV; p.vx *= 0.985; p.vy *= 0.995;
+    p.vx = Math.max(-22, Math.min(22, p.vx));
+    p.vy = Math.max(-24, Math.min(24, p.vy));
+    p.px = p.x; p.py = p.y;
+    p.x += p.vx; p.y += p.vy;
+  }
+  const live = tsums.filter(p => p.state === 'live');
+  for(let it=0; it<5; it++){
+    for(let i=0;i<live.length;i++){
+      const a = live[i];
+      for(let j=i+1;j<live.length;j++){
+        const b = live[j];
+        let dx = b.x-a.x, dy = b.y-a.y;
+        const rr = a.r + b.r;
+        if(Math.abs(dx) > rr || Math.abs(dy) > rr) continue;
+        let d2 = dx*dx + dy*dy;
+        if(d2 >= rr*rr) continue;
+        let d = Math.sqrt(d2);
+        if(d < 0.0001){ dx = Math.random()-0.5; dy = -1; d = 1; }
+        const ov = (rr - d) * 0.5 * 0.85;
+        const nx = dx/d, ny = dy/d;
+        a.x -= nx*ov; a.y -= ny*ov;
+        b.x += nx*ov; b.y += ny*ov;
+      }
+      // 壁・床
+      if(a.x < WALL + a.r) a.x = WALL + a.r;
+      if(a.x > W - WALL - a.r) a.x = W - WALL - a.r;
+      if(a.y > FLOOR - a.r) a.y = FLOOR - a.r;
+    }
+  }
+  for(const p of tsums){
+    if(p.state !== 'live') continue;
+    p.vx = (p.x - p.px) * 0.96;
+    p.vy = (p.y - p.py) * 0.96;
+    p.vrot += (p.vx * 0.004 - p.rot * 0.04);
+    p.vrot *= 0.9; p.rot += p.vrot;
+    p.rot = Math.max(-0.45, Math.min(0.45, p.rot));
+    p.wob += 0.06;
+  }
+}
+
+/* =========================================================
+   描画：ツムの顔
+   ========================================================= */
+function drawTsum(p){
+  const T = TYPES[p.t];
+  let s = 1;
+  if(p.state === 'pop'){ s = 1 + p.pt*2.6; }
+  if(p.sel) s *= 1.06 + Math.sin(p.wob*2)*0.03;
+  const alpha = p.state === 'pop' ? Math.max(0, 1 - p.pt/0.22) : 1;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(p.x, p.y);
+  ctx.rotate(p.rot);
+  ctx.scale(s, s * (p.state==='live' ? 1 - Math.sin(p.wob)*0.012 : 1));
+
+  const r = p.r;
+
+  // 影
+  ctx.fillStyle = 'rgba(30,45,80,.16)';
+  ctx.beginPath(); ctx.ellipse(0, r*0.82, r*0.86, r*0.24, 0, 0, 6.29); ctx.fill();
+
+  // 耳
+  ctx.fillStyle = T.dark;
+  if(T.ear === 'top'){
+    ctx.beginPath(); ctx.arc(-r*0.66, -r*0.72, r*0.46, 0, 6.29); ctx.fill();
+    ctx.beginPath(); ctx.arc( r*0.66, -r*0.72, r*0.46, 0, 6.29); ctx.fill();
+  }else{
+    ctx.beginPath(); ctx.ellipse(-r*0.92, -r*0.10, r*0.30, r*0.46, -0.35, 0, 6.29); ctx.fill();
+    ctx.beginPath(); ctx.ellipse( r*0.92, -r*0.10, r*0.30, r*0.46,  0.35, 0, 6.29); ctx.fill();
+  }
+
+  // 体
+  const g = ctx.createRadialGradient(-r*0.35, -r*0.45, r*0.15, 0, 0, r*1.12);
+  g.addColorStop(0, '#ffffff'); g.addColorStop(0.22, T.body); g.addColorStop(1, T.dark);
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.29); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,.18)'; ctx.lineWidth = 1.6; ctx.stroke();
+
+  if(p.bomb){
+    // ボム（黒球 + 導火線 + 火花）
+    const bg2 = ctx.createRadialGradient(-r*0.34, -r*0.42, r*0.08, 0, 0, r*1.05);
+    bg2.addColorStop(0, '#7d7f8c'); bg2.addColorStop(0.45, '#2b2c36'); bg2.addColorStop(1, '#101018');
+    ctx.fillStyle = bg2;
+    ctx.beginPath(); ctx.arc(0, 0, r*0.99, 0, 6.29); ctx.fill();
+    // 種類がわかるカラーリング
+    ctx.strokeStyle = T.body; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(0, 0, r*0.99, 0, 6.29); ctx.stroke();
+    ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 2.4;
+    ctx.beginPath(); ctx.arc(0, 0, r*0.70, 0, 6.29); ctx.stroke();
+    // ハイライト
+    ctx.fillStyle = 'rgba(255,255,255,.5)';
+    ctx.beginPath(); ctx.ellipse(-r*0.34, -r*0.40, r*0.20, r*0.13, -0.7, 0, 6.29); ctx.fill();
+    // 口金
+    ctx.fillStyle = '#c9a24a';
+    ctx.fillRect(-r*0.20, -r*1.14, r*0.40, r*0.28);
+    // 導火線
+    ctx.strokeStyle = '#b9873c'; ctx.lineWidth = r*0.13; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(0, -r*1.12);
+    ctx.quadraticCurveTo(r*0.55, -r*1.35, r*0.46, -r*1.62); ctx.stroke();
+    // 火花
+    const sp = 0.5 + Math.sin(p.wob*4)*0.5;
+    ctx.fillStyle = `rgba(255,${150+sp*90},60,.95)`;
+    ctx.beginPath(); ctx.arc(r*0.46, -r*1.66, r*0.20*(0.75+sp*0.55), 0, 6.29); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,220,.95)';
+    ctx.beginPath(); ctx.arc(r*0.46, -r*1.66, r*0.09*(0.7+sp*0.6), 0, 6.29); ctx.fill();
+    ctx.restore();
+    return;
+  }
+
+  // マズル
+  ctx.fillStyle = T.muzzle;
+  ctx.beginPath(); ctx.ellipse(0, r*0.30, r*0.56, r*0.44, 0, 0, 6.29); ctx.fill();
+
+  // 目
+  const ey = -r*0.18, ex = r*0.34;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.ellipse(-ex, ey, r*0.22, r*0.28, 0, 0, 6.29); ctx.fill();
+  ctx.beginPath(); ctx.ellipse( ex, ey, r*0.22, r*0.28, 0, 0, 6.29); ctx.fill();
+  ctx.fillStyle = '#241f2b';
+  if(T.eye === 'sleepy'){
+    ctx.lineWidth = r*0.11; ctx.strokeStyle = '#241f2b'; ctx.lineCap='round';
+    ctx.beginPath(); ctx.arc(-ex, ey+r*0.04, r*0.17, 3.34, 6.08); ctx.stroke();
+    ctx.beginPath(); ctx.arc( ex, ey+r*0.04, r*0.17, 3.34, 6.08); ctx.stroke();
+  }else{
+    const pw = T.eye==='round' ? r*0.14 : r*0.11;
+    ctx.beginPath(); ctx.ellipse(-ex, ey+r*0.02, pw, r*0.19, 0, 0, 6.29); ctx.fill();
+    ctx.beginPath(); ctx.ellipse( ex, ey+r*0.02, pw, r*0.19, 0, 0, 6.29); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.95)';
+    ctx.beginPath(); ctx.arc(-ex + pw*0.4, ey - r*0.08, r*0.06, 0, 6.29); ctx.fill();
+    ctx.beginPath(); ctx.arc( ex + pw*0.4, ey - r*0.08, r*0.06, 0, 6.29); ctx.fill();
+  }
+
+  // 鼻・口
+  ctx.fillStyle = '#3a2c2c';
+  ctx.beginPath(); ctx.ellipse(0, r*0.18, r*0.13, r*0.10, 0, 0, 6.29); ctx.fill();
+  ctx.strokeStyle = '#3a2c2c'; ctx.lineWidth = r*0.075; ctx.lineCap='round';
+  ctx.beginPath(); ctx.arc(-r*0.13, r*0.36, r*0.16, 0.15, 2.9); ctx.stroke();
+  ctx.beginPath(); ctx.arc( r*0.13, r*0.36, r*0.16, 0.24, 3.0); ctx.stroke();
+
+  // ほっぺ
+  ctx.fillStyle = 'rgba(255,120,140,.35)';
+  ctx.beginPath(); ctx.ellipse(-r*0.66, r*0.24, r*0.17, r*0.12, 0, 0, 6.29); ctx.fill();
+  ctx.beginPath(); ctx.ellipse( r*0.66, r*0.24, r*0.17, r*0.12, 0, 0, 6.29); ctx.fill();
+
+  ctx.restore();
+
+  // 選択リング
+  if(p.sel){
+    ctx.save();
+    ctx.globalAlpha = 0.95;
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 4.5;
+    ctx.shadowColor = TYPES[p.t].body; ctx.shadowBlur = 14;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r*1.03, 0, 6.29); ctx.stroke();
+    ctx.restore();
+  }
+}
+
+/* =========================================================
+   エフェクト
+   ========================================================= */
+function burst(x, y, color, n=10, pw=1){
+  for(let i=0;i<n;i++){
+    const a = Math.random()*6.29, sp = (1.5 + Math.random()*4)*pw;
+    fx.push({x, y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp - 1.2,
+             r: 2 + Math.random()*4*pw, life:1, color});
+  }
+}
+function popText(x, y, txt, color, size=20){
+  texts.push({x, y, txt, color, size, life:1});
+}
+
+/* =========================================================
+   チェイン（なぞり）
+   ========================================================= */
+function tsumAt(x, y){
+  let best = null, bd = 1e9;
+  for(const p of tsums){
+    if(p.state !== 'live') continue;
+    const d = Math.hypot(p.x-x, p.y-y);
+    if(d < p.r*1.02 && d < bd){ bd = d; best = p; }
+  }
+  return best;
+}
+function chainType(){ return chain.length ? chain[0].t : -1; }
+function tryAdd(p){
+  if(!p || p.state !== 'live') return;
+  if(chain.length === 0){
+    chain.push(p); p.sel = true; beep(520, .05, 'triangle', .12); return;
+  }
+  if(chain.length >= 2 && p === chain[chain.length-2]){
+    const rm = chain.pop(); rm.sel = false; beep(380, .04, 'triangle', .08); return;
+  }
+  if(p.sel) return;
+  const last = chain[chain.length-1];
+  if(p.t !== last.t && !p.bomb && !last.bomb) return;
+  if(p.t !== last.t) return;                       // ボムも同色チェインで繋ぐ
+  if(Math.hypot(p.x-last.x, p.y-last.y) > R*2 + 16) return;
+  chain.push(p); p.sel = true;
+  beep(480 + Math.min(chain.length,16)*38, .05, 'triangle', .13);
+}
+function clearChain(){ for(const p of chain) p.sel = false; chain = []; }
+
+function releaseChain(){
+  if(chain.length < 3){ clearChain(); return; }
+  const list = chain.slice();
+  const n = list.length;
+  const typeIdx = list[0].t;
+
+  // ボム連鎖
+  const set = new Set(list.map(p => p.id));
+  const queue = list.filter(p => p.bomb);
+  let bombCount = 0;
+  while(queue.length){
+    const b = queue.shift(); bombCount++;
+    burst(b.x, b.y, '#ffd24a', 26, 1.8);
+    shake = Math.max(shake, 12);
+    for(const p of tsums){
+      if(p.state !== 'live' || set.has(p.id)) continue;
+      if(Math.hypot(p.x-b.x, p.y-b.y) < 105){
+        set.add(p.id); list.push(p);
+        if(p.bomb) queue.push(p);
+      }
+    }
+  }
+
+  // スコア計算
+  combo++; comboTimer = 2.2;
+  maxCombo = Math.max(maxCombo, combo);
+  const total = list.length;
+  let base = total * (100 + (total-3)*22);
+  base = Math.floor(base * (1 + Math.min(combo,30)*0.05));
+  if(feverActive) base *= 2;
+  score += base;
+  popped += total;
+
+  const cx = list.reduce((s,p)=>s+p.x,0)/total;
+  const cy = list.reduce((s,p)=>s+p.y,0)/total;
+  popText(cx, cy - 20, '+' + base.toLocaleString(), feverActive ? '#ffd24a' : '#fff', total>=10?26:20);
+  if(combo >= 2) popText(cx, cy + 12, combo + ' COMBO!', '#ff7ba8', 16);
+
+  // 消滅
+  for(const p of list){
+    p.state = 'pop'; p.pt = 0; p.sel = false;
+    burst(p.x, p.y, TYPES[p.t].body, 9);
+  }
+  noise(0.16, 0.2);
+  beep(300 + Math.min(total,20)*26, .16, 'square', .13);
+
+  // ゲージ
+  if(!feverActive){
+    feverGauge += total;
+    if(feverGauge >= FEVER_NEED) startFever();
+  }
+  skillGauge = Math.min(SKILL_NEED, skillGauge + total*0.75);
+
+  // ボム生成（7つ以上）
+  if(n >= 7 && bombCount === 0){
+    setTimeout(() => {
+      const cand = tsums.filter(p => p.state === 'live' && !p.bomb);
+      if(cand.length){
+        const b = cand[Math.floor(Math.random()*cand.length)];
+        b.bomb = true;
+        popText(b.x, b.y - 30, 'BOMB!', '#ffd24a', 18);
+        beep(880, .12, 'sawtooth', .12);
+      }
+    }, 180);
+  }
+  void typeIdx;
+  chain = [];
+  updateHUD();
+}
+
+/* =========================================================
+   フィーバー / スキル
+   ========================================================= */
+function startFever(){
+  feverActive = true; feverTime = FEVER_DUR; feverGauge = FEVER_NEED;
+  timeLeft = Math.min(GAME_TIME, timeLeft + 3);
+  document.getElementById('feverFlash').classList.add('on');
+  popText(W/2, H/2 - 60, 'FEVER!!', '#ffd24a', 40);
+  beep(660,.1,'square',.16); setTimeout(()=>beep(880,.1,'square',.16),110);
+  setTimeout(()=>beep(1170,.22,'square',.16),220);
+  for(let i=0;i<40;i++) burst(Math.random()*W, H*0.4 + Math.random()*H*0.5, '#ffd24a', 3, 1.4);
+}
+function endFever(){
+  feverActive = false; feverGauge = 0;
+  document.getElementById('feverFlash').classList.remove('on');
+}
+function useSkill(){
+  if(!playing || skillGauge < SKILL_NEED) return;
+  skillGauge = 0;
+  // 一番多い種類をまとめて消す
+  const cnt = new Array(TYPES.length).fill(0);
+  for(const p of tsums) if(p.state === 'live') cnt[p.t]++;
+  let bi = 0; for(let i=1;i<TYPES.length;i++) if(cnt[i] > cnt[bi]) bi = i;
+  const list = tsums.filter(p => p.state === 'live' && p.t === bi);
+  if(list.length < 3) return;
+  chain = list;
+  popText(W/2, H/2 - 90, 'SKILL!', '#7ee8fa', 34);
+  shake = Math.max(shake, 10);
+  releaseChain();
+  updateHUD();
+}
+
+/* =========================================================
+   入力
+   ========================================================= */
+function toLocal(e){
+  const r = cv.getBoundingClientRect();
+  // object-fit: contain の補正
+  const scale = Math.min(r.width / W, r.height / H);
+  const ox = (r.width - W*scale)/2, oy = (r.height - H*scale)/2;
+  return { x: (e.clientX - r.left - ox)/scale, y: (e.clientY - r.top - oy)/scale };
+}
+let dragging = false;
+cv.addEventListener('pointerdown', e => {
+  if(!playing) return;
+  ac();
+  dragging = true;
+  cv.setPointerCapture(e.pointerId);
+  const q = toLocal(e);
+  tryAdd(tsumAt(q.x, q.y));
+});
+cv.addEventListener('pointermove', e => {
+  if(!dragging || !playing) return;
+  const q = toLocal(e);
+  tryAdd(tsumAt(q.x, q.y));
+});
+function endDrag(){ if(!dragging) return; dragging = false; if(playing) releaseChain(); else clearChain(); }
+cv.addEventListener('pointerup', endDrag);
+cv.addEventListener('pointercancel', endDrag);
+addEventListener('pointerup', endDrag);
+cv.addEventListener('contextmenu', e => e.preventDefault());
+document.getElementById('skillBtn').addEventListener('click', useSkill);
+
+/* =========================================================
+   HUD
+   ========================================================= */
+const $score = document.getElementById('score'), $time = document.getElementById('time');
+const $tbar = document.getElementById('tbar'), $fbar = document.getElementById('feverBar');
+const $skillBtn = document.getElementById('skillBtn'), $skillPct = document.getElementById('skillPct');
+function updateHUD(){
+  $score.textContent = score.toLocaleString();
+  const t = Math.max(0, Math.ceil(timeLeft));
+  $time.textContent = t;
+  $time.classList.toggle('warn', t <= 10);
+  $tbar.style.width = (Math.max(0,timeLeft)/GAME_TIME*100) + '%';
+  $fbar.style.width = (feverActive ? (feverTime/FEVER_DUR*100) : (feverGauge/FEVER_NEED*100)) + '%';
+  const sp = Math.floor(skillGauge/SKILL_NEED*100);
+  $skillPct.textContent = sp + '%';
+  $skillBtn.classList.toggle('ready', sp >= 100);
+}
+
+/* =========================================================
+   ゲーム進行
+   ========================================================= */
+function startGame(){
+  ac();
+  tsums = []; fx = []; texts = []; chain = [];
+  score = 0; combo = 0; comboTimer = 0; maxCombo = 0; popped = 0;
+  timeLeft = GAME_TIME; feverGauge = 0; feverTime = 0;
+  endFever(); skillGauge = 0; shake = 0;
+  for(let i=0;i<TARGET;i++) tsums.push(makeTsum(-R - i*22 - Math.random()*60));
+  playing = true;
+  document.getElementById('titleOv').classList.add('hide');
+  document.getElementById('resultOv').classList.add('hide');
+  updateHUD();
+}
+function endGame(){
+  playing = false; dragging = false; clearChain(); endFever();
+  if(score > best){ best = score; store.set(best); }
+  const rank = score >= 120000 ? 'S ランク　神業！' :
+               score >=  80000 ? 'A ランク　すごい！' :
+               score >=  50000 ? 'B ランク　いい感じ' :
+               score >=  25000 ? 'C ランク　まずまず' : 'D ランク　練習あるのみ';
+  document.getElementById('finalScore').textContent = score.toLocaleString();
+  document.getElementById('rankTxt').textContent = rank;
+  document.getElementById('statTxt').innerHTML =
+    `消したツム <b>${popped}</b> 個 ／ 最大コンボ <b>${maxCombo}</b><br>ハイスコア <b>${best.toLocaleString()}</b>`;
+  document.getElementById('resultOv').classList.remove('hide');
+  beep(520,.14,'sine',.14); setTimeout(()=>beep(392,.24,'sine',.14),150);
+}
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('retryBtn').addEventListener('click', startGame);
+
+/* =========================================================
+   メインループ
+   ========================================================= */
+let last = performance.now();
+function loop(now){
+  let dt = Math.min(0.05, (now - last)/1000); last = now;
+  requestAnimationFrame(loop);
+  if(document.hidden) return;   // 非表示中は時間を進めない
+
+  if(playing){
+    timeLeft -= dt;
+    if(comboTimer > 0){ comboTimer -= dt; if(comboTimer <= 0) combo = 0; }
+    if(feverActive){
+      feverTime -= dt;
+      if(feverTime <= 0) endFever();
+    }
+    if(timeLeft <= 0){ timeLeft = 0; updateHUD(); endGame(); }
+    else updateHUD();
+  }
+
+  physics();
+
+  // 消滅アニメ
+  for(let i=tsums.length-1;i>=0;i--){
+    const p = tsums[i];
+    if(p.state === 'pop'){
+      p.pt += dt;
+      if(p.pt > 0.22) tsums.splice(i,1);
+    } else if(p.y > H + 200){
+      tsums.splice(i,1);
+    }
+  }
+  if(playing) refill();
+
+  // パーティクル
+  for(let i=fx.length-1;i>=0;i--){
+    const f = fx[i];
+    f.vy += 0.22; f.x += f.vx; f.y += f.vy; f.life -= dt*1.6;
+    if(f.life <= 0) fx.splice(i,1);
+  }
+  for(let i=texts.length-1;i>=0;i--){
+    const t = texts[i];
+    t.y -= 34*dt; t.life -= dt*0.95;
+    if(t.life <= 0) texts.splice(i,1);
+  }
+  if(shake > 0) shake = Math.max(0, shake - dt*45);
+
+  draw();
+}
+function draw(){
+  ctx.save();
+  ctx.clearRect(0,0,W,H);
+  if(shake > 0) ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake);
+
+  // 背景
+  const bg = ctx.createLinearGradient(0,0,0,H);
+  if(feverActive){
+    bg.addColorStop(0,'#fff2cf'); bg.addColorStop(0.5,'#ffd9a8'); bg.addColorStop(1,'#ffb1c4');
+  }else{
+    bg.addColorStop(0,'#f4f9ff'); bg.addColorStop(0.55,'#dcebff'); bg.addColorStop(1,'#c6dbff');
+  }
+  ctx.fillStyle = bg; ctx.fillRect(-20,-20,W+40,H+40);
+
+  // 背景の丸模様
+  ctx.fillStyle = 'rgba(255,255,255,.35)';
+  for(let i=0;i<9;i++){
+    const bx = ((i*97)%W), by = ((i*151)%H);
+    ctx.beginPath(); ctx.arc(bx, by, 26 + (i%3)*14, 0, 6.29); ctx.fill();
+  }
+
+  // 容器の縁
+  ctx.strokeStyle = 'rgba(90,120,190,.30)'; ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(WALL-2, 0); ctx.lineTo(WALL-2, FLOOR+4);
+  ctx.lineTo(W-WALL+2, FLOOR+4); ctx.lineTo(W-WALL+2, 0);
+  ctx.stroke();
+
+  // チェイン線
+  if(chain.length > 1){
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,.95)';
+    ctx.lineWidth = 8; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.shadowColor = TYPES[chain[0].t].body; ctx.shadowBlur = 16;
+    ctx.beginPath(); ctx.moveTo(chain[0].x, chain[0].y);
+    for(let i=1;i<chain.length;i++) ctx.lineTo(chain[i].x, chain[i].y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ツム
+  for(const p of tsums) if(p.state === 'live') drawTsum(p);
+  for(const p of tsums) if(p.state === 'pop')  drawTsum(p);
+
+  // パーティクル
+  for(const f of fx){
+    ctx.globalAlpha = Math.max(0, f.life);
+    ctx.fillStyle = f.color;
+    ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, 6.29); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // チェイン数カウンタ
+  if(chain.length > 0){
+    const last = chain[chain.length-1];
+    ctx.save();
+    ctx.globalAlpha = .92;
+    ctx.fillStyle = chain.length >= 3 ? '#ff5f8d' : 'rgba(60,70,100,.75)';
+    ctx.beginPath(); ctx.arc(last.x, last.y - 46, 20, 0, 6.29); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = '900 22px system-ui';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(chain.length, last.x, last.y - 45);
+    ctx.restore();
+  }
+
+  // コンボ表示
+  if(combo >= 2 && playing){
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, comboTimer);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.font = '900 30px system-ui';
+    ctx.fillStyle = '#ff5f8d'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 5;
+    ctx.strokeText(combo + ' COMBO', 16, 14);
+    ctx.fillText(combo + ' COMBO', 16, 14);
+    ctx.restore();
+  }
+
+  // フローティングテキスト
+  for(const t of texts){
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, t.life*1.4));
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `900 ${t.size}px system-ui`;
+    ctx.lineWidth = t.size*0.22; ctx.strokeStyle = 'rgba(40,30,60,.6)';
+    ctx.strokeText(t.txt, t.x, t.y);
+    ctx.fillStyle = t.color; ctx.fillText(t.txt, t.x, t.y);
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+requestAnimationFrame(loop);
+
+// タイトル画面でもツムを落として動かしておく
+for(let i=0;i<TARGET;i++) tsums.push(makeTsum(-R - i*20));
+updateHUD();
+</script>
+</body>
+</html>
