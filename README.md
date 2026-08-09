@@ -35,6 +35,9 @@ BM風ゲーム
 パズルボブル風パズルゲーム（同色3つ以上で消去・スマホ/PC対応）  
 [**puzzle_bobble.html**](https://hhungry2.github.io/html-games/puzzle_bobble.html) | [Vercel](https://html-games-eight.vercel.app/puzzle_bobble.html)  
 
+インサニアクアリウム風 熱帯魚育成ゲーム（エサやり・エイリアン撃退・スマホ/PC対応）  
+[**insaniquarium.html**](https://hhungry2.github.io/html-games/insaniquarium.html) | [Vercel](https://html-games-eight.vercel.app/insaniquarium.html)  
+
 【ツール】  
 
 スマホセンサー測定ダッシュボード（ジャイロ・加速度）  
