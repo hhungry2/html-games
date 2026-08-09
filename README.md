@@ -29,6 +29,9 @@ BM風ゲーム
 ライトセーバー シミュレーター（Web Audio 音合成・スイングセンサー）  
 [**lightsaber.html**](https://hhungry2.github.io/html-games/lightsaber.html) | [Vercel](https://html-games-eight.vercel.app/lightsaber.html)  
 
+ライトセーバー シミュレーター v2（ジャイロ連動スイング音・起動音・4色）  
+[**lightsaber2.html**](https://hhungry2.github.io/html-games/lightsaber2.html) | [Vercel](https://html-games-eight.vercel.app/lightsaber2.html)  
+
 【ツール】  
 
 スマホセンサー測定ダッシュボード（ジャイロ・加速度）  
