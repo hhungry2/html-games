@@ -79,6 +79,22 @@
   }
   @keyframes pulse{50%{transform:scale(1.045)}}
   #skillPct{font-size:15px;font-weight:900}
+  /* 軽量モード切替 */
+  #liteBtn{
+    width:60px;height:52px;border-radius:14px;border:1px solid rgba(255,255,255,.22);
+    background:linear-gradient(180deg,#3d4768,#2c3552);
+    color:#93a4c8;font-weight:800;font-size:9.5px;letter-spacing:.02em;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+    cursor:pointer;font-family:inherit;
+  }
+  #liteBtn b{font-size:15px;line-height:1;filter:grayscale(1) opacity(.6)}
+  #liteBtn.on{background:linear-gradient(180deg,#8ceaf8,#2ba3c7);color:#04303f;border-color:#c4f4ff}
+  #liteBtn.on b{filter:none}
+  #fps{opacity:.5;font-size:9px;letter-spacing:0;margin-left:8px}
+  /* 軽量モードでは重い合成処理を止める */
+  body.lite .ov{backdrop-filter:none}
+  body.lite #feverFlash.on{animation:none}
+  body.lite #medal::after{display:none}
   /* ---------- overlay ---------- */
   .ov{
     position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
@@ -237,9 +253,12 @@
 
   <div id="bottom">
     <div id="feverWrap">
-      <div id="feverTxt">FEVER GAUGE</div>
+      <div id="feverTxt">FEVER GAUGE <span id="fps"></span></div>
       <div id="feverBarBg"><div id="feverBar"></div></div>
     </div>
+    <button id="liteBtn" aria-pressed="false" title="軽量モード：描画を軽くします">
+      <b>⚡</b><span id="liteLbl">軽量 OFF</span>
+    </button>
     <button id="skillBtn"><span id="skillPct">0%</span><span>スキル</span></button>
   </div>
 
@@ -264,6 +283,26 @@ const CLUSTER_RATE = 0.45;          // 補充時に多い色を出す確率＝�
 
 const cv = document.getElementById('cv');
 const ctx = cv.getContext('2d');
+
+/* ---------- 画質設定（軽量モード） ----------
+   重さの大半は「ツム1体ずつのグラデーション描画」なので、
+   通常時もスプライトに焼いて使い回す。軽量モードではさらに
+   解像度・物理反復・エフェクト量を落とす。                     */
+const QUALITY = { lite:false, dprCap:2, iters:5, sprite:2, glow:true, rays:true, fx:1 };
+function applyQuality(lite){
+  QUALITY.lite   = lite;
+  QUALITY.dprCap = lite ? 1.25 : 2;
+  QUALITY.iters  = lite ? 3 : 5;
+  // スプライトはキャンバスと同じ解像度で焼く（等倍転送が一番速い）
+  QUALITY.sprite = Math.min(window.devicePixelRatio || 1, QUALITY.dprCap);
+  QUALITY.glow   = !lite;
+  QUALITY.rays   = !lite;
+  QUALITY.fx     = lite ? 0.45 : 1;
+  document.body.classList.toggle('lite', lite);
+  fitCanvas();
+  buildSprites();
+  updateLiteBtn();
+}
 
 /* ---------- ツムの種類 ---------- */
 const TYPES = [
@@ -294,7 +333,9 @@ let playing = false, shake = 0, idSeq = 0;
 const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const store = {
   get(){ try{ return +(localStorage.getItem('tsum_best') || 0); }catch(e){ return 0; } },
-  set(v){ try{ localStorage.setItem('tsum_best', v); }catch(e){} }
+  set(v){ try{ localStorage.setItem('tsum_best', v); }catch(e){} },
+  getLite(){ try{ return localStorage.getItem('tsum_lite'); }catch(e){ return null; } },
+  setLite(v){ try{ localStorage.setItem('tsum_lite', v ? '1' : '0'); }catch(e){} }
 };
 let best = store.get();
 document.getElementById('bestTitle').textContent = best.toLocaleString();
@@ -303,8 +344,8 @@ const FEVER_NEED = 42, SKILL_NEED = 26, FEVER_DUR = 12;
 
 /* ---------- キャンバス解像度 ---------- */
 function fitCanvas(){
-  const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
-  cv.width = W * dpr; cv.height = H * dpr;
+  const dpr = Math.min(window.devicePixelRatio || 1, QUALITY.dprCap);
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
   ctx.setTransform(dpr,0,0,dpr,0,0);
 }
 fitCanvas();
@@ -324,15 +365,22 @@ function beep(freq, dur=0.08, type='sine', vol=0.16){
   o.connect(g); g.connect(a.destination);
   o.start(); o.stop(a.currentTime + dur);
 }
+let noiseBuf = null;                       // 毎回バッファを作らず使い回す
 function noise(dur=0.18, vol=0.25){
   const a = ac(); if(!a) return;
-  const buf = a.createBuffer(1, a.sampleRate*dur, a.sampleRate);
-  const d = buf.getChannelData(0);
-  for(let i=0;i<d.length;i++) d[i] = (Math.random()*2-1) * (1 - i/d.length);
-  const s = a.createBufferSource(); s.buffer = buf;
-  const g = a.createGain(); g.gain.value = vol;
+  if(!noiseBuf){
+    noiseBuf = a.createBuffer(1, (a.sampleRate*1.2)|0, a.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for(let i=0;i<d.length;i++) d[i] = Math.random()*2-1;
+  }
+  const t = a.currentTime;
+  const s = a.createBufferSource(); s.buffer = noiseBuf;
+  const g = a.createGain();
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
   const f = a.createBiquadFilter(); f.type='lowpass'; f.frequency.value=1400;
-  s.connect(f); f.connect(g); g.connect(a.destination); s.start();
+  s.connect(f); f.connect(g); g.connect(a.destination);
+  s.start(t, Math.random()*0.5); s.stop(t + dur);
 }
 
 // 上昇アルペジオ（消したときの気持ちよさ担当）
@@ -361,11 +409,19 @@ function boomSound(){
 // 場にある色に寄せて出す＝同じツムがそろいやすい（難易度緩和）
 // ただし1色に偏りすぎると単調なので、3割を超えている色は選ばない
 function pickType(){
-  const live = tsums.filter(p => p.state === 'live');
-  if(live.length > 6 && Math.random() < CLUSTER_RATE){
-    const pick = live[Math.floor(Math.random()*live.length)].t;
-    let n = 0; for(const p of live) if(p.t === pick) n++;
-    if(n / live.length < 0.3) return pick;
+  let n = 0;
+  for(const p of tsums) if(p.state === 'live') n++;
+  if(n > 6 && Math.random() < CLUSTER_RATE){
+    let k = (Math.random()*n)|0, pick = -1;
+    for(const p of tsums){
+      if(p.state !== 'live') continue;
+      if(k-- === 0){ pick = p.t; break; }
+    }
+    if(pick >= 0){
+      let c = 0;
+      for(const p of tsums) if(p.state === 'live' && p.t === pick) c++;
+      if(c / n < 0.3) return pick;
+    }
   }
   return Math.floor(Math.random()*TYPES.length);
 }
@@ -386,7 +442,18 @@ function refill(){
   let need = TARGET - live;
   while(need-- > 0) tsums.push(makeTsum());
 }
+/* 衝突判定は総当たり(O(n^2))をやめ、一様グリッドで近傍だけ見る。
+   セル幅を直径より大きく取るので、重なるペアは必ず隣接9セル内に入る。 */
+const CELL = R*2 + 4;
+const GX0 = -60, GY0 = -760;
+const GCOLS = Math.ceil((W + 120) / CELL);
+const GROWS = Math.ceil((H + 860) / CELL);
+const gHead = new Int32Array(GCOLS*GROWS);
+let gNext = new Int32Array(128);
+const liveArr = [];                     // 毎フレームの配列確保を避ける
+
 function physics(){
+  liveArr.length = 0;
   for(const p of tsums){
     if(p.state !== 'live'){ continue; }
     p.vy += GRAV; p.vx *= 0.985; p.vy *= 0.995;
@@ -394,24 +461,44 @@ function physics(){
     p.vy = Math.max(-24, Math.min(24, p.vy));
     p.px = p.x; p.py = p.y;
     p.x += p.vx; p.y += p.vy;
+    liveArr.push(p);
   }
-  const live = tsums.filter(p => p.state === 'live');
-  for(let it=0; it<5; it++){
-    for(let i=0;i<live.length;i++){
-      const a = live[i];
-      for(let j=i+1;j<live.length;j++){
-        const b = live[j];
-        let dx = b.x-a.x, dy = b.y-a.y;
-        const rr = a.r + b.r;
-        if(Math.abs(dx) > rr || Math.abs(dy) > rr) continue;
-        let d2 = dx*dx + dy*dy;
-        if(d2 >= rr*rr) continue;
-        let d = Math.sqrt(d2);
-        if(d < 0.0001){ dx = Math.random()-0.5; dy = -1; d = 1; }
-        const ov = (rr - d) * 0.5 * 0.85;
-        const nx = dx/d, ny = dy/d;
-        a.x -= nx*ov; a.y -= ny*ov;
-        b.x += nx*ov; b.y += ny*ov;
+  const n = liveArr.length;
+  if(gNext.length < n) gNext = new Int32Array(n*2);
+
+  for(let it=0; it<QUALITY.iters; it++){
+    gHead.fill(-1);
+    for(let i=0;i<n;i++){
+      const p = liveArr[i];
+      let cx = ((p.x - GX0)/CELL)|0, cy = ((p.y - GY0)/CELL)|0;
+      if(cx < 0) cx = 0; else if(cx >= GCOLS) cx = GCOLS-1;
+      if(cy < 0) cy = 0; else if(cy >= GROWS) cy = GROWS-1;
+      p.cx = cx; p.cy = cy;
+      const c = cy*GCOLS + cx;
+      gNext[i] = gHead[c]; gHead[c] = i;
+    }
+    for(let i=0;i<n;i++){
+      const a = liveArr[i];
+      const x0 = a.cx > 0 ? a.cx-1 : 0, x1 = a.cx < GCOLS-1 ? a.cx+1 : GCOLS-1;
+      const y0 = a.cy > 0 ? a.cy-1 : 0, y1 = a.cy < GROWS-1 ? a.cy+1 : GROWS-1;
+      for(let yy=y0; yy<=y1; yy++){
+        for(let xx=x0; xx<=x1; xx++){
+          for(let j = gHead[yy*GCOLS+xx]; j !== -1; j = gNext[j]){
+            if(j <= i) continue;                    // 同じペアは1回だけ
+            const b = liveArr[j];
+            let dx = b.x-a.x, dy = b.y-a.y;
+            const rr = a.r + b.r;
+            if(dx > rr || dx < -rr || dy > rr || dy < -rr) continue;
+            let d2 = dx*dx + dy*dy;
+            if(d2 >= rr*rr) continue;
+            let d = Math.sqrt(d2);
+            if(d < 0.0001){ dx = Math.random()-0.5; dy = -1; d = 1; }
+            const ov = (rr - d) * 0.5 * 0.85;
+            const nx = dx/d, ny = dy/d;
+            a.x -= nx*ov; a.y -= ny*ov;
+            b.x += nx*ov; b.y += ny*ov;
+          }
+        }
       }
       // 壁・床
       if(a.x < WALL + a.r) a.x = WALL + a.r;
@@ -419,8 +506,8 @@ function physics(){
       if(a.y > FLOOR - a.r) a.y = FLOOR - a.r;
     }
   }
-  for(const p of tsums){
-    if(p.state !== 'live') continue;
+  for(let i=0;i<n;i++){
+    const p = liveArr[i];
     p.vx = (p.x - p.px) * 0.96;
     p.vy = (p.y - p.py) * 0.96;
     p.vrot += (p.vx * 0.004 - p.rot * 0.04);
@@ -433,22 +520,8 @@ function physics(){
 /* =========================================================
    描画：ツムの顔
    ========================================================= */
-function drawTsum(p){
-  const T = TYPES[p.t];
-  let s = 1;
-  if(p.state === 'pop'){ s = p.pt < 0 ? 1 + p.pt*0.7 : 1 + p.pt*2.8; }  // 溜め→弾け
-  if(p.sel) s *= 1.06 + Math.sin(p.wob*2)*0.03;
-  const alpha = p.state === 'pop'
-    ? Math.max(0, Math.min(1, 1 - Math.max(0, p.pt)/0.22)) : 1;
-
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.translate(p.x, p.y);
-  ctx.rotate(p.rot);
-  ctx.scale(s, s * (p.state==='live' ? 1 - Math.sin(p.wob)*0.012 : 1));
-
-  const r = p.r;
-
+// 中心(0,0)・半径 r でツムを1体描く。スプライトを焼くときだけ呼ばれる
+function paintTsum(ctx, T, r, bomb){
   // 影
   ctx.fillStyle = 'rgba(30,45,80,.16)';
   ctx.beginPath(); ctx.ellipse(0, r*0.82, r*0.86, r*0.24, 0, 0, 6.29); ctx.fill();
@@ -470,8 +543,8 @@ function drawTsum(p){
   ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.29); ctx.fill();
   ctx.strokeStyle = 'rgba(0,0,0,.18)'; ctx.lineWidth = 1.6; ctx.stroke();
 
-  if(p.bomb){
-    // ボム（黒球 + 導火線 + 火花）
+  if(bomb){
+    // ボム（黒球 + 導火線）※火花は毎フレーム動くのでスプライトには焼かない
     const bg2 = ctx.createRadialGradient(-r*0.34, -r*0.42, r*0.08, 0, 0, r*1.05);
     bg2.addColorStop(0, '#7d7f8c'); bg2.addColorStop(0.45, '#2b2c36'); bg2.addColorStop(1, '#101018');
     ctx.fillStyle = bg2;
@@ -491,13 +564,6 @@ function drawTsum(p){
     ctx.strokeStyle = '#b9873c'; ctx.lineWidth = r*0.13; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(0, -r*1.12);
     ctx.quadraticCurveTo(r*0.55, -r*1.35, r*0.46, -r*1.62); ctx.stroke();
-    // 火花
-    const sp = 0.5 + Math.sin(p.wob*4)*0.5;
-    ctx.fillStyle = `rgba(255,${150+sp*90},60,.95)`;
-    ctx.beginPath(); ctx.arc(r*0.46, -r*1.66, r*0.20*(0.75+sp*0.55), 0, 6.29); ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,220,.95)';
-    ctx.beginPath(); ctx.arc(r*0.46, -r*1.66, r*0.09*(0.7+sp*0.6), 0, 6.29); ctx.fill();
-    ctx.restore();
     return;
   }
 
@@ -535,15 +601,58 @@ function drawTsum(p){
   ctx.fillStyle = 'rgba(255,120,140,.35)';
   ctx.beginPath(); ctx.ellipse(-r*0.66, r*0.24, r*0.17, r*0.12, 0, 0, 6.29); ctx.fill();
   ctx.beginPath(); ctx.ellipse( r*0.66, r*0.24, r*0.17, r*0.12, 0, 0, 6.29); ctx.fill();
+}
 
+/* ---------- スプライト（種類×通常/ボムを1枚ずつ焼いて使い回す） ---------- */
+let SPRITES = null;
+function bakeSprite(T, bomb, sc){
+  const half = (bomb ? 2.0 : 1.5) * R;         // 耳・導火線がはみ出す分の余白
+  const px = Math.max(1, Math.ceil(half*2*sc));
+  const c = document.createElement('canvas');
+  c.width = px; c.height = px;
+  const g = c.getContext('2d');
+  g.setTransform(sc, 0, 0, sc, half*sc, half*sc);
+  paintTsum(g, T, R, bomb);
+  return {c, half};
+}
+function buildSprites(){
+  const sc = QUALITY.sprite;
+  SPRITES = {normal:[], bomb:[]};
+  for(const T of TYPES){
+    SPRITES.normal.push(bakeSprite(T, false, sc));
+    SPRITES.bomb.push(bakeSprite(T, true, sc));
+  }
+}
+
+function drawTsum(p){
+  const sp = (p.bomb ? SPRITES.bomb : SPRITES.normal)[p.t];
+  let s = 1;
+  if(p.state === 'pop'){ s = p.pt < 0 ? 1 + p.pt*0.7 : 1 + p.pt*2.8; }  // 溜め→弾け
+  if(p.sel) s *= 1.06 + Math.sin(p.wob*2)*0.03;
+  const alpha = p.state === 'pop'
+    ? Math.max(0, Math.min(1, 1 - Math.max(0, p.pt)/0.22)) : 1;
+
+  ctx.save();
+  if(alpha < 1) ctx.globalAlpha = alpha;
+  ctx.translate(p.x, p.y);
+  if(p.rot) ctx.rotate(p.rot);
+  ctx.scale(s, s * (p.state === 'live' ? 1 - Math.sin(p.wob)*0.012 : 1));
+  ctx.drawImage(sp.c, -sp.half, -sp.half, sp.half*2, sp.half*2);
+  if(p.bomb){                                   // 火花だけ毎フレーム描く
+    const r = p.r, k = 0.5 + Math.sin(p.wob*4)*0.5;
+    ctx.fillStyle = 'rgba(255,' + ((150+k*90)|0) + ',60,.95)';
+    ctx.beginPath(); ctx.arc(r*0.46, -r*1.66, r*0.20*(0.75+k*0.55), 0, 6.29); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,220,.95)';
+    ctx.beginPath(); ctx.arc(r*0.46, -r*1.66, r*0.09*(0.7+k*0.6), 0, 6.29); ctx.fill();
+  }
   ctx.restore();
 
-  // 選択リング
+  // 選択リング（shadowBlur は重いので軽量モードでは二重線で代用）
   if(p.sel){
     ctx.save();
     ctx.globalAlpha = 0.95;
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 4.5;
-    ctx.shadowColor = TYPES[p.t].body; ctx.shadowBlur = 14;
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = QUALITY.glow ? 4.5 : 5;
+    if(QUALITY.glow){ ctx.shadowColor = TYPES[p.t].body; ctx.shadowBlur = 14; }
     ctx.beginPath(); ctx.arc(p.x, p.y, p.r*1.03, 0, 6.29); ctx.stroke();
     ctx.restore();
   }
@@ -553,6 +662,7 @@ function drawTsum(p){
    エフェクト
    ========================================================= */
 function burst(x, y, color, n=10, pw=1, star=false){
+  n = Math.max(2, Math.round(n * QUALITY.fx));
   for(let i=0;i<n;i++){
     const a = Math.random()*6.29, sp = (1.5 + Math.random()*4)*pw;
     fx.push({x, y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp - 1.2,
@@ -774,6 +884,21 @@ addEventListener('pointerup', endDrag);
 cv.addEventListener('contextmenu', e => e.preventDefault());
 document.getElementById('skillBtn').addEventListener('click', useSkill);
 
+/* ---------- 軽量モードの切替 ---------- */
+const $liteBtn = document.getElementById('liteBtn'), $liteLbl = document.getElementById('liteLbl');
+let liteChosenByUser = false;
+function updateLiteBtn(){
+  $liteBtn.classList.toggle('on', QUALITY.lite);
+  $liteBtn.setAttribute('aria-pressed', QUALITY.lite ? 'true' : 'false');
+  $liteLbl.textContent = QUALITY.lite ? '軽量 ON' : '軽量 OFF';
+}
+$liteBtn.addEventListener('click', () => {
+  liteChosenByUser = true;              // 以後は自動切替しない
+  applyQuality(!QUALITY.lite);
+  store.setLite(QUALITY.lite);
+  beep(QUALITY.lite ? 880 : 520, .08, 'triangle', .12);
+});
+
 /* =========================================================
    HUD
    ========================================================= */
@@ -816,6 +941,7 @@ function sizeFx(){
 addEventListener('resize', () => { if(fxActive) sizeFx(); });
 
 function addConfetti(n){
+  n = Math.max(1, Math.round(n * QUALITY.fx));
   for(let i=0;i<n;i++){
     confetti.push({
       x: Math.random()*fw, y: -14 - Math.random()*60,
@@ -828,7 +954,8 @@ function addConfetti(n){
   }
 }
 function firework(x, y, color){
-  for(let i=0;i<44;i++){
+  const n = Math.round(44 * QUALITY.fx);
+  for(let i=0;i<n;i++){
     const a = Math.random()*6.29, sp = 1 + Math.random()*4.8;
     sparks.push({x, y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp,
                  r: 1.4 + Math.random()*2.2, life:1, color});
@@ -856,7 +983,7 @@ function celebrationStep(dt){
 
   if(spawnT > 0){
     spawnT -= dt;
-    if(confetti.length < 240) addConfetti(3);
+    if(confetti.length < 240*QUALITY.fx) addConfetti(3);
     fwT -= dt;
     if(fwT <= 0){
       fwT = 0.38 + Math.random()*0.4;
@@ -991,10 +1118,29 @@ document.getElementById('retryBtn').addEventListener('click', startGame);
    メインループ
    ========================================================= */
 let last = performance.now();
+const $fps = document.getElementById('fps');
+let fpsAcc = 0, fpsCnt = 0, fpsVal = 60, slowTicks = 0;
 function loop(now){
   let dt = Math.min(0.05, (now - last)/1000); last = now;
   requestAnimationFrame(loop);
   if(document.hidden) return;   // 非表示中は時間を進めない
+
+  // FPS 計測（重いときは軽量モードを自動ON）
+  fpsAcc += dt; fpsCnt++;
+  if(fpsAcc >= 0.5){
+    fpsVal = Math.round(fpsCnt/fpsAcc);
+    $fps.textContent = fpsVal + ' fps';
+    fpsAcc = 0; fpsCnt = 0;
+    if(playing && !QUALITY.lite && !liteChosenByUser){
+      if(fpsVal < 45){
+        if(++slowTicks >= 4){
+          applyQuality(true); store.setLite(true);
+          popText(W/2, H*0.28, '軽量モード ON', '#7ee8fa', 22);
+        }
+      }else slowTicks = 0;
+    }
+  }
+
   if(hitstop > 0){ hitstop -= dt; dt *= 0.22; }   // 大量消しの瞬間だけスロー
 
   if(playing){
@@ -1128,8 +1274,8 @@ function draw(){
     ctx.beginPath(); ctx.arc(bx, by, 26 + (i%3)*14, 0, 6.29); ctx.fill();
   }
 
-  // フィーバー中の集中線
-  if(feverActive){
+  // フィーバー中の集中線（塗り面積が大きく重いので軽量モードでは省略）
+  if(feverActive && QUALITY.rays){
     ctx.save();
     ctx.translate(W/2, H*0.55);
     const rot = performance.now()*0.0004;
@@ -1257,6 +1403,11 @@ function draw(){
 
   ctx.restore();
 }
+// 保存された設定を反映（未設定なら通常モードで開始し、重ければ自動でON）
+const savedLite = store.getLite();
+if(savedLite !== null) liteChosenByUser = true;
+applyQuality(savedLite === '1');
+
 requestAnimationFrame(loop);
 
 // タイトル画面でもツムを落として動かしておく
