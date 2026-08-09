@@ -6,16 +6,20 @@
 <title>インサニアクアリウム風 - 熱帯魚パニック</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-  html,body{height:100%;overflow:hidden;background:#050a18;
+  html,body{height:100%;overflow:hidden;background:#02060f;
     font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,system-ui,sans-serif;
     color:#eaf2ff;user-select:none;-webkit-user-select:none;touch-action:manipulation}
-  #app{display:flex;flex-direction:column;height:100dvh;width:100%}
+  body{display:flex;justify-content:center}
+  #app{display:flex;flex-direction:column;height:100dvh;width:100%;max-width:900px;
+    background:#050a18;box-shadow:0 0 40px rgba(0,0,0,.6)}
 
   /* ---------- header ---------- */
   header{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:6px 10px;
     padding-top:calc(6px + env(safe-area-inset-top));
     background:linear-gradient(#16233f,#101a30);border-bottom:1px solid #2b3d63}
   .money{font-weight:800;font-size:19px;color:#ffd75e;text-shadow:0 1px 0 #6b4a00;white-space:nowrap}
+  .foodcap{font-size:11.5px;font-weight:700;color:#bcd6ff;white-space:nowrap;background:#16233f;
+    border:1px solid #2b3d63;border-radius:8px;padding:3px 7px}
   .lvbox{flex:1;min-width:60px}
   .lvtop{display:flex;justify-content:space-between;font-size:11px;color:#9fb6dd;margin-bottom:2px}
   .bar{height:9px;border-radius:5px;background:#0b1428;overflow:hidden;border:1px solid #2b3d63}
@@ -83,6 +87,7 @@
 <div id="app">
   <header>
     <div class="money" id="money">💰 0</div>
+    <div class="foodcap" id="foodcap">🍚 1/1</div>
     <div class="lvbox">
       <div class="lvtop"><span id="lvtxt">レベル 1</span><span id="goaltxt">0 / 1000</span></div>
       <div class="bar"><i id="goalbar"></i></div>
@@ -112,8 +117,9 @@
         </ul>
         <h2>コツ</h2>
         <ul>
-          <li>魚はエサを食べて<b>小→中→大</b>に成長し、大きいほど高価なコインを産む</li>
-          <li>エサをもらえないと魚は<b>お腹をすかせて死んでしまう</b>（灰色になったら危険）</li>
+          <li>魚はエサを食べて<b>小→中→大</b>に成長し、大きいほど高価なコイン（銅→銀→金）を産む</li>
+          <li>エサは最初は<b>同時に1つ</b>までしか水中に置けない。ショップの<b>エサ強化</b>で同時数と沈む速さがアップ</li>
+          <li>魚がお腹をすかせると <span style="color:#ffd75e">!</span> → <span style="color:#ff9d4a">!!</span> → <span style="color:#ff3b30">⚠震え</span> の3段階で危険度が上がる。震え出したらすぐエサを！</li>
           <li>ショップで <b>エサ強化</b> と <b>武器強化</b> を早めに買うのが定石</li>
           <li>貝やニコはコインを自動で拾ってくれる。カーニボアはエイリアンと戦う</li>
         </ul>
@@ -182,6 +188,7 @@ function buildDecor() {
     bubbles.push({ x: rnd(0, W), y: rnd(0, H), r: rnd(1.5, 4.5), s: rnd(14, 42), ph: rnd(0, TAU) });
 }
 window.addEventListener('resize', resize);
+window.addEventListener('pageshow', e => { if (e.persisted) resize(); });
 
 /* ================= audio ================= */
 let actx = null, sndOn = true;
@@ -212,16 +219,30 @@ const SFX = {
 
 /* ================= config ================= */
 const FISH_COLORS = ['#ff9c3a', '#ffd23f', '#5ad2ff', '#ff6f91', '#a78bfa', '#67e8a0', '#ff5f5f', '#7ec8ff'];
-const STAGE_R = [12, 19, 27];
+const STAGE_R = [17, 26, 37];
 const STAGE_EAT = [4, 12];              // 成長に必要な累計エサ
 const STAGE_COIN = [10, 26, 62];         // 基本コイン価値
 const STAGE_CT = [8.5, 8.0, 7.2];        // コイン産出間隔(秒)
 const HUNGRY_T = 15, STARVE_T = 36;      // 空腹/餓死までの秒数
+const HUNGRY_BAND1 = HUNGRY_T + (STARVE_T - HUNGRY_T) * .33;   // 空腹 段階1→2
+const HUNGRY_BAND2 = HUNGRY_T + (STARVE_T - HUNGRY_T) * .66;   // 空腹 段階2→3(危険)
 const FOOD_SINK = [52, 42, 34, 26];
 const FOOD_R = [5, 6.2, 7.4, 9];
 const FOOD_COL = ['#c98f4a', '#e8b45f', '#9ff07a', '#8ee6ff'];
+const FOOD_CAP = [1, 3, 6, 10];          // 同時に置けるエサの数（エサ強化Lvで増加）
 const WPN_DMG = [10, 22, 45];
-const MAX_FISH = 26, MAX_FOOD = 12;
+const MAX_FISH = 26;
+const COIN_TIERS = {
+  copper: { hi: '#ffd9b3', mid: '#c9793f', lo: '#7a3f18', ring: '#5c2e10', sym: '#5c2e10' },
+  silver: { hi: '#ffffff', mid: '#c9d3dc', lo: '#7d8892', ring: '#5b636b', sym: '#5b636b' },
+  gold:   { hi: '#fff6c9', mid: '#ffd75e', lo: '#b8801a', ring: '#8f6210', sym: '#8f6210' }
+};
+function coinTier(v) { return v < 20 ? 'copper' : v < 50 ? 'silver' : 'gold'; }
+function coinColor(c) {
+  if (c.type === 'diamond') return '#8ef7ff';
+  const t = coinTier(c.value);
+  return t === 'copper' ? '#e8a463' : t === 'silver' ? '#dbe4ea' : '#ffd75e';
+}
 
 const SHOP = [
   { id: 'guppy', ic: '🐠', nm: 'グッピー',
@@ -284,16 +305,16 @@ function addGuppy(x, y) {
 }
 function mkCarn() {
   return {
-    kind: 'carn', x: rnd(60, W - 60), y: rnd(60, H - 60), vx: 0, vy: 0, r: 30,
+    kind: 'carn', x: rnd(60, W - 60), y: rnd(60, H - 60), vx: 0, vy: 0, r: 40,
     color: '#e2523f', stage: 2, eaten: 0, hunger: -1e9, coinT: 1e9,
     anim: rnd(0, 10), facing: 1, wt: 0, tx: W / 2, ty: H / 2, biteT: 0, dead: false, flash: 0
   };
 }
-function mkSnail() { return { kind: 'snail', x: rnd(40, W - 40), y: H - 16, r: 14, dir: 1, anim: 0 }; }
-function mkNico() { return { kind: 'nico', x: W / 2, y: H / 2, vx: 0, vy: 0, r: 20, anim: rnd(0, 9), facing: 1 }; }
+function mkSnail() { return { kind: 'snail', x: rnd(40, W - 40), y: H - 16, r: 18, dir: 1, anim: 0 }; }
+function mkNico() { return { kind: 'nico', x: W / 2, y: H / 2, vx: 0, vy: 0, r: 27, anim: rnd(0, 9), facing: 1 }; }
 
 function dropFood(x, y) {
-  if (S.food.length >= MAX_FOOD) return false;
+  if (S.food.length >= FOOD_CAP[S.foodLv - 1]) return false;
   const lv = S.foodLv - 1;
   S.food.push({ x: clamp(x, 8, W - 8), y: clamp(y, 4, H - 30), r: FOOD_R[lv], vy: 0, land: 0, ph: rnd(0, TAU) });
   return true;
@@ -310,7 +331,7 @@ function spawnAlien() {
   S.aliens.push({
     type: t, x: left ? -40 : W + 40, y: rnd(H * .2, H * .75),
     vx: left ? 60 : -60, vy: 0,
-    r: { sly: 24, jelly: 27, big: 38 }[t],
+    r: { sly: 30, jelly: 34, big: 48 }[t],
     hp: hpBase + 38 * (lv - 1), maxhp: hpBase + 38 * (lv - 1),
     biteT: 1.5, life: 55, anim: rnd(0, 9), hit: 0, facing: left ? 1 : -1
   });
@@ -554,8 +575,8 @@ function collectNear(p, rad) {
 function takeCoin(i) {
   const c = S.coins[i];
   S.money += c.value; S.earned += c.value; S.totalEarned += c.value;
-  ftext(c.x, c.y - 8, '+' + c.value, c.type === 'diamond' ? '#8ef7ff' : '#ffd75e');
-  fx(c.x, c.y, c.type === 'diamond' ? '#8ef7ff' : '#ffd75e', 8, 100);
+  ftext(c.x, c.y - 8, '+' + c.value, coinColor(c));
+  fx(c.x, c.y, coinColor(c), 8, 100);
   S.coins.splice(i, 1); SFX.coin(); syncUI();
 }
 function damageAlien(a, dmg, sx, sy) {
@@ -645,7 +666,7 @@ function draw() {
   ctx.restore();
 
   /* 空腹警告 */
-  const starving = S.fish.filter(f => !f.dead && f.kind === 'guppy' && f.hunger > STARVE_T - 9).length;
+  const starving = S.fish.filter(f => !f.dead && f.kind === 'guppy' && f.hunger > HUNGRY_BAND2).length;
   if (starving) {
     ctx.globalAlpha = .5 + Math.sin(S.t * 8) * .3;
     ctx.fillStyle = '#ff9db0'; ctx.font = '800 14px system-ui,sans-serif'; ctx.textAlign = 'center';
@@ -668,17 +689,29 @@ function mixGray(hex, k) {
 }
 
 function drawFish(f) {
-  const hungerK = clamp((f.hunger - HUNGRY_T) / (STARVE_T - HUNGRY_T), 0, 1);
-  const col = hungerK > 0 ? mixGray(f.color, hungerK * .85) : f.color;
-  const r = f.r, sw = Math.sin(f.anim * 9) ;
-  ctx.save(); ctx.translate(f.x, f.y); ctx.scale(f.facing, 1);
+  /* 空腹段階: 0=健康 1=やや空腹 2=空腹 3=危険(震え) */
+  const hstage = f.hunger <= HUNGRY_T ? 0 : f.hunger <= HUNGRY_BAND1 ? 1 : f.hunger <= HUNGRY_BAND2 ? 2 : 3;
+  const grayAmt = [0, .28, .58, .88][hstage];
+  const col = grayAmt > 0 ? mixGray(f.color, grayAmt) : f.color;
+  const r = f.r, sw = Math.sin(f.anim * 9);
+  const jitter = hstage === 3;
+  const jx = jitter ? Math.sin(f.anim * 26) * 2 : 0, jy = jitter ? Math.cos(f.anim * 21) * 2 : 0;
+  ctx.save(); ctx.translate(f.x + jx, f.y + jy);
+
+  if (hstage === 3) {                                 // 危険：赤い警告リング
+    ctx.globalAlpha = .3 + Math.sin(f.anim * 11) * .25;
+    ctx.strokeStyle = '#ff3b30'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(0, 0, r * 1.35, 0, TAU); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.scale(f.facing, 1);
 
   ctx.globalAlpha = .18; ctx.fillStyle = '#000';
   ctx.beginPath(); ctx.ellipse(3, 4, r * 1.02, r * .74, 0, 0, TAU); ctx.fill();
   ctx.globalAlpha = 1;
 
-  ctx.fillStyle = shade(f.color, -55);
-  if (hungerK > 0) ctx.fillStyle = mixGray(f.color, hungerK * .85);
+  ctx.fillStyle = grayAmt > 0 ? mixGray(shade(f.color, -55), grayAmt) : shade(f.color, -55);
   ctx.beginPath();
   ctx.moveTo(-r * .72, 0);
   ctx.quadraticCurveTo(-r * 1.4, -r * .85 + sw * r * .28, -r * 1.75, sw * r * .5);
@@ -710,10 +743,17 @@ function drawFish(f) {
   ctx.fillStyle = '#101820';
   ctx.beginPath(); ctx.arc(r * .55, -r * .16, r * .12, 0, TAU); ctx.fill();
 
-  if (hungerK > .45) {                               // 空腹マーク
-    ctx.fillStyle = '#ff5f7a'; ctx.font = `800 ${r * .95}px system-ui`;
-    ctx.textAlign = 'center'; ctx.save(); ctx.scale(f.facing, 1);
-    ctx.fillText('!', 0, -r * 1.15); ctx.restore();
+  if (hstage > 0) {                                  // 空腹マーク（段階表示）
+    const icon = hstage === 1 ? '!' : hstage === 2 ? '!!' : '⚠';
+    const iconColor = hstage === 1 ? '#ffd75e' : hstage === 2 ? '#ff9d4a' : '#ff3b30';
+    const pulse = hstage === 1 ? 1 : hstage === 2 ? 1 + Math.sin(f.anim * 7) * .1 : 1 + Math.sin(f.anim * 11) * .22;
+    ctx.save(); ctx.scale(f.facing, 1);
+    ctx.font = `900 ${r * .95 * pulse}px system-ui`;
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.55)';
+    ctx.strokeText(icon, 0, -r * 1.25);
+    ctx.fillStyle = iconColor; ctx.fillText(icon, 0, -r * 1.25);
+    ctx.restore();
   }
   ctx.restore();
 }
@@ -797,14 +837,15 @@ function drawCoin(c) {
     ctx.beginPath(); ctx.moveTo(0, -c.r); ctx.lineTo(c.r * .3, -c.r * .1);
     ctx.lineTo(0, c.r * .2); ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
   } else {
+    const tier = COIN_TIERS[coinTier(c.value)];
     ctx.scale(clamp(wob, .3, 1), 1);
     const g = ctx.createRadialGradient(-c.r * .35, -c.r * .4, c.r * .12, 0, 0, c.r);
-    g.addColorStop(0, '#fff6c9'); g.addColorStop(.55, '#ffd75e'); g.addColorStop(1, '#b8801a');
+    g.addColorStop(0, tier.hi); g.addColorStop(.55, tier.mid); g.addColorStop(1, tier.lo);
     ctx.fillStyle = g;
     ctx.beginPath(); ctx.arc(0, 0, c.r, 0, TAU); ctx.fill();
-    ctx.strokeStyle = '#8f6210'; ctx.lineWidth = 1.4;
+    ctx.strokeStyle = tier.ring; ctx.lineWidth = 1.4;
     ctx.beginPath(); ctx.arc(0, 0, c.r * .72, 0, TAU); ctx.stroke();
-    ctx.fillStyle = '#8f6210'; ctx.font = `800 ${c.r * 1.05}px system-ui`;
+    ctx.fillStyle = tier.sym; ctx.font = `800 ${c.r * 1.05}px system-ui`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('$', 0, .5);
     ctx.textBaseline = 'alphabetic';
   }
@@ -812,7 +853,8 @@ function drawCoin(c) {
 }
 
 function drawSnail(p) {
-  ctx.save(); ctx.translate(p.x, p.y); ctx.scale(p.dir, 1);
+  const k = p.r / 14;
+  ctx.save(); ctx.translate(p.x, p.y); ctx.scale(p.dir * k, k);
   ctx.fillStyle = '#f2e2c4';
   ctx.beginPath(); ctx.ellipse(4, 6, 15, 6, 0, 0, TAU); ctx.fill();
   ctx.beginPath(); ctx.moveTo(13, 4); ctx.lineTo(17, -6); ctx.lineTo(19, 3); ctx.fill();
@@ -969,6 +1011,8 @@ function tryBuy(it) {
 }
 function syncUI() {
   $('money').textContent = '💰 ' + S.money.toLocaleString();
+  const cap = FOOD_CAP[S.foodLv - 1];
+  $('foodcap').textContent = '🍚 ' + Math.max(0, cap - S.food.length) + '/' + cap;
   $('lvtxt').textContent = 'レベル ' + S.level;
   $('goaltxt').textContent = Math.min(S.earned, S.goal).toLocaleString() + ' / ' + S.goal.toLocaleString();
   $('goalbar').style.width = clamp(S.earned / S.goal * 100, 0, 100) + '%';
