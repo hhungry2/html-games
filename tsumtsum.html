@@ -1054,6 +1054,59 @@ function loop(now){
   draw();
   drawFx();
 }
+/* つないだ経路。始点は淡く・最新は濃く、破線が進行方向へ流れる */
+function drawChainPath(){
+  const a = chain[0], z = chain[chain.length-1];
+  const col = TYPES[a.t].body;
+  const path = () => {
+    ctx.beginPath(); ctx.moveTo(a.x, a.y);
+    for(let i=1;i<chain.length;i++) ctx.lineTo(chain[i].x, chain[i].y);
+  };
+  ctx.save();
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+
+  // 縁取り
+  ctx.strokeStyle = 'rgba(25,32,60,.45)'; ctx.lineWidth = 12;
+  path(); ctx.stroke();
+
+  // 本体（始点→終点で濃くなるグラデーション）
+  const grad = ctx.createLinearGradient(a.x, a.y, z.x, z.y);
+  grad.addColorStop(0, 'rgba(255,255,255,.45)');
+  grad.addColorStop(1, 'rgba(255,255,255,.98)');
+  ctx.strokeStyle = grad; ctx.lineWidth = 8;
+  ctx.shadowColor = col; ctx.shadowBlur = 14;
+  path(); ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // 進行方向へ流れる破線
+  ctx.strokeStyle = col; ctx.lineWidth = 3.4;
+  ctx.setLineDash([7, 13]);
+  ctx.lineDashOffset = REDUCE ? 0 : -((performance.now()*0.06) % 20);
+  path(); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+/* 1,2,3… の順番バッジ。1番目だけ色を変えて始点を示す */
+function drawChainOrder(){
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for(let i=0;i<chain.length;i++){
+    const p = chain[i], br = Math.max(8.5, p.r*0.44);
+    const first = i === 0, head = i === chain.length-1;
+    ctx.beginPath(); ctx.arc(p.x, p.y, br, 0, 6.29);
+    ctx.fillStyle = first ? '#ff5f8d' : 'rgba(28,34,58,.86)';
+    ctx.fill();
+    ctx.lineWidth = head ? 2.6 : 1.8;
+    ctx.strokeStyle = head ? '#ffd24a' : 'rgba(255,255,255,.92)';
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = `900 ${br*1.22}px system-ui`;
+    ctx.fillText(i+1, p.x, p.y + br*0.06);
+  }
+  ctx.restore();
+}
+
 function draw(){
   ctx.save();
   ctx.clearRect(0,0,W,H);
@@ -1096,21 +1149,12 @@ function draw(){
   ctx.lineTo(W-WALL+2, FLOOR+4); ctx.lineTo(W-WALL+2, 0);
   ctx.stroke();
 
-  // チェイン線
-  if(chain.length > 1){
-    ctx.save();
-    ctx.strokeStyle = 'rgba(255,255,255,.95)';
-    ctx.lineWidth = 8; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    ctx.shadowColor = TYPES[chain[0].t].body; ctx.shadowBlur = 16;
-    ctx.beginPath(); ctx.moveTo(chain[0].x, chain[0].y);
-    for(let i=1;i<chain.length;i++) ctx.lineTo(chain[i].x, chain[i].y);
-    ctx.stroke();
-    ctx.restore();
-  }
-
   // ツム
   for(const p of tsums) if(p.state === 'live') drawTsum(p);
   for(const p of tsums) if(p.state === 'pop')  drawTsum(p);
+
+  // つなぎ順の線（ツムの上に描いて順番が見えるように）
+  if(chain.length > 1) drawChainPath();
 
   // 衝撃波リング
   for(const g of rings){
@@ -1140,16 +1184,21 @@ function draw(){
   }
   ctx.globalAlpha = 1;
 
+  // つないだ順の番号
+  if(chain.length > 0) drawChainOrder();
+
   // チェイン数カウンタ
   if(chain.length > 0){
     const last = chain[chain.length-1];
+    const by = last.y - last.r - 24;
     ctx.save();
-    ctx.globalAlpha = .92;
-    ctx.fillStyle = chain.length >= 3 ? '#ff5f8d' : 'rgba(60,70,100,.75)';
-    ctx.beginPath(); ctx.arc(last.x, last.y - 46, 20, 0, 6.29); ctx.fill();
-    ctx.fillStyle = '#fff'; ctx.font = '900 22px system-ui';
+    ctx.globalAlpha = .95;
+    ctx.fillStyle = chain.length >= 3 ? '#ff5f8d' : 'rgba(60,70,100,.8)';
+    ctx.beginPath(); ctx.arc(last.x, by, 17, 0, 6.29); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.font = '900 19px system-ui';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(chain.length, last.x, last.y - 45);
+    ctx.fillText(chain.length, last.x, by + 1);
     ctx.restore();
   }
 
