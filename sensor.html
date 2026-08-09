@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>スマホセンサー測定ダッシュボード (ジャイロ & 加速度)</title>
+  <style>
+    :root {
+      --bg-color: #0b0f19;
+      --card-bg: rgba(22, 30, 49, 0.75);
+      --card-border: rgba(255, 255, 255, 0.1);
+      --text-main: #f0f4f8;
+      --text-muted: #8a99ad;
+      --accent-cyan: #00f2fe;
+      --accent-green: #00e676;
+      --accent-orange: #ff9100;
+      --accent-pink: #ff2a85;
+      --accent-purple: #7c4dff;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      background-image: 
+        radial-gradient(circle at 10% 20%, rgba(0, 242, 254, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 90% 80%, rgba(255, 42, 133, 0.08) 0%, transparent 40%);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      padding: 16px;
+      padding-bottom: 40px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 6px;
+    }
+
+    p.subtitle {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    /* Control Banner & Buttons */
+    .control-panel {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 20px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 10px;
+      width: 100%;
+      max-width: 480px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      flex: 1;
+      min-width: 140px;
+      padding: 12px 18px;
+      border: none;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: #fff;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #00c6ff, #0072ff);
+      box-shadow: 0 4px 15px rgba(0, 114, 255, 0.4);
+    }
+    .btn-primary:active {
+      transform: scale(0.97);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+    .btn-secondary.active {
+      background: rgba(124, 77, 255, 0.3);
+      border-color: var(--accent-purple);
+      color: var(--accent-cyan);
+    }
+
+    .status-badge {
+      font-size: 0.8rem;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-weight: 600;
+    }
+    .status-active {
+      background: rgba(0, 230, 118, 0.15);
+      color: var(--accent-green);
+      border: 1px solid rgba(0, 230, 118, 0.3);
+    }
+    .status-inactive {
+      background: rgba(255, 145, 0, 0.15);
+      color: var(--accent-orange);
+      border: 1px solid rgba(255, 145, 0, 0.3);
+    }
+
+    /* Grid Layout */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 16px;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-radius: 16px;
+      padding: 18px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+
+    .card-title {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--text-main);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 8px;
+    }
+
+    .card-title .icon {
+      font-size: 1.2rem;
+    }
+
+    /* Values Table & Gauge */
+    .data-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .data-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .data-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.85rem;
+    }
+
+    .data-label {
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .data-value {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      font-size: 1.1rem;
+    }
+
+    .val-cyan { color: var(--accent-cyan); }
+    .val-pink { color: var(--accent-pink); }
+    .val-green { color: var(--accent-green); }
+    .val-orange { color: var(--accent-orange); }
+    .val-purple { color: var(--accent-purple); }
+
+    /* Progress bar */
+    .progress-bar-bg {
+      height: 6px;
+      width: 100%;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 3px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      width: 50%;
+      transition: width 0.05s linear, background-color 0.2s;
+      border-radius: 3px;
+    }
+
+    /* 3D Phone Visualizer */
+    .visualizer-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 220px;
+      position: relative;
+      perspective: 600px;
+      overflow: hidden;
+    }
+
+    .phone-model {
+      width: 90px;
+      height: 160px;
+      background: linear-gradient(145deg, #1e293b, #0f172a);
+      border: 3px solid var(--accent-cyan);
+      border-radius: 18px;
+      box-shadow: 0 10px 30px rgba(0, 242, 254, 0.2), inset 0 0 15px rgba(0, 242, 254, 0.1);
+      position: relative;
+      transform-style: preserve-3d;
+      transition: transform 0.05s ease-out;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .phone-screen {
+      width: 76px;
+      height: 130px;
+      background: rgba(0, 242, 254, 0.05);
+      border: 1px solid rgba(0, 242, 254, 0.2);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent-cyan);
+      font-size: 0.7rem;
+      font-family: var(--font-mono);
+      text-align: center;
+    }
+
+    .phone-notch {
+      position: absolute;
+      top: 6px;
+      width: 28px;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.3);
+      border-radius: 2px;
+    }
+
+    /* Bubble Level Canvas */
+    .level-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 10px;
+    }
+
+    canvas {
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    /* Log Box */
+    .log-box {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      max-height: 100px;
+      overflow-y: auto;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 8px 12px;
+      border-radius: 8px;
+      margin-top: 10px;
+    }
+
+    .log-item {
+      margin-bottom: 4px;
+    }
+
+    .notice-card {
+      grid-column: 1 / -1;
+      background: rgba(255, 145, 0, 0.08);
+      border: 1px solid rgba(255, 145, 0, 0.25);
+      border-radius: 12px;
+      padding: 12px 16px;
+      font-size: 0.85rem;
+      color: #ffd180;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>📱 スマホセンサー測定ダッシュボード</h1>
+    <p class="subtitle">DeviceOrientation (ジャイロ) & DeviceMotion (加速度) リアルタイムモニタ</p>
+  </header>
+
+  <div class="control-panel">
+    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center;">
+      <span id="sensorStatus" class="status-badge status-inactive">センサー：未接続</span>
+      <span id="deviceType" class="status-badge status-inactive">環境：PC / 待機中</span>
+    </div>
+
+    <div class="btn-group">
+      <button id="btnRequestPermission" class="btn btn-primary">
+        <span>⚡ センサーを開始 / 許可</span>
+      </button>
+      <button id="btnSimulate" class="btn btn-secondary">
+        <span>🖱️ PCシミュレーション</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="grid">
+
+    <!-- 1. 3D Tilt Visualizer & Level -->
+    <div class="card">
+      <div class="card-title">
+        <span>3D 傾き・水準器</span>
+        <span class="icon">🧭</span>
+      </div>
+      <div class="visualizer-container">
+        <div id="phoneModel" class="phone-model">
+          <div class="phone-notch"></div>
+          <div class="phone-screen">
+            <div>TILT</div>
+            <div id="screenPitchRoll" style="font-weight:bold; margin-top:4px;">0° / 0°</div>
+          </div>
+        </div>
+      </div>
+      <div class="level-container">
+        <canvas id="levelCanvas" width="260" height="90"></canvas>
+      </div>
+    </div>
+
+    <!-- 2. Gyroscope (DeviceOrientation) -->
+    <div class="card">
+      <div class="card-title">
+        <span>ジャイロセンサー (傾き)</span>
+        <span class="icon">🔄</span>
+      </div>
+      <div class="data-list">
+        
+        <div class="data-row">
+          <div class="data-header">
+            <span class="data-label">Gamma (左右の傾き / Roll)</span>
+            <span id="valGamma" class="data-value val-cyan">0.00°</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div id="barGamma" class="progress-bar-fill" style="background: var(--accent-cyan); width: 50%;"></div>
+          </div>
+          <span style="font-size:0.7rem; color:var(--text-muted);">-90° (左) 〜 +90° (右)</span>
+        </div>
+
+        <div class="data-row">
+          <div class="data-header">
+            <span class="data-label">Beta (前後の傾き / Pitch)</span>
+            <span id="valBeta" class="data-value val-pink">0.00°</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div id="barBeta" class="progress-bar-fill" style="background: var(--accent-pink); width: 50%;"></div>
+          </div>
+          <span style="font-size:0.7rem; color:var(--text-muted);">-180° (手前) 〜 +180° (奥)</span>
+        </div>
+
+        <div class="data-row">
+          <div class="data-header">
+            <span class="data-label">Alpha (方角・水平回転 / Yaw)</span>
+            <span id="valAlpha" class="data-value val-purple">0.00°</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div id="barAlpha" class="progress-bar-fill" style="background: var(--accent-purple); width: 0%;"></div>
+          </div>
+          <span style="font-size:0.7rem; color:var(--text-muted);">0° 〜 360° (北を基準)</span>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 3. Accelerometer (DeviceMotion) -->
+    <div class="card">
+      <div class="card-title">
+        <span>加速度センサー (DeviceMotion)</span>
+        <span class="icon">🚀</span>
+      </div>
+      <div class="data-list">
+        <div class="data-row">
+          <div class="data-header">
+            <span class="data-label">X軸 (左右の移動)</span>
+            <span id="valAccX" class="data-value val-cyan">0.00 m/s²</span>
+          </div>
+        </div>
+        <div class="data-row">
+          <div class="data-header">
+            <span class="data-label">Y軸 (上下の移動)</span>
+            <span id="valAccY" class="data-value val-pink">0.00 m/s²</span>
+          </div>
+        </div>
+        <div class="data-row">
+          <div class="data-header">
+            <span class="data-label">Z軸 (前後の移動)</span>
+            <span id="valAccZ" class="data-value val-green">0.00 m/s²</span>
+          </div>
+        </div>
+        <div class="data-row" style="margin-top: 6px; padding-top: 8px; border-top: 1px dashed rgba(255,255,255,0.1);">
+          <div class="data-header">
+            <span class="data-label">合成加速度 (運動強度)</span>
+            <span id="valAccTotal" class="data-value val-orange">0.00 m/s²</span>
+          </div>
+        </div>
+        <div class="data-row">
+          <div class="data-header">
+            <span class="data-label">最大記録 (ピークG)</span>
+            <span id="valMaxAcc" class="data-value" style="color:#fff;">0.00 m/s²</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. Realtime Waveform Graph -->
+    <div class="card" style="grid-column: 1 / -1;">
+      <div class="card-title">
+        <span>リアルタイム加速度波形グラフ</span>
+        <span class="icon">📊</span>
+      </div>
+      <div style="width: 100%; overflow-x: auto;">
+        <canvas id="graphCanvas" width="800" height="150" style="width:100%; height:150px;"></canvas>
+      </div>
+      <div style="display:flex; gap:16px; margin-top:8px; font-size:0.8rem; justify-content:center;">
+        <span style="color:var(--accent-cyan);">■ X軸</span>
+        <span style="color:var(--accent-pink);">■ Y軸</span>
+        <span style="color:var(--accent-green);">■ Z軸</span>
+      </div>
+    </div>
+
+    <!-- Event Logger / Notice -->
+    <div class="card notice-card">
+      <strong>💡 ヒント & 動作確認メモ:</strong>
+      <ul style="margin-left: 20px; margin-top: 4px;">
+        <li><b>iPhone / iOS Safari:</b> 上部の「センサーを開始 / 許可」ボタンを押すとポップアップが出るので「許可」を選択してください。（※HTTPSまたはlocalhost接続必須）</li>
+        <li><b>Android Chrome:</b> ボタンを押すか、ページ読み込み時に自動で取得が始まります。</li>
+        <li><b>PCブラウザ:</b> 「PCシミュレーション」ボタンを押すと、画面上のドラッグや矢印キーで傾きをテストできます。</li>
+      </ul>
+      <div id="logBox" class="log-box">
+        <div class="log-item">[System] ログを開始しました。</div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // State Variables
+    let orientationActive = false;
+    let motionActive = false;
+    let simulationActive = false;
+
+    let currentOrientation = { alpha: 0, beta: 0, gamma: 0 };
+    let currentMotion = { x: 0, y: 0, z: 0, total: 0 };
+    let maxAcc = 0;
+
+    // History for Graph
+    const maxHistory = 100;
+    const historyX = new Array(maxHistory).fill(0);
+    const historyY = new Array(maxHistory).fill(0);
+    const historyZ = new Array(maxHistory).fill(0);
+
+    // DOM Elements
+    const btnRequestPermission = document.getElementById('btnRequestPermission');
+    const btnSimulate = document.getElementById('btnSimulate');
+    const sensorStatus = document.getElementById('sensorStatus');
+    const deviceType = document.getElementById('deviceType');
+    const phoneModel = document.getElementById('phoneModel');
+    const screenPitchRoll = document.getElementById('screenPitchRoll');
+    const logBox = document.getElementById('logBox');
+
+    const valGamma = document.getElementById('valGamma');
+    const valBeta = document.getElementById('valBeta');
+    const valAlpha = document.getElementById('valAlpha');
+
+    const barGamma = document.getElementById('barGamma');
+    const barBeta = document.getElementById('barBeta');
+    const barAlpha = document.getElementById('barAlpha');
+
+    const valAccX = document.getElementById('valAccX');
+    const valAccY = document.getElementById('valAccY');
+    const valAccZ = document.getElementById('valAccZ');
+    const valAccTotal = document.getElementById('valAccTotal');
+    const valMaxAcc = document.getElementById('valMaxAcc');
+
+    const levelCanvas = document.getElementById('levelCanvas');
+    const levelCtx = levelCanvas.getContext('2d');
+
+    const graphCanvas = document.getElementById('graphCanvas');
+    const graphCtx = graphCanvas.getContext('2d');
+
+    // Logging Helper
+    function addLog(msg) {
+      const time = new Date().toLocaleTimeString();
+      const div = document.createElement('div');
+      div.className = 'log-item';
+      div.textContent = `[${time}] ${msg}`;
+      logBox.appendChild(div);
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    // Permission Request Handler (iOS 13+ & Standard Web API)
+    async function requestSensors() {
+      addLog('センサー取得を要求中...');
+      
+      // 1. DeviceOrientation Permission
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        try {
+          const state = await DeviceOrientationEvent.requestPermission();
+          if (state === 'granted') {
+            window.addEventListener('deviceorientation', handleOrientation);
+            orientationActive = true;
+            addLog('DeviceOrientation 許可成功 (iOS)');
+          } else {
+            addLog('DeviceOrientation 許可が拒否されました');
+          }
+        } catch (e) {
+          addLog('DeviceOrientation Error: ' + e.message);
+        }
+      } else {
+        // Standard non-iOS or desktop
+        window.addEventListener('deviceorientation', handleOrientation);
+        orientationActive = true;
+        addLog('DeviceOrientation リスナー追加 (Standard)');
+      }
+
+      // 2. DeviceMotion Permission
+      if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+        try {
+          const state = await DeviceMotionEvent.requestPermission();
+          if (state === 'granted') {
+            window.addEventListener('devicemotion', handleMotion);
+            motionActive = true;
+            addLog('DeviceMotion 許可成功 (iOS)');
+          }
+        } catch (e) {
+          addLog('DeviceMotion Error: ' + e.message);
+        }
+      } else {
+        window.addEventListener('devicemotion', handleMotion);
+        motionActive = true;
+        addLog('DeviceMotion リスナー追加 (Standard)');
+      }
+
+      updateStatusUI();
+    }
+
+    // DeviceOrientation Event Callback
+    function handleOrientation(e) {
+      if (simulationActive) return;
+
+      const alpha = e.alpha || 0;
+      const beta = e.beta || 0;
+      const gamma = e.gamma || 0;
+
+      currentOrientation = { alpha, beta, gamma };
+      updateOrientationUI();
+    }
+
+    // DeviceMotion Event Callback
+    function handleMotion(e) {
+      if (simulationActive) return;
+
+      let acc = e.acceleration || e.accelerationIncludingGravity;
+      if (!acc || (acc.x === null && acc.y === null && acc.z === null)) {
+        acc = e.accelerationIncludingGravity;
+      }
+
+      if (acc) {
+        const x = acc.x || 0;
+        const y = acc.y || 0;
+        const z = acc.z || 0;
+        const total = Math.sqrt(x * x + y * y + z * z);
+
+        currentMotion = { x, y, z, total };
+
+        if (total > maxAcc) {
+          maxAcc = total;
+        }
+
+        // Add to graph history
+        historyX.push(x); historyX.shift();
+        historyY.push(y); historyY.shift();
+        historyZ.push(z); historyZ.shift();
+
+        updateMotionUI();
+      }
+    }
+
+    // Update Orientation UI
+    function updateOrientationUI() {
+      const { alpha, beta, gamma } = currentOrientation;
+
+      valAlpha.textContent = alpha.toFixed(2) + '°';
+      valBeta.textContent = beta.toFixed(2) + '°';
+      valGamma.textContent = gamma.toFixed(2) + '°';
+
+      // Bars calculation
+      // Gamma (-90 ~ 90) -> 0% ~ 100%
+      const gammaPercent = Math.min(100, Math.max(0, ((gamma + 90) / 180) * 100));
+      barGamma.style.width = gammaPercent + '%';
+
+      // Beta (-180 ~ 180) -> 0% ~ 100%
+      const betaPercent = Math.min(100, Math.max(0, ((beta + 180) / 360) * 100));
+      barBeta.style.width = betaPercent + '%';
+
+      // Alpha (0 ~ 360) -> 0% ~ 100%
+      const alphaPercent = Math.min(100, Math.max(0, (alpha / 360) * 100));
+      barAlpha.style.width = alphaPercent + '%';
+
+      // 3D Phone Model Transform
+      phoneModel.style.transform = `rotateX(${beta}deg) rotateY(${gamma}deg) rotateZ(${alpha}deg)`;
+      screenPitchRoll.textContent = `${beta.toFixed(0)}° / ${gamma.toFixed(0)}°`;
+
+      drawLevel();
+    }
+
+    // Update Motion UI
+    function updateMotionUI() {
+      const { x, y, z, total } = currentMotion;
+
+      valAccX.textContent = `${x >= 0 ? '+' : ''}${x.toFixed(2)} m/s²`;
+      valAccY.textContent = `${y >= 0 ? '+' : ''}${y.toFixed(2)} m/s²`;
+      valAccZ.textContent = `${z >= 0 ? '+' : ''}${z.toFixed(2)} m/s²`;
+      valAccTotal.textContent = `${total.toFixed(2)} m/s²`;
+      valMaxAcc.textContent = `${maxAcc.toFixed(2)} m/s²`;
+
+      drawGraph();
+    }
+
+    // Status UI
+    function updateStatusUI() {
+      if (orientationActive || motionActive) {
+        sensorStatus.className = 'status-badge status-active';
+        sensorStatus.textContent = 'センサー：作動中 (リアルタイム)';
+        deviceType.textContent = '環境：モバイル端末';
+        deviceType.className = 'status-badge status-active';
+      }
+    }
+
+    // Level Canvas Drawing (水準器)
+    function drawLevel() {
+      const w = levelCanvas.width;
+      const h = levelCanvas.height;
+      const cx = w / 2;
+      const cy = h / 2;
+
+      levelCtx.clearRect(0, 0, w, h);
+
+      // Target background
+      levelCtx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+      levelCtx.lineWidth = 2;
+      levelCtx.beginPath();
+      levelCtx.arc(cx, cy, 35, 0, Math.PI * 2);
+      levelCtx.stroke();
+
+      levelCtx.beginPath();
+      levelCtx.arc(cx, cy, 10, 0, Math.PI * 2);
+      levelCtx.stroke();
+
+      // Crosshairs
+      levelCtx.beginPath();
+      levelCtx.moveTo(cx - 45, cy); levelCtx.lineTo(cx + 45, cy);
+      levelCtx.moveTo(cx, cy - 35); levelCtx.lineTo(cx, cy + 35);
+      levelCtx.stroke();
+
+      // Bubble position based on gamma (roll X) and beta (pitch Y)
+      const maxOffset = 35;
+      const bubbleX = cx + Math.min(maxOffset, Math.max(-maxOffset, (currentOrientation.gamma / 45) * maxOffset));
+      const bubbleY = cy + Math.min(maxOffset, Math.max(-maxOffset, (currentOrientation.beta / 45) * maxOffset));
+
+      // Draw Bubble
+      const isCentered = Math.abs(currentOrientation.gamma) < 2 && Math.abs(currentOrientation.beta) < 2;
+      levelCtx.fillStyle = isCentered ? '#00e676' : '#00f2fe';
+      levelCtx.shadowColor = levelCtx.fillStyle;
+      levelCtx.shadowBlur = 10;
+
+      levelCtx.beginPath();
+      levelCtx.arc(bubbleX, bubbleY, 8, 0, Math.PI * 2);
+      levelCtx.fill();
+      levelCtx.shadowBlur = 0; // reset
+    }
+
+    // Graph Canvas Drawing
+    function drawGraph() {
+      const w = graphCanvas.width;
+      const h = graphCanvas.height;
+      const midY = h / 2;
+      const scale = 4; // pixels per m/s2
+
+      graphCtx.fillStyle = 'rgba(11, 15, 25, 1)';
+      graphCtx.fillRect(0, 0, w, h);
+
+      // Grid line
+      graphCtx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+      graphCtx.lineWidth = 1;
+      graphCtx.beginPath();
+      graphCtx.moveTo(0, midY);
+      graphCtx.lineTo(w, midY);
+      graphCtx.stroke();
+
+      // Helper to draw series
+      function drawSeries(arr, color) {
+        graphCtx.strokeStyle = color;
+        graphCtx.lineWidth = 2;
+        graphCtx.beginPath();
+        const step = w / (maxHistory - 1);
+        for (let i = 0; i < arr.length; i++) {
+          const x = i * step;
+          const y = midY - (arr[i] * scale);
+          if (i === 0) graphCtx.moveTo(x, y);
+          else graphCtx.lineTo(x, y);
+        }
+        graphCtx.stroke();
+      }
+
+      drawSeries(historyX, '#00f2fe');
+      drawSeries(historyY, '#ff2a85');
+      drawSeries(historyZ, '#00e676');
+    }
+
+    // PC Simulation Mode (Mouse Drag & Key Controls)
+    let isDragging = false;
+    let startX = 0, startY = 0;
+
+    btnSimulate.addEventListener('click', () => {
+      simulationActive = !simulationActive;
+      btnSimulate.classList.toggle('active', simulationActive);
+      if (simulationActive) {
+        sensorStatus.className = 'status-badge status-active';
+        sensorStatus.textContent = 'シミュレーション中 (ドラッグ/矢印キー)';
+        deviceType.textContent = '環境：PCシミュレーション';
+        deviceType.className = 'status-badge status-active';
+        addLog('PCシミュレーションモードを開始しました');
+      } else {
+        addLog('PCシミュレーションモードを終了しました');
+      }
+    });
+
+    window.addEventListener('mousedown', (e) => {
+      if (!simulationActive) return;
+      isDragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!simulationActive || !isDragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+
+      currentOrientation.gamma = Math.min(90, Math.max(-90, currentOrientation.gamma + dx * 0.5));
+      currentOrientation.beta = Math.min(180, Math.max(-180, currentOrientation.beta + dy * 0.5));
+
+      // Simulate motion
+      const x = (dx * 0.1);
+      const y = (dy * 0.1);
+      const total = Math.sqrt(x*x + y*y);
+      currentMotion = { x, y, z: 0, total };
+
+      historyX.push(x); historyX.shift();
+      historyY.push(y); historyY.shift();
+      historyZ.push(0); historyZ.shift();
+
+      startX = e.clientX;
+      startY = e.clientY;
+
+      updateOrientationUI();
+      updateMotionUI();
+    });
+
+    window.addEventListener('mouseup', () => { isDragging = false; });
+
+    // Keyboard simulation
+    window.addEventListener('keydown', (e) => {
+      if (!simulationActive) return;
+      let step = 5;
+      if (e.key === 'ArrowLeft') currentOrientation.gamma = Math.max(-90, currentOrientation.gamma - step);
+      if (e.key === 'ArrowRight') currentOrientation.gamma = Math.min(90, currentOrientation.gamma + step);
+      if (e.key === 'ArrowUp') currentOrientation.beta = Math.max(-180, currentOrientation.beta - step);
+      if (e.key === 'ArrowDown') currentOrientation.beta = Math.min(180, currentOrientation.beta + step);
+
+      updateOrientationUI();
+    });
+
+    // Event Listeners
+    btnRequestPermission.addEventListener('click', requestSensors);
+
+    // Initial render
+    drawLevel();
+    drawGraph();
+
+    // Auto-attempt standard listener on page load
+    if (window.DeviceOrientationEvent && !('requestPermission' in DeviceOrientationEvent)) {
+      window.addEventListener('deviceorientation', handleOrientation);
+      window.addEventListener('devicemotion', handleMotion);
+      orientationActive = true;
+      motionActive = true;
+      updateStatusUI();
+      addLog('自動的にセンサー監視を開始しました');
+    }
+  </script>
+</body>
+</html>
