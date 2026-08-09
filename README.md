@@ -4,7 +4,9 @@ htmlで作ったゲームとかツール置き場です。
 o3-mini,claudeを使用しています。  
 
 【ゲーム】  
-[**index.html**](https://hhungry2.github.io/html-games/index.html)  
+- GitHub Pages: [**index.html**](https://hhungry2.github.io/html-games/index.html)  
+- Vercel: [**html-games-eight.vercel.app**](https://html-games-eight.vercel.app/)  
+
 
 スーパーマリオ風ゲーム  
 [**mario.html**](https://hhungry2.github.io/html-games/mario.html)  
@@ -25,6 +27,9 @@ BM風ゲーム
 [**rock-paper-scissors.html**](https://hhungry2.github.io/html-games/rock-paper-scissors.html)
 
 【ツール】  
+スマホセンサー測定ダッシュボード（ジャイロ・加速度）  
+[**sensor.html**](https://hhungry2.github.io/html-games/sensor.html) | [Vercel](https://html-games-eight.vercel.app/sensor.html)  
+
 Deepth_anything デモ  
 [**depth_anything.html**](https://hhungry2.github.io/html-games/tools/depth_anything.html)
 
