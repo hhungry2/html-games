@@ -1,0 +1,1180 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#0d0b12">
+<title>風来の迷宮 ─ 三層のダンジョン</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow:hidden}
+  body{
+    background:#0d0b12;color:#f2ead8;
+    font-family:"Segoe UI",system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    display:flex;flex-direction:column;align-items:center;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    touch-action:none;user-select:none;
+  }
+  #app{width:100%;max-width:620px;height:100%;display:flex;flex-direction:column;gap:6px;padding:6px}
+
+  #hud{
+    flex:0 0 auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    background:linear-gradient(180deg,#241d2e,#171220);
+    border:1px solid #4a3d5c;border-radius:10px;padding:7px 10px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 4px 12px rgba(0,0,0,.5);font-size:12px;
+  }
+  #hud .lv{font-weight:800;font-size:14px;color:#ffd98a;white-space:nowrap}
+  #hud .floor{margin-left:auto;font-weight:800;color:#9fd8ff;white-space:nowrap}
+  .gauge{flex:1 1 100px;min-width:88px}
+  .gauge .lb{display:flex;justify-content:space-between;font-size:10px;opacity:.75;margin-bottom:2px;font-variant-numeric:tabular-nums}
+  .gauge .bar{height:8px;border-radius:4px;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.14);overflow:hidden}
+  .gauge .fill{height:100%;width:100%;transition:width .18s}
+  #hpFill{background:linear-gradient(90deg,#ff6b6b,#ffb36b)}
+  #fdFill{background:linear-gradient(90deg,#ffd23f,#a8e06a)}
+  #exFill{background:linear-gradient(90deg,#6ba8ff,#c07bff)}
+  .stats{display:flex;gap:10px;font-size:11px;opacity:.9;white-space:nowrap}
+  .stats b{color:#ffd98a}
+
+  #view{flex:1 1 auto;min-height:0;position:relative;border-radius:12px;overflow:hidden;
+    border:1px solid #4a3d5c;box-shadow:0 6px 24px rgba(0,0,0,.6)}
+  canvas{display:block;width:100%;height:100%;background:#07060b}
+
+  #log{flex:0 0 auto;height:60px;overflow:hidden;font-size:12px;line-height:1.5;
+    background:rgba(10,8,16,.85);border:1px solid #4a3d5c;border-radius:10px;padding:5px 10px}
+  #log div{opacity:.5}
+  #log div:last-child{opacity:1;color:#fff}
+  .hl{color:#ffd98a;font-weight:700}
+  .dm{color:#ff8f8f;font-weight:700}
+  .gd{color:#9fe870;font-weight:700}
+
+  #ctrl{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding-bottom:2px}
+  #pad{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;width:144px;flex:0 0 auto}
+  #pad button{aspect-ratio:1;border-radius:9px;font-size:15px;color:#f2ead8;
+    background:linear-gradient(180deg,#2f2740,#1d1728);border:1px solid #574868;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.12);cursor:pointer}
+  #pad button:active{background:#48395f}
+  #pad button.mid{font-size:11px;color:#bda9d6}
+  #acts{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:6px;align-content:center}
+  #acts button{padding:11px 6px;border-radius:10px;font-size:13px;font-weight:700;color:#f2ead8;
+    background:linear-gradient(180deg,#3a2f4d,#241c33);border:1px solid #6a5682;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.14);cursor:pointer}
+  #acts button:active{transform:translateY(1px)}
+  #acts button.go{background:linear-gradient(180deg,#4a7bd8,#2b4f9e);border-color:#7ea6ff}
+  #acts button:disabled{opacity:.35}
+
+  .ov{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:20;padding:18px;
+    background:rgba(6,4,10,.82);backdrop-filter:blur(6px)}
+  .ov.show{display:flex}
+  .card{width:100%;max-width:400px;max-height:86vh;overflow:auto;
+    background:linear-gradient(180deg,#2a2138,#171120);border:1px solid #6a5682;border-radius:16px;
+    padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.18)}
+  .card h2{font-size:17px;margin-bottom:10px;color:#ffd98a}
+  .card p{font-size:13px;line-height:1.8;opacity:.85}
+  .itemrow{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+    padding:9px 11px;margin-bottom:6px;border-radius:10px;cursor:pointer;color:#f2ead8;
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);font-size:13px}
+  .itemrow:active{background:rgba(255,255,255,.16)}
+  .itemrow .ds{font-size:11px;opacity:.65;margin-left:auto;text-align:right}
+  .closebtn{width:100%;margin-top:6px;padding:11px;border-radius:10px;font-weight:700;font-size:13px;
+    background:#3a2f4d;color:#f2ead8;border:1px solid #6a5682;cursor:pointer}
+  .btnrow{display:flex;gap:8px;margin-top:14px}
+  .btnrow button{flex:1;padding:12px;border-radius:11px;font-weight:800;font-size:14px;cursor:pointer;
+    color:#fff;border:0;box-shadow:inset 0 1px 0 rgba(255,255,255,.3)}
+  .b-main{background:linear-gradient(180deg,#4a7bd8,#2b4f9e)}
+  .b-sub{background:linear-gradient(180deg,#5c4a72,#38294a)}
+
+  #result .card{max-width:430px;text-align:center}
+  #resultTitle{font-size:25px;font-weight:900;letter-spacing:.05em;margin-bottom:4px}
+  #resultRank{font-size:13px;color:#ffd98a;margin-bottom:14px;letter-spacing:.08em}
+  .sheet{display:grid;grid-template-columns:1fr auto;gap:6px 12px;font-size:13px;
+    background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:12px 14px}
+  .sheet .k{opacity:.7;text-align:left}
+  .sheet .v{font-weight:800;font-variant-numeric:tabular-nums;color:#ffd98a}
+  .clearFx{font-size:32px;letter-spacing:.3em;margin-bottom:6px;animation:sparkle 1.6s ease-in-out infinite}
+  @keyframes sparkle{0%,100%{opacity:.55;transform:scale(.97)}50%{opacity:1;transform:scale(1.04)}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hud">
+    <span class="lv">Lv<span id="lvV">1</span></span>
+    <div class="gauge"><div class="lb"><span>HP</span><span id="hpT">20/20</span></div><div class="bar"><div class="fill" id="hpFill"></div></div></div>
+    <div class="gauge"><div class="lb"><span>満腹</span><span id="fdT">100%</span></div><div class="bar"><div class="fill" id="fdFill"></div></div></div>
+    <div class="gauge"><div class="lb"><span>EXP</span><span id="exT">0</span></div><div class="bar"><div class="fill" id="exFill"></div></div></div>
+    <div class="stats"><span>力 <b id="atkV">6</b></span><span>守 <b id="defV">3</b></span></div>
+    <span class="floor" id="floorV">1F</span>
+  </div>
+
+  <div id="view"><canvas id="cv"></canvas></div>
+  <div id="log"></div>
+
+  <div id="ctrl">
+    <div id="pad">
+      <button data-d="-1,-1">↖</button><button data-d="0,-1">↑</button><button data-d="1,-1">↗</button>
+      <button data-d="-1,0">←</button><button class="mid" data-d="0,0">足踏</button><button data-d="1,0">→</button>
+      <button data-d="-1,1">↙</button><button data-d="0,1">↓</button><button data-d="1,1">↘</button>
+    </div>
+    <div id="acts">
+      <button id="btnItem">もちもの</button>
+      <button id="btnStair" class="go">階段</button>
+      <button id="btnHelp">あそび方</button>
+      <button id="btnRestart">最初から</button>
+    </div>
+  </div>
+</div>
+
+<div class="ov" id="itemOv"><div class="card">
+  <h2>もちもの <span id="bagCount" style="font-size:12px;opacity:.7"></span></h2>
+  <div id="itemList"></div>
+  <button class="closebtn" id="itemClose">とじる</button>
+</div></div>
+
+<div class="ov" id="helpOv"><div class="card">
+  <h2>あそび方</h2>
+  <p>
+    ・方向パッド／十字キーで移動。敵に向かって進むと攻撃。<br>
+    ・敵はこちらが1手動くごとに動く（ターン制）。<br>
+    ・部屋に入ると部屋全体が見え、通路では周囲だけ見える。<br>
+    ・満腹度はターン経過で減り、0になるとHPが減り続ける。おにぎりで回復。<br>
+    ・満腹度がある間、HPは数ターンごとに少しずつ回復する。<br>
+    ・床のアイテムは進むと自動で拾う（最大8個）。<br>
+    ・階段を降りて<span class="hl">全3階</span>の最深部を目指せ。<br><br>
+    <b>キーボード</b>：矢印／WASD／テンキーで移動、Space・. で足踏み、I でもちもの、&gt; で階段、R で最初から。
+  </p>
+  <button class="closebtn" id="helpClose">とじる</button>
+</div></div>
+
+<div class="ov" id="stairOv"><div class="card">
+  <h2>階段</h2>
+  <p id="stairText">この階段を降りますか？</p>
+  <div class="btnrow"><button class="b-main" id="stairYes">降りる</button><button class="b-sub" id="stairNo">やめる</button></div>
+</div></div>
+
+<div class="ov" id="result"><div class="card">
+  <div class="clearFx" id="resultFx">✦ ✦ ✦</div>
+  <div id="resultTitle">ダンジョン制覇！</div>
+  <div id="resultRank">称号：風来人</div>
+  <div class="sheet">
+    <div class="k">到達階</div><div class="v" id="rFloor">3F</div>
+    <div class="k">レベル</div><div class="v" id="rLv">1</div>
+    <div class="k">倒した敵</div><div class="v" id="rKill">0</div>
+    <div class="k">歩数（ターン）</div><div class="v" id="rTurn">0</div>
+    <div class="k">スコア</div><div class="v" id="rScore">0</div>
+  </div>
+  <div class="btnrow"><button class="b-main" id="resultAgain">もう一度もぐる</button></div>
+</div></div>
+
+<script>
+(() => {
+'use strict';
+
+/* ==========================================================
+   事前生成マップ（手描き固定・全3階 / 39×19）
+   ========================================================== */
+const MAPS = [
+[ // 1F
+"#######################################",
+"#######################################",
+"##........#####.........#####........##",
+"##......................#####........##",
+"##........#####......................##",
+"##........#####.........#####........##",
+"#####.#########.........#####........##",
+"#####.#############.#############.#####",
+"#####.#############.#############.#####",
+"#####.#############.#############.#####",
+"#####.#############.#############.#####",
+"##........#########.#########........##",
+"##........#########.#########........##",
+"##........#####.........#####........##",
+"##......................#####........##",
+"##........#####......................##",
+"##........#####.........#####........##",
+"###############.........###############",
+"#######################################"
+],
+[ // 2F
+"#######################################",
+"#######################################",
+"##.......#####...........#####.......##",
+"##.......#####.......................##",
+"##.......................#####.......##",
+"##.......#####...........#####.......##",
+"##.......##########.##########.......##",
+"####.##############.##########.......##",
+"####.##############.#############.#####",
+"####.##############.#############.#####",
+"####.#########...........########.#####",
+"##.......#####...........########.#####",
+"##.......#####...........#####.......##",
+"##.......................#####.......##",
+"##.......#####.......................##",
+"##.......#####...........#####.......##",
+"##.......#####...........#####.......##",
+"#######################################",
+"#######################################"
+],
+[ // 3F
+"#######################################",
+"#######################################",
+"##......####.......####.......##.....##",
+"##............................##.....##",
+"##......####.......####..............##",
+"##......#######.#######.......##.....##",
+"#####.#########.########.#######.....##",
+"#####.#########.########.#########.####",
+"#####.#########.########.#########.####",
+"#####.#######.............########.####",
+"#####.#######.............########.####",
+"#####.#######.............########.####",
+"#####.#######.............####.......##",
+"##.......####........................##",
+"##........................####.......##",
+"##.......#####################.......##",
+"##.......#####################.......##",
+"#######################################",
+"#######################################"
+]
+];
+
+/* 部屋矩形（明かり判定用・事前定義） */
+const ROOMS = [
+[ {x1:2,y1:2,x2:9,y2:5}, {x1:15,y1:2,x2:23,y2:6}, {x1:29,y1:2,x2:36,y2:6},
+  {x1:2,y1:11,x2:9,y2:16}, {x1:15,y1:13,x2:23,y2:17}, {x1:29,y1:11,x2:36,y2:16} ],
+[ {x1:2,y1:2,x2:8,y2:6}, {x1:14,y1:2,x2:24,y2:5}, {x1:30,y1:2,x2:36,y2:7},
+  {x1:2,y1:11,x2:8,y2:16}, {x1:14,y1:10,x2:24,y2:16}, {x1:30,y1:12,x2:36,y2:16} ],
+[ {x1:2,y1:2,x2:7,y2:5}, {x1:12,y1:2,x2:18,y2:4}, {x1:23,y1:2,x2:29,y2:5}, {x1:32,y1:2,x2:36,y2:6},
+  {x1:13,y1:9,x2:25,y2:14}, {x1:2,y1:13,x2:8,y2:16}, {x1:30,y1:12,x2:36,y2:16} ]
+];
+
+/* 階ごとの配置（事前生成） */
+const STAGES = [
+{ name:'1F', start:{x:3,y:3}, stairs:{x:34,y:14},
+  monsters:[ {t:'puni',x:20,y:4}, {t:'puni',x:33,y:4}, {t:'toro',x:6,y:14},
+             {t:'puni',x:18,y:15}, {t:'bat',x:31,y:13}, {t:'toro',x:21,y:2} ],
+  items:[ {t:'herb',x:6,y:3}, {t:'onigiri',x:21,y:5}, {t:'herb',x:32,y:5},
+          {t:'scrollWarp',x:4,y:15}, {t:'blowwand',x:20,y:16} ],
+  traps:[ {t:'poison',x:12,y:3}, {t:'spring',x:26,y:4}, {t:'sleep',x:5,y:9} ],
+  table:['puni','puni','toro','bat'] },
+
+{ name:'2F', start:{x:4,y:4}, stairs:{x:34,y:14},
+  monsters:[ {t:'bat',x:6,y:3}, {t:'toro',x:17,y:3}, {t:'bow',x:22,y:4}, {t:'itachi',x:33,y:5},
+             {t:'puni',x:4,y:13}, {t:'bow',x:19,y:12}, {t:'toro',x:21,y:15}, {t:'itachi',x:33,y:14} ],
+  items:[ {t:'herb',x:3,y:3}, {t:'onigiri',x:24,y:2}, {t:'power',x:35,y:3},
+          {t:'onigiri',x:16,y:11}, {t:'herb',x:23,y:15}, {t:'scrollAll',x:4,y:15}, {t:'sleepwand',x:31,y:13} ],
+  traps:[ {t:'poison',x:11,y:4}, {t:'sleep',x:4,y:8}, {t:'spring',x:27,y:3}, {t:'pit',x:12,y:13} ],
+  table:['toro','bat','bow','itachi'] },
+
+{ name:'3F', start:{x:3,y:3}, stairs:{x:34,y:15},
+  monsters:[ {t:'lizard',x:5,y:4}, {t:'lizard',x:15,y:3}, {t:'take',x:26,y:3}, {t:'saru',x:34,y:3},
+             {t:'take',x:18,y:11}, {t:'saru',x:22,y:13}, {t:'lizard',x:5,y:15},
+             {t:'take',x:31,y:13}, {t:'nushi',x:32,y:14} ],
+  items:[ {t:'herb',x:5,y:2}, {t:'onigiri',x:13,y:3}, {t:'herb',x:28,y:4}, {t:'power',x:35,y:5},
+          {t:'scrollAll',x:16,y:10}, {t:'sleepwand',x:19,y:13}, {t:'blowwand',x:24,y:12},
+          {t:'herb',x:3,y:15}, {t:'onigiri',x:6,y:16} ],
+  traps:[ {t:'poison',x:10,y:3}, {t:'spring',x:21,y:3}, {t:'sleep',x:24,y:7}, {t:'poison',x:11,y:14} ],
+  table:['lizard','take','saru'] }
+];
+
+/* ==========================================================
+   モンスター（シレンの役割をイメージした独自デザイン）
+   ========================================================== */
+const MONSTERS = {
+  puni:   {name:'ぷにマル',       hp:8,  atk:5,  def:1, exp:4,   color:'#7ad3ff', kind:'basic'},
+  toro:   {name:'とろリン',       hp:12, atk:6,  def:3, exp:8,   color:'#a8e06a', kind:'basic'},
+  bat:    {name:'まどいコウモリ', hp:9,  atk:5,  def:1, exp:7,   color:'#c08bff', kind:'erratic'},
+  bow:    {name:'ゆみボウズ',     hp:16, atk:7,  def:4, exp:16,  color:'#ffca6b', kind:'archer'},
+  itachi: {name:'かすめイタチ',   hp:13, atk:6,  def:3, exp:14,  color:'#ff9d6b', kind:'thief'},
+  lizard: {name:'どくトカゲ',     hp:22, atk:10, def:5, exp:26,  color:'#6be0a8', kind:'poison'},
+  take:   {name:'ばくれつダケ',   hp:16, atk:7,  def:7, exp:24,  color:'#ff7a8a', kind:'bomb'},
+  saru:   {name:'おおぐいザル',   hp:24, atk:11, def:5, exp:30,  color:'#d9a86b', kind:'glutton'},
+  nushi:  {name:'ぬしガエル',     hp:55, atk:15, def:8, exp:140, color:'#66d17a', kind:'boss', big:true},
+};
+
+/* アイテム */
+const ITEMS = {
+  herb:       {name:'薬草',            desc:'HPを30回復',        icon:'herb'},
+  onigiri:    {name:'大きいおにぎり',  desc:'満腹度を50回復',    icon:'rice'},
+  power:      {name:'ちからの草',      desc:'力が2上がる',       icon:'herb2'},
+  sleepwand:  {name:'ねむりの杖',      desc:'敵を8ターン眠らせる', icon:'wand'},
+  blowwand:   {name:'ふきとばしの杖',  desc:'敵を吹き飛ばす',    icon:'wand2'},
+  scrollAll:  {name:'いかずちの巻物',  desc:'見えている敵に25',  icon:'scroll'},
+  scrollWarp: {name:'ワープの巻物',    desc:'同じ階のどこかへ',  icon:'scroll2'},
+};
+
+const TRAPS = {
+  poison: {name:'毒矢のワナ'},
+  spring: {name:'バネのワナ'},
+  sleep:  {name:'睡眠ガスのワナ'},
+  pit:    {name:'落とし穴'},
+};
+
+const EXP_TABLE = [0, 10, 26, 50, 86, 140, 215, 320, 460, 640, 880, 1200];
+const MAX_BAG = 8;
+const MW = 39, MH = 19;
+
+/* ==========================================================
+   状態
+   ========================================================== */
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const $ = id => document.getElementById(id);
+
+let map, rooms, stage, floorIdx;
+let player, monsters, floorItems, traps;
+let seen, lit;                 // 探索済み / 現在見えている
+let turn, kills, over, busy;
+let anim = [];                 // 一時的な演出
+
+function newRun(){
+  player = { x:0, y:0, hp:22, maxHp:22, atk:6, def:3, lv:1, exp:0, food:100, maxFood:100,
+             bag:[], sleep:0, regen:0 };
+  turn = 0; kills = 0; over = false; busy = false;
+  floorIdx = 0;
+  $('log').innerHTML = '';
+  loadStage(0);
+  addLog('<span class="hl">風来の迷宮</span>に潜り込んだ。全3階を踏破せよ！');
+  hideAll();
+}
+
+function loadStage(i){
+  floorIdx = i;
+  stage = STAGES[i];
+  map = MAPS[i].map(r => r.split(''));
+  rooms = ROOMS[i];
+  player.x = stage.start.x; player.y = stage.start.y;
+  player.sleep = 0;
+  monsters = stage.monsters.map(m => makeMonster(m.t, m.x, m.y));
+  floorItems = stage.items.map(o => ({ t:o.t, x:o.x, y:o.y }));
+  traps = stage.traps.map(o => ({ t:o.t, x:o.x, y:o.y, found:false }));
+  seen = new Array(MW * MH).fill(false);
+  lit  = new Array(MW * MH).fill(false);
+  anim = [];
+  updateVis();
+  updateHUD();
+  draw();
+}
+
+function makeMonster(t, x, y){
+  const d = MONSTERS[t];
+  return { t, x, y, hp:d.hp, maxHp:d.hp, sleep:0, flee:0, kind:d.kind, bump:0 };
+}
+
+/* ==========================================================
+   地形ユーティリティ
+   ========================================================== */
+const idx = (x, y) => y * MW + x;
+function inMap(x, y){ return x >= 0 && x < MW && y >= 0 && y < MH; }
+function isWall(x, y){ return !inMap(x, y) || map[y][x] === '#'; }
+function isStairs(x, y){ return stage.stairs.x === x && stage.stairs.y === y; }
+function monsterAt(x, y){ return monsters.find(m => m.hp > 0 && m.x === x && m.y === y); }
+function roomAt(x, y){ return rooms.find(r => x >= r.x1 && x <= r.x2 && y >= r.y1 && y <= r.y2); }
+function occupied(x, y){ return isWall(x, y) || !!monsterAt(x, y) || (player.x === x && player.y === y); }
+
+/* 斜め移動は角抜け禁止 */
+function canStep(fx, fy, tx, ty){
+  if (isWall(tx, ty)) return false;
+  if (fx !== tx && fy !== ty){
+    if (isWall(tx, fy) || isWall(fx, ty)) return false;
+  }
+  return true;
+}
+
+function updateVis(){
+  lit.fill(false);
+  const r = roomAt(player.x, player.y);
+  if (r){
+    for (let y = r.y1 - 1; y <= r.y2 + 1; y++)
+      for (let x = r.x1 - 1; x <= r.x2 + 1; x++)
+        if (inMap(x, y)){ lit[idx(x,y)] = true; seen[idx(x,y)] = true; }
+  }
+  for (let y = player.y - 1; y <= player.y + 1; y++)
+    for (let x = player.x - 1; x <= player.x + 1; x++)
+      if (inMap(x, y)){ lit[idx(x,y)] = true; seen[idx(x,y)] = true; }
+}
+function visible(x, y){ return lit[idx(x,y)]; }
+
+/* ==========================================================
+   ログ / HUD
+   ========================================================== */
+function addLog(html){
+  const d = document.createElement('div');
+  d.innerHTML = html;
+  const box = $('log');
+  box.appendChild(d);
+  while (box.childNodes.length > 12) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+}
+function updateHUD(){
+  $('lvV').textContent = player.lv;
+  $('hpT').textContent = Math.max(0, player.hp) + '/' + player.maxHp;
+  $('hpFill').style.width = Math.max(0, player.hp / player.maxHp * 100) + '%';
+  $('fdT').textContent = Math.max(0, Math.ceil(player.food)) + '%';
+  $('fdFill').style.width = Math.max(0, player.food) + '%';
+  const cur = EXP_TABLE[player.lv - 1] ?? 0;
+  const nxt = EXP_TABLE[player.lv] ?? (cur + 1);
+  $('exT').textContent = player.exp;
+  $('exFill').style.width = Math.max(0, Math.min(100, (player.exp - cur) / (nxt - cur) * 100)) + '%';
+  $('atkV').textContent = player.atk;
+  $('defV').textContent = player.def;
+  $('floorV').textContent = stage ? stage.name : '1F';
+  $('btnStair').disabled = !(stage && isStairs(player.x, player.y));
+}
+
+/* ==========================================================
+   戦闘
+   ========================================================== */
+function calcDamage(atk, def){
+  const base = Math.max(1, atk * (1 - def / (def + 14)));
+  return Math.max(1, Math.round(base * (0.85 + Math.random() * 0.3)));
+}
+
+function playerAttack(m){
+  const d = MONSTERS[m.t];
+  const dmg = calcDamage(player.atk, d.def);
+  m.hp -= dmg;
+  m.sleep = 0;
+  m.bump = 1;
+  anim.push({ type:'hit', x:m.x, y:m.y, life:1 });
+  if (m.hp <= 0){
+    addLog(`${d.name}に <span class="dm">${dmg}</span> のダメージ。<span class="gd">${d.name}を倒した！</span>`);
+    killMonster(m);
+  } else {
+    addLog(`${d.name}に <span class="dm">${dmg}</span> のダメージ。`);
+  }
+}
+
+function killMonster(m){
+  const d = MONSTERS[m.t];
+  m.hp = 0;
+  kills++;
+  anim.push({ type:'die', x:m.x, y:m.y, life:1, color:d.color });
+  if (m.kind === 'bomb'){
+    addLog(`<span class="dm">${d.name}が爆発した！</span>`);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++){
+      const x = m.x + dx, y = m.y + dy;
+      const t = monsterAt(x, y);
+      if (t && t !== m){ t.hp -= 10; if (t.hp <= 0) killMonster(t); }
+      if (player.x === x && player.y === y) hurtPlayer(10, '爆発');
+    }
+  }
+  gainExp(d.exp);
+  monsters = monsters.filter(x => x.hp > 0);
+}
+
+function gainExp(n){
+  player.exp += n;
+  while (player.lv < EXP_TABLE.length && player.exp >= (EXP_TABLE[player.lv] ?? Infinity)){
+    player.lv++;
+    player.maxHp += 7; player.hp += 7; player.atk += 2; player.def += 1;
+    addLog(`<span class="gd">レベルが ${player.lv} に上がった！</span>`);
+  }
+}
+
+function hurtPlayer(dmg, src){
+  player.hp -= dmg;
+  anim.push({ type:'hit', x:player.x, y:player.y, life:1 });
+  if (player.hp <= 0){
+    player.hp = 0;
+    updateHUD(); draw();
+    gameOver(src);
+  }
+}
+
+/* ==========================================================
+   プレイヤー行動
+   ========================================================== */
+function act(dx, dy){
+  if (over || busy) return;
+  if (document.querySelector('.ov.show')) return;
+
+  if (player.sleep > 0){
+    player.sleep--;
+    addLog('眠っていて動けない…');
+    endTurn();
+    return;
+  }
+  if (dx === 0 && dy === 0){ endTurn(); return; }
+
+  const nx = player.x + dx, ny = player.y + dy;
+  const m = monsterAt(nx, ny);
+  if (m){ playerAttack(m); endTurn(); return; }
+  if (!canStep(player.x, player.y, nx, ny)){ draw(); return; }
+
+  player.x = nx; player.y = ny;
+  stepOnTile();
+  endTurn();
+}
+
+function stepOnTile(){
+  const it = floorItems.find(o => o.x === player.x && o.y === player.y);
+  if (it){
+    if (player.bag.length < MAX_BAG){
+      player.bag.push(it.t);
+      floorItems = floorItems.filter(o => o !== it);
+      addLog(`<span class="hl">${ITEMS[it.t].name}</span>を拾った。`);
+    } else {
+      addLog('もちものがいっぱいで拾えない！');
+    }
+  }
+  const tr = traps.find(o => o.x === player.x && o.y === player.y);
+  if (tr){
+    tr.found = true;
+    triggerTrap(tr);
+  }
+  if (isStairs(player.x, player.y) && !over) askStairs();
+}
+
+function triggerTrap(tr){
+  addLog(`<span class="dm">${TRAPS[tr.t].name}</span>を踏んだ！`);
+  if (tr.t === 'poison'){ hurtPlayer(8, '毒矢のワナ'); }
+  else if (tr.t === 'sleep'){ player.sleep = 3; addLog('意識が遠のく…'); }
+  else if (tr.t === 'spring'){ warpPlayer(); addLog('体が跳ね飛ばされ、別の場所に落ちた。'); }
+  else if (tr.t === 'pit'){
+    addLog('落とし穴に落ちた！ 下の階へ真っ逆さま。');
+    setTimeout(() => descend(true), 250);
+  }
+}
+
+function warpPlayer(){
+  const spots = [];
+  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++)
+    if (!isWall(x, y) && !monsterAt(x, y) && !isStairs(x, y)) spots.push({x, y});
+  if (!spots.length) return;
+  const s = spots[(Math.random() * spots.length) | 0];
+  player.x = s.x; player.y = s.y;
+  updateVis();
+}
+
+/* ==========================================================
+   アイテム使用
+   ========================================================== */
+function nearestVisibleMonster(){
+  let best = null, bd = 1e9;
+  for (const m of monsters){
+    if (!visible(m.x, m.y)) continue;
+    const d = Math.max(Math.abs(m.x - player.x), Math.abs(m.y - player.y));
+    if (d < bd){ bd = d; best = m; }
+  }
+  return best;
+}
+
+function useItem(i){
+  const t = player.bag[i];
+  if (!t || over) return;
+  const def = ITEMS[t];
+  let consumed = true;
+  addLog(`<span class="hl">${def.name}</span>を使った。`);
+
+  if (t === 'herb'){
+    const before = player.hp;
+    player.hp = Math.min(player.maxHp, player.hp + 30);
+    if (player.hp === player.maxHp && before === player.maxHp){
+      player.maxHp += 3; player.hp = player.maxHp;
+      addLog('最大HPが <span class="gd">3</span> 増えた！');
+    } else {
+      addLog(`HPが <span class="gd">${player.hp - before}</span> 回復した。`);
+    }
+  } else if (t === 'onigiri'){
+    player.food = Math.min(player.maxFood, player.food + 50);
+    addLog('お腹がふくれた。');
+  } else if (t === 'power'){
+    player.atk += 2;
+    addLog('力が <span class="gd">2</span> 上がった！');
+  } else if (t === 'sleepwand'){
+    const m = nearestVisibleMonster();
+    if (m){ m.sleep = 8; addLog(`${MONSTERS[m.t].name}は眠り込んだ。`); }
+    else { addLog('しかし何も起こらなかった。'); }
+  } else if (t === 'blowwand'){
+    const m = nearestVisibleMonster();
+    if (m){ blowAway(m); }
+    else { addLog('しかし何も起こらなかった。'); }
+  } else if (t === 'scrollAll'){
+    let n = 0;
+    for (const m of [...monsters]){
+      if (!visible(m.x, m.y)) continue;
+      m.hp -= 25; n++;
+      anim.push({ type:'hit', x:m.x, y:m.y, life:1 });
+      if (m.hp <= 0) killMonster(m);
+    }
+    addLog(n ? `雷が ${n} 体を打ち据えた！` : '雷は空を打った。');
+  } else if (t === 'scrollWarp'){
+    warpPlayer();
+    addLog('体が宙に浮き、別の場所に降り立った。');
+  } else {
+    consumed = false;
+  }
+
+  if (consumed) player.bag.splice(i, 1);
+  renderBag();
+  endTurn();
+}
+
+function blowAway(m){
+  const dx = Math.sign(m.x - player.x), dy = Math.sign(m.y - player.y);
+  const d = MONSTERS[m.t];
+  if (dx === 0 && dy === 0){ addLog('しかし何も起こらなかった。'); return; }
+  let moved = 0;
+  for (let i = 0; i < 6; i++){
+    const nx = m.x + dx, ny = m.y + dy;
+    if (isWall(nx, ny) || monsterAt(nx, ny)) break;
+    m.x = nx; m.y = ny; moved++;
+  }
+  addLog(`${d.name}は吹き飛ばされた！`);
+  if (moved < 6){
+    m.hp -= 12;
+    addLog(`壁に叩きつけられ <span class="dm">12</span> のダメージ。`);
+    if (m.hp <= 0) killMonster(m);
+  }
+}
+
+/* ==========================================================
+   ターン処理
+   ========================================================== */
+function endTurn(){
+  if (over) return;
+  turn++;
+
+  // 満腹度と自然回復
+  if (turn % 4 === 0) player.food = Math.max(0, player.food - 1);
+  if (player.food <= 0){
+    if (turn % 2 === 0){
+      hurtPlayer(1, '空腹');
+      if (turn % 20 === 0) addLog('<span class="dm">お腹が減って倒れそうだ…</span>');
+    }
+  } else {
+    player.regen++;
+    if (player.regen >= 4){ player.regen = 0; player.hp = Math.min(player.maxHp, player.hp + 1); }
+  }
+  if (over) return;
+
+  monstersAct();
+  if (over) return;
+
+  // 一定ターンごとに新たな魔物が現れる
+  if (turn % 45 === 0) spawnWanderer();
+
+  updateVis();
+  updateHUD();
+  draw();
+}
+
+function monstersAct(){
+  for (const m of [...monsters]){
+    if (m.hp <= 0 || over) continue;
+    if (m.sleep > 0){ m.sleep--; continue; }
+    monsterAct(m);
+  }
+}
+
+function monsterAct(m){
+  const d = MONSTERS[m.t];
+  const dist = Math.max(Math.abs(m.x - player.x), Math.abs(m.y - player.y));
+  const aware = visible(m.x, m.y) || dist <= 1;
+
+  if (m.flee > 0){ m.flee--; stepAway(m); return; }
+
+  if (dist === 1 && aware){
+    if (m.kind === 'thief' && player.bag.length){
+      const i = (Math.random() * player.bag.length) | 0;
+      const stolen = player.bag.splice(i, 1)[0];
+      m.flee = 30;
+      addLog(`<span class="dm">${d.name}に${ITEMS[stolen].name}を盗まれた！</span>`);
+      renderBag();
+      return;
+    }
+    if (m.kind === 'glutton' && player.food > 0 && Math.random() < 0.5){
+      const n = Math.min(player.food, 12);
+      player.food -= n;
+      addLog(`<span class="dm">${d.name}に食料を食い荒らされた！</span>`);
+      return;
+    }
+    const dmg = calcDamage(d.atk, player.def);
+    addLog(`${d.name}の攻撃！ <span class="dm">${dmg}</span> のダメージ。`);
+    m.bump = 1;
+    hurtPlayer(dmg, d.name);
+    if (m.kind === 'poison' && Math.random() < 0.35 && player.atk > 1){
+      player.atk = Math.max(1, player.atk - 1);
+      addLog('<span class="dm">毒で力が下がった…</span>');
+    }
+    return;
+  }
+
+  if (m.kind === 'archer' && aware && shootLine(m)) return;
+
+  if (!aware){
+    if (Math.random() < 0.6) wander(m);
+    return;
+  }
+  if (m.kind === 'erratic' && Math.random() < 0.4){ wander(m); return; }
+  stepToward(m);
+}
+
+function shootLine(m){
+  const dx = Math.sign(player.x - m.x), dy = Math.sign(player.y - m.y);
+  const aligned = (m.x === player.x || m.y === player.y ||
+                   Math.abs(m.x - player.x) === Math.abs(m.y - player.y));
+  if (!aligned) return false;
+  let x = m.x + dx, y = m.y + dy, steps = 0;
+  while (steps < 9){
+    if (isWall(x, y)) return false;
+    if (x === player.x && y === player.y){
+      const d = MONSTERS[m.t];
+      const dmg = calcDamage(d.atk - 1, player.def);
+      addLog(`${d.name}が矢を放った！ <span class="dm">${dmg}</span> のダメージ。`);
+      anim.push({ type:'arrow', x:m.x, y:m.y, tx:player.x, ty:player.y, life:1 });
+      hurtPlayer(dmg, d.name);
+      return true;
+    }
+    if (monsterAt(x, y)) return false;
+    x += dx; y += dy; steps++;
+  }
+  return false;
+}
+
+function stepToward(m){
+  const dx = Math.sign(player.x - m.x), dy = Math.sign(player.y - m.y);
+  const cands = [[dx,dy],[dx,0],[0,dy]];
+  for (const [ax, ay] of cands){
+    if (ax === 0 && ay === 0) continue;
+    const nx = m.x + ax, ny = m.y + ay;
+    if (canStep(m.x, m.y, nx, ny) && !occupied(nx, ny)){ m.x = nx; m.y = ny; return; }
+  }
+  wander(m);
+}
+
+function stepAway(m){
+  const dx = Math.sign(m.x - player.x), dy = Math.sign(m.y - player.y);
+  const cands = [[dx,dy],[dx,0],[0,dy]];
+  for (const [ax, ay] of cands){
+    if (ax === 0 && ay === 0) continue;
+    const nx = m.x + ax, ny = m.y + ay;
+    if (canStep(m.x, m.y, nx, ny) && !occupied(nx, ny)){ m.x = nx; m.y = ny; return; }
+  }
+  wander(m);
+}
+
+function wander(m){
+  const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+  for (let i = 0; i < 6; i++){
+    const [ax, ay] = dirs[(Math.random() * dirs.length) | 0];
+    const nx = m.x + ax, ny = m.y + ay;
+    if (canStep(m.x, m.y, nx, ny) && !occupied(nx, ny)){ m.x = nx; m.y = ny; return; }
+  }
+}
+
+function spawnWanderer(){
+  const table = stage.table;
+  const t = table[(Math.random() * table.length) | 0];
+  const spots = [];
+  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++){
+    if (isWall(x, y) || occupied(x, y) || visible(x, y)) continue;
+    if (Math.max(Math.abs(x - player.x), Math.abs(y - player.y)) < 8) continue;
+    spots.push({x, y});
+  }
+  if (!spots.length) return;
+  const s = spots[(Math.random() * spots.length) | 0];
+  monsters.push(makeMonster(t, s.x, s.y));
+  addLog('どこかで新たな魔物の気配がする…');
+}
+
+/* ==========================================================
+   階段 / 決着
+   ========================================================== */
+function askStairs(){
+  if (over) return;
+  $('stairText').innerHTML = floorIdx >= STAGES.length - 1
+    ? 'この先が最深部だ。降りますか？'
+    : `${STAGES[floorIdx + 1].name} へ降りますか？`;
+  $('stairOv').classList.add('show');
+}
+
+function descend(byPit){
+  hideAll();
+  if (floorIdx >= STAGES.length - 1){ gameClear(); return; }
+  loadStage(floorIdx + 1);
+  addLog(byPit ? `<span class="hl">${stage.name}</span> に落ちてきた。`
+               : `<span class="hl">${stage.name}</span> に降り立った。`);
+  updateHUD();
+  draw();
+}
+
+function scoreValue(){
+  return player.lv * 300 + kills * 60 + floorIdx * 500 + Math.max(0, 1200 - turn);
+}
+
+function gameClear(){
+  over = true;
+  const sc = scoreValue() + 2000;
+  const rank = sc >= 8500 ? '伝説の風来人' : sc >= 7200 ? '熟練の冒険者' : sc >= 6000 ? '駆け出し探索者' : '生還者';
+  $('resultFx').textContent = '✦ ✦ ✦';
+  $('resultTitle').textContent = 'ダンジョン制覇！';
+  $('resultTitle').style.color = '#ffd98a';
+  $('resultRank').textContent = '称号：' + rank;
+  fillSheet(sc);
+  $('resultAgain').textContent = 'もう一度もぐる';
+  $('result').classList.add('show');
+}
+
+function gameOver(src){
+  over = true;
+  const sc = Math.floor(scoreValue() * 0.4);
+  $('resultFx').textContent = '☠';
+  $('resultTitle').textContent = '力尽きた…';
+  $('resultTitle').style.color = '#ff8f8f';
+  $('resultRank').textContent = (src || '魔物') + 'にやられてしまった';
+  fillSheet(sc);
+  $('resultAgain').textContent = 'もう一度もぐる';
+  setTimeout(() => $('result').classList.add('show'), 400);
+}
+
+function fillSheet(sc){
+  $('rFloor').textContent = STAGES[floorIdx].name;
+  $('rLv').textContent = player.lv;
+  $('rKill').textContent = kills;
+  $('rTurn').textContent = turn;
+  $('rScore').textContent = sc;
+}
+
+function hideAll(){ document.querySelectorAll('.ov').forEach(o => o.classList.remove('show')); }
+
+/* ==========================================================
+   描画
+   ========================================================== */
+const VIEW_W = 15, VIEW_H = 11;
+let TS = 28, camX = 0, camY = 0, dpr = 1;
+
+function resize(){
+  const box = $('view');
+  const w = box.clientWidth, h = box.clientHeight;
+  if (w < 2 || h < 2){ setTimeout(resize, 120); return; }   // 非表示状態で読み込まれた場合に再試行
+  dpr = Math.min(window.devicePixelRatio || 1, 3);
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  TS = Math.max(14, Math.floor(Math.min(w / VIEW_W, h / VIEW_H)));
+  draw();
+}
+window.addEventListener('resize', resize);
+
+function updateCam(){
+  const w = cv.width / dpr, h = cv.height / dpr;
+  const cols = w / TS, rowsN = h / TS;
+  camX = player.x + 0.5 - cols / 2;
+  camY = player.y + 0.5 - rowsN / 2;
+  camX = Math.max(0, Math.min(MW - cols, camX));
+  camY = Math.max(0, Math.min(MH - rowsN, camY));
+  if (MW < cols) camX = (MW - cols) / 2;
+  if (MH < rowsN) camY = (MH - rowsN) / 2;
+}
+
+function sx(x){ return (x - camX) * TS; }
+function sy(y){ return (y - camY) * TS; }
+
+function draw(){
+  if (!map) return;
+  const w = cv.width / dpr, h = cv.height / dpr;
+  updateCam();
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#07060b';
+  ctx.fillRect(0, 0, w, h);
+
+  const x0 = Math.max(0, Math.floor(camX) - 1), x1 = Math.min(MW - 1, Math.ceil(camX + w / TS) + 1);
+  const y0 = Math.max(0, Math.floor(camY) - 1), y1 = Math.min(MH - 1, Math.ceil(camY + h / TS) + 1);
+
+  for (let y = y0; y <= y1; y++){
+    for (let x = x0; x <= x1; x++){
+      if (!seen[idx(x,y)]) continue;
+      const px = sx(x), py = sy(y), on = lit[idx(x,y)];
+      if (map[y][x] === '#') drawWall(px, py, on);
+      else drawFloor(px, py, on);
+    }
+  }
+
+  // 階段
+  if (seen[idx(stage.stairs.x, stage.stairs.y)])
+    drawStairs(sx(stage.stairs.x), sy(stage.stairs.y), lit[idx(stage.stairs.x, stage.stairs.y)]);
+
+  // ワナ（踏んだもののみ表示）
+  for (const t of traps){
+    if (!t.found || !seen[idx(t.x,t.y)]) continue;
+    drawTrap(sx(t.x), sy(t.y), lit[idx(t.x,t.y)]);
+  }
+
+  // アイテム
+  for (const it of floorItems){
+    if (!visible(it.x, it.y)) continue;
+    drawItem(sx(it.x), sy(it.y), ITEMS[it.t].icon);
+  }
+
+  // モンスター
+  for (const m of monsters){
+    if (!visible(m.x, m.y)) continue;
+    drawMonster(sx(m.x), sy(m.y), m);
+    if (m.bump > 0) m.bump = 0;
+  }
+
+  drawPlayer(sx(player.x), sy(player.y));
+
+  // 演出
+  for (const a of anim){
+    const px = sx(a.x) + TS / 2, py = sy(a.y) + TS / 2;
+    if (a.type === 'hit'){
+      ctx.strokeStyle = `rgba(255,90,90,${a.life})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(px, py, TS * (0.3 + (1 - a.life) * 0.5), 0, Math.PI * 2); ctx.stroke();
+    } else if (a.type === 'die'){
+      ctx.fillStyle = a.color;
+      ctx.globalAlpha = a.life * 0.8;
+      for (let i = 0; i < 6; i++){
+        const ang = i / 6 * Math.PI * 2;
+        const r = TS * (1 - a.life) * 0.8;
+        ctx.beginPath(); ctx.arc(px + Math.cos(ang) * r, py + Math.sin(ang) * r, TS * 0.09, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    } else if (a.type === 'arrow'){
+      ctx.strokeStyle = `rgba(255,220,140,${a.life})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(sx(a.tx) + TS/2, sy(a.ty) + TS/2); ctx.stroke();
+    }
+    a.life -= 0.08;
+  }
+  anim = anim.filter(a => a.life > 0);
+  if (anim.length) requestAnimationFrame(draw);
+}
+
+function drawFloor(px, py, on){
+  ctx.fillStyle = on ? '#241f30' : '#141220';
+  ctx.fillRect(px, py, TS, TS);
+  ctx.strokeStyle = on ? 'rgba(255,255,255,.05)' : 'rgba(255,255,255,.02)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(px + .5, py + .5, TS - 1, TS - 1);
+}
+function drawWall(px, py, on){
+  const g = ctx.createLinearGradient(px, py, px, py + TS);
+  if (on){ g.addColorStop(0, '#5b4a6e'); g.addColorStop(1, '#31263f'); }
+  else   { g.addColorStop(0, '#2a2237'); g.addColorStop(1, '#1a1526'); }
+  ctx.fillStyle = g;
+  ctx.fillRect(px, py, TS, TS);
+  ctx.fillStyle = on ? 'rgba(255,255,255,.14)' : 'rgba(255,255,255,.05)';
+  ctx.fillRect(px, py, TS, Math.max(1, TS * 0.12));
+  ctx.strokeStyle = 'rgba(0,0,0,.45)'; ctx.lineWidth = 1;
+  ctx.strokeRect(px + .5, py + .5, TS - 1, TS - 1);
+}
+function drawStairs(px, py, on){
+  ctx.fillStyle = on ? '#1a2b3f' : '#131c28';
+  ctx.fillRect(px, py, TS, TS);
+  ctx.fillStyle = on ? '#8fd0ff' : '#43607d';
+  for (let i = 0; i < 4; i++){
+    ctx.fillRect(px + TS * 0.12 + TS * 0.18 * i, py + TS * 0.72 - TS * 0.16 * i,
+                 TS * 0.76 - TS * 0.18 * i, TS * 0.13);
+  }
+}
+function drawTrap(px, py, on){
+  ctx.strokeStyle = on ? 'rgba(255,120,140,.9)' : 'rgba(255,120,140,.4)';
+  ctx.lineWidth = 2;
+  const c = TS / 2, r = TS * 0.28;
+  ctx.beginPath();
+  ctx.moveTo(px + c, py + c - r); ctx.lineTo(px + c + r, py + c);
+  ctx.lineTo(px + c, py + c + r); ctx.lineTo(px + c - r, py + c);
+  ctx.closePath(); ctx.stroke();
+}
+
+function drawItem(px, py, icon){
+  const c = TS / 2;
+  ctx.save();
+  ctx.translate(px + c, py + c);
+  if (icon === 'rice'){
+    ctx.fillStyle = '#fff6dc';
+    ctx.beginPath(); ctx.moveTo(0, -TS*0.26); ctx.lineTo(TS*0.26, TS*0.22); ctx.lineTo(-TS*0.26, TS*0.22);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#3a3a4a'; ctx.fillRect(-TS*0.13, TS*0.02, TS*0.26, TS*0.13);
+  } else if (icon === 'herb' || icon === 'herb2'){
+    ctx.fillStyle = icon === 'herb' ? '#7ee08a' : '#ff9b6b';
+    ctx.beginPath(); ctx.ellipse(-TS*0.09, 0, TS*0.14, TS*0.24, -0.5, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(TS*0.09, 0, TS*0.14, TS*0.24, 0.5, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#2f6b3a'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, TS*0.26); ctx.lineTo(0, -TS*0.1); ctx.stroke();
+  } else if (icon === 'wand' || icon === 'wand2'){
+    ctx.strokeStyle = '#d8c39a'; ctx.lineWidth = Math.max(2, TS*0.1);
+    ctx.beginPath(); ctx.moveTo(-TS*0.18, TS*0.22); ctx.lineTo(TS*0.14, -TS*0.18); ctx.stroke();
+    ctx.fillStyle = icon === 'wand' ? '#8fb8ff' : '#ffd06b';
+    ctx.beginPath(); ctx.arc(TS*0.17, -TS*0.21, TS*0.12, 0, 7); ctx.fill();
+  } else {
+    ctx.fillStyle = '#f0e2c0';
+    ctx.fillRect(-TS*0.22, -TS*0.2, TS*0.44, TS*0.4);
+    ctx.fillStyle = icon === 'scroll' ? '#c07bff' : '#6bd0ff';
+    ctx.fillRect(-TS*0.22, -TS*0.2, TS*0.44, TS*0.09);
+    ctx.strokeStyle = '#a08a5e'; ctx.lineWidth = 1;
+    ctx.strokeRect(-TS*0.22, -TS*0.2, TS*0.44, TS*0.4);
+  }
+  ctx.restore();
+}
+
+function drawMonster(px, py, m){
+  const d = MONSTERS[m.t];
+  const c = TS / 2;
+  const scale = d.big ? 0.46 : 0.36;
+  const r = TS * scale;
+  ctx.save();
+  ctx.translate(px + c, py + c);
+
+  ctx.fillStyle = 'rgba(0,0,0,.35)';
+  ctx.beginPath(); ctx.ellipse(0, r * 0.85, r * 0.85, r * 0.3, 0, 0, 7); ctx.fill();
+
+  const g = ctx.createRadialGradient(-r*0.3, -r*0.4, r*0.1, 0, 0, r*1.2);
+  g.addColorStop(0, '#ffffff'); g.addColorStop(0.35, d.color); g.addColorStop(1, 'rgba(0,0,0,.55)');
+  ctx.fillStyle = g;
+
+  if (m.kind === 'erratic'){             // コウモリ：翼
+    ctx.beginPath(); ctx.moveTo(-r*1.5, -r*0.3); ctx.lineTo(-r*0.2, 0); ctx.lineTo(-r*1.3, r*0.5); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(r*1.5, -r*0.3); ctx.lineTo(r*0.2, 0); ctx.lineTo(r*1.3, r*0.5); ctx.closePath(); ctx.fill();
+  }
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fill();
+
+  if (m.kind === 'archer'){              // 弓
+    ctx.strokeStyle = '#6b4a2a'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(r*0.9, 0, r*0.7, -1.2, 1.2); ctx.stroke();
+  }
+  if (m.kind === 'bomb'){                // 導火線
+    ctx.strokeStyle = '#ffd98a'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, -r); ctx.quadraticCurveTo(r*0.4, -r*1.5, r*0.1, -r*1.7); ctx.stroke();
+  }
+  if (m.kind === 'boss'){                // 主：冠
+    ctx.fillStyle = '#ffd23f';
+    ctx.beginPath();
+    ctx.moveTo(-r*0.8, -r*0.85); ctx.lineTo(-r*0.4, -r*1.35); ctx.lineTo(0, -r*0.9);
+    ctx.lineTo(r*0.4, -r*1.35); ctx.lineTo(r*0.8, -r*0.85);
+    ctx.closePath(); ctx.fill();
+  }
+
+  // 目
+  ctx.fillStyle = '#1a1420';
+  const ey = -r * 0.15, ex = r * 0.34;
+  ctx.beginPath(); ctx.arc(-ex, ey, r * 0.16, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc( ex, ey, r * 0.16, 0, 7); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(-ex + r*0.05, ey - r*0.05, r * 0.05, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc( ex + r*0.05, ey - r*0.05, r * 0.05, 0, 7); ctx.fill();
+
+  if (m.sleep > 0){
+    ctx.fillStyle = '#9fd8ff';
+    ctx.font = `700 ${Math.round(TS*0.34)}px system-ui`;
+    ctx.textAlign = 'center';
+    ctx.fillText('z', r * 0.9, -r * 0.9);
+  }
+  ctx.restore();
+
+  // HPバー
+  if (m.hp < m.maxHp){
+    const bw = TS * 0.7, bh = Math.max(2, TS * 0.07);
+    const bx = px + (TS - bw) / 2, by = py + TS * 0.04;
+    ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(bx, by, bw, bh);
+    ctx.fillStyle = '#ff6b6b'; ctx.fillRect(bx, by, bw * (m.hp / m.maxHp), bh);
+  }
+}
+
+function drawPlayer(px, py){
+  const c = TS / 2, r = TS * 0.34;
+  ctx.save();
+  ctx.translate(px + c, py + c);
+  ctx.fillStyle = 'rgba(0,0,0,.4)';
+  ctx.beginPath(); ctx.ellipse(0, r * 0.9, r * 0.9, r * 0.3, 0, 0, 7); ctx.fill();
+  // 体（マント）
+  ctx.fillStyle = '#3f6fd8';
+  ctx.beginPath();
+  ctx.moveTo(0, -r * 0.2); ctx.lineTo(r * 0.95, r * 0.95); ctx.lineTo(-r * 0.95, r * 0.95);
+  ctx.closePath(); ctx.fill();
+  // 頭
+  const g = ctx.createRadialGradient(-r*0.2, -r*0.7, r*0.05, 0, -r*0.45, r*0.8);
+  g.addColorStop(0, '#fff'); g.addColorStop(0.4, '#ffd9b0'); g.addColorStop(1, '#c9945f');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(0, -r * 0.45, r * 0.55, 0, 7); ctx.fill();
+  // ハチマキ
+  ctx.fillStyle = '#ff5b6b';
+  ctx.fillRect(-r * 0.58, -r * 0.78, r * 1.16, r * 0.2);
+  // 目
+  ctx.fillStyle = '#221a12';
+  ctx.beginPath(); ctx.arc(-r*0.2, -r*0.4, r*0.09, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc( r*0.2, -r*0.4, r*0.09, 0, 7); ctx.fill();
+  if (player.sleep > 0){
+    ctx.fillStyle = '#9fd8ff';
+    ctx.font = `700 ${Math.round(TS*0.34)}px system-ui`;
+    ctx.textAlign = 'center';
+    ctx.fillText('z', r, -r);
+  }
+  ctx.restore();
+}
+
+/* ==========================================================
+   もちものUI
+   ========================================================== */
+function renderBag(){
+  const list = $('itemList');
+  list.innerHTML = '';
+  $('bagCount').textContent = `(${player.bag.length}/${MAX_BAG})`;
+  if (!player.bag.length){
+    list.innerHTML = '<p style="opacity:.6;font-size:13px">何も持っていない。</p>';
+    return;
+  }
+  player.bag.forEach((t, i) => {
+    const b = document.createElement('button');
+    b.className = 'itemrow';
+    b.innerHTML = `<span class="nm">${ITEMS[t].name}</span><span class="ds">${ITEMS[t].desc}</span>`;
+    b.addEventListener('click', () => { hideAll(); useItem(i); });
+    list.appendChild(b);
+  });
+}
+
+/* ==========================================================
+   入力
+   ========================================================== */
+document.querySelectorAll('#pad button').forEach(b => {
+  b.addEventListener('click', () => {
+    const [dx, dy] = b.dataset.d.split(',').map(Number);
+    act(dx, dy);
+  });
+});
+
+const KEYMAP = {
+  ArrowUp:[0,-1], ArrowDown:[0,1], ArrowLeft:[-1,0], ArrowRight:[1,0],
+  w:[0,-1], s:[0,1], a:[-1,0], d:[1,0],
+  '8':[0,-1], '2':[0,1], '4':[-1,0], '6':[1,0], '7':[-1,-1], '9':[1,-1], '1':[-1,1], '3':[1,1], '5':[0,0],
+};
+window.addEventListener('keydown', e => {
+  const k = e.key;
+  if (KEYMAP[k]){ e.preventDefault(); act(...KEYMAP[k]); return; }
+  const lk = k.toLowerCase();
+  if (k === ' ' || k === '.'){ e.preventDefault(); act(0, 0); }
+  else if (lk === 'i'){ toggleBag(); }
+  else if (k === '>'){ if (isStairs(player.x, player.y)) askStairs(); }
+  else if (lk === 'r'){ newRun(); }
+  else if (k === 'Escape'){ hideAll(); }
+});
+
+function toggleBag(){
+  if (over) return;
+  const ov = $('itemOv');
+  if (ov.classList.contains('show')) ov.classList.remove('show');
+  else { renderBag(); hideAll(); ov.classList.add('show'); }
+}
+
+$('btnItem').addEventListener('click', toggleBag);
+$('itemClose').addEventListener('click', () => $('itemOv').classList.remove('show'));
+$('btnHelp').addEventListener('click', () => { hideAll(); $('helpOv').classList.add('show'); });
+$('helpClose').addEventListener('click', () => $('helpOv').classList.remove('show'));
+$('btnStair').addEventListener('click', () => { if (isStairs(player.x, player.y)) askStairs(); });
+$('stairYes').addEventListener('click', () => { hideAll(); descend(false); });
+$('stairNo').addEventListener('click', () => hideAll());
+$('btnRestart').addEventListener('click', newRun);
+$('resultAgain').addEventListener('click', newRun);
+
+/* ==========================================================
+   起動
+   ========================================================== */
+newRun();
+resize();
+
+})();
+</script>
+</body>
+</html>

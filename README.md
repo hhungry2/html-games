@@ -38,6 +38,9 @@ BM風ゲーム
 インサニアクアリウム風 熱帯魚育成ゲーム（エサやり・エイリアン撃退・スマホ/PC対応）  
 [**insaniquarium.html**](https://hhungry2.github.io/html-games/insaniquarium.html) | [Vercel](https://html-games-eight.vercel.app/insaniquarium.html)  
 
+風来のシレン風ローグライク（事前生成マップ全3階・満腹度/レベル/ワナ・スマホ/PC対応）  
+[**fuurai_dungeon.html**](https://hhungry2.github.io/html-games/fuurai_dungeon.html) | [Vercel](https://html-games-eight.vercel.app/fuurai_dungeon.html)  
+
 【ツール】  
 
 スマホセンサー測定ダッシュボード（ジャイロ・加速度）  
