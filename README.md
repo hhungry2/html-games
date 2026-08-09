@@ -32,6 +32,9 @@ BM風ゲーム
 ライトセーバー シミュレーター v2（ジャイロ連動スイング音・起動音・4色）  
 [**lightsaber2.html**](https://hhungry2.github.io/html-games/lightsaber2.html) | [Vercel](https://html-games-eight.vercel.app/lightsaber2.html)  
 
+パズルボブル風パズルゲーム（同色3つ以上で消去・スマホ/PC対応）  
+[**puzzle_bobble.html**](https://hhungry2.github.io/html-games/puzzle_bobble.html) | [Vercel](https://html-games-eight.vercel.app/puzzle_bobble.html)  
+
 【ツール】  
 
 スマホセンサー測定ダッシュボード（ジャイロ・加速度）  
