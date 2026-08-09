@@ -26,7 +26,11 @@ BM風ゲーム
 じゃんけんシステム  
 [**rock-paper-scissors.html**](https://hhungry2.github.io/html-games/rock-paper-scissors.html)
 
+ライトセーバー シミュレーター（Web Audio 音合成・スイングセンサー）  
+[**lightsaber.html**](https://hhungry2.github.io/html-games/lightsaber.html) | [Vercel](https://html-games-eight.vercel.app/lightsaber.html)  
+
 【ツール】  
+
 スマホセンサー測定ダッシュボード（ジャイロ・加速度）  
 [**sensor.html**](https://hhungry2.github.io/html-games/sensor.html) | [Vercel](https://html-games-eight.vercel.app/sensor.html)  
 
