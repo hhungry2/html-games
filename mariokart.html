@@ -1224,6 +1224,28 @@
           GAME.itemBoxes.push(box);
         }
       });
+
+      // Spawn Collectible Coins along track segments
+      GAME.trackCoins = [];
+      const coinGeo = new THREE.CylinderGeometry(0.6, 0.6, 0.15, 12);
+      const coinMat = new THREE.MeshStandardMaterial({ color: 0xfde047, metalness: 0.9, roughness: 0.2 });
+      const coinSegments = [0.08, 0.25, 0.48, 0.72, 0.91];
+
+      coinSegments.forEach(t => {
+        const pt = GAME.trackCurve.getPointAt(t);
+        const tan = GAME.trackCurve.getTangentAt(t);
+        const normal = new THREE.Vector3(-tan.z, 0, tan.x).normalize();
+
+        for (let offset of [-2, 2]) {
+          const coin = new THREE.Mesh(coinGeo, coinMat.clone());
+          coin.rotation.x = Math.PI / 2;
+          coin.position.copy(pt).add(normal.clone().multiplyScalar(offset));
+          coin.position.y += 1.0;
+          coin.userData = { active: true, respawnTimer: 0 };
+          mainGroup.add(coin);
+          GAME.trackCoins.push(coin);
+        }
+      });
     }
 
     /* ==========================================================================
@@ -1381,10 +1403,17 @@
           this.speed *= 0.98;
         }
 
-        // Move kart along track spline
+        // Move kart along track spline safely
         const totalDist = GAME.trackCurve.getLength();
         const distStep = (this.speed * 40) / totalDist;
-        this.progress = (this.progress + distStep) % 1.0;
+        this.progress = ((this.progress + distStep) % 1.0 + 1.0) % 1.0;
+
+        // Rainbow Invincibility Effect
+        if (this.invincibleTimer > 0) {
+          const hue = (performance.now() * 0.005) % 1;
+          const rainbowColor = new THREE.Color().setHSL(hue, 1.0, 0.5);
+          this.mesh.children[0].material.color.copy(rainbowColor);
+        }
 
         // Lap counter & checkpoint logic
         const currentCheck = Math.floor(this.progress * 4);
@@ -1750,12 +1779,45 @@
           });
         }
       });
+
+      // Collectible 3D Coins Logic
+      if (GAME.trackCoins) {
+        GAME.trackCoins.forEach(coin => {
+          if (!coin.userData.active) {
+            coin.userData.respawnTimer += 0.016;
+            if (coin.userData.respawnTimer > 8.0) {
+              coin.userData.active = true;
+              coin.visible = true;
+              coin.userData.respawnTimer = 0;
+            }
+          } else {
+            coin.rotation.z += 0.05; // Spin coin
+            GAME.karts.forEach(k => {
+              if (k.mesh.position.distanceTo(coin.position) < 2.0) {
+                coin.userData.active = false;
+                coin.visible = false;
+                k.coins = Math.min(10, k.coins + 1);
+                if (k.isPlayer) sound.playCoin();
+              }
+            });
+          }
+        });
+      }
     }
 
     /* ==========================================================================
        CAMERA CONTROLLER
        ========================================================================== */
     function updateCamera() {
+      if (GAME.state === 'TITLE') {
+        const time = performance.now() * 0.0003;
+        camera.position.x = Math.sin(time) * 120;
+        camera.position.z = Math.cos(time) * 120;
+        camera.position.y = 45;
+        camera.lookAt(0, 0, -60);
+        return;
+      }
+
       if (!GAME.playerKart) return;
 
       const kPos = GAME.playerKart.mesh.position;
@@ -2025,6 +2087,7 @@
     // Initialize Game on Load
     window.addEventListener('DOMContentLoaded', () => {
       initThree();
+      buildTrack(GAME.selectedTrack);
       setupInputs();
       initUI();
       gameLoop();
