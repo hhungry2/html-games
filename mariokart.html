@@ -1376,10 +1376,8 @@
           effectiveMaxSpeed *= 0.4;
         }
 
-        // Apply acceleration & drag
-        if (this.speed < effectiveMaxSpeed) {
-          this.speed += this.accel;
-        } else {
+        // Limit speed to effective max speed
+        if (this.speed > effectiveMaxSpeed) {
           this.speed *= 0.98;
         }
 
@@ -1527,13 +1525,29 @@
 
       k.steering = turn * k.handling;
 
+      // Max Speed calculation for player
+      let effectiveMaxSpeed = k.maxSpeed * (1 + k.coins * 0.02);
+      if (k.boostTimer > 0 || k.invincibleTimer > 0) effectiveMaxSpeed *= 1.45;
+      if (k.shrunkenTimer > 0) effectiveMaxSpeed *= 0.5;
+      if (Math.abs(k.offset) > GAME.trackWidth / 2 - 1 && k.boostTimer <= 0 && k.invincibleTimer <= 0) {
+        effectiveMaxSpeed *= 0.4;
+      }
+
       // Acceleration / Brake
-      if (GAME.keys['ArrowUp'] || GAME.keys['KeyW']) {
-        k.speed += k.accel;
-      } else if (GAME.keys['ArrowDown'] || GAME.keys['KeyS']) {
+      const isGasPressed = GAME.keys['ArrowUp'] || GAME.keys['KeyW'];
+      const isBrakePressed = GAME.keys['ArrowDown'] || GAME.keys['KeyS'];
+
+      if (isGasPressed) {
+        if (k.speed < effectiveMaxSpeed) {
+          k.speed += k.accel;
+        }
+      } else if (isBrakePressed) {
         k.speed = Math.max(-0.2, k.speed - k.accel * 1.5);
       } else {
-        k.speed *= 0.96; // Drag
+        if (k.boostTimer <= 0) {
+          k.speed *= 0.94; // Drag when gas is released
+          if (Math.abs(k.speed) < 0.001) k.speed = 0;
+        }
       }
 
       // Drift Mechanics
@@ -1565,16 +1579,26 @@
       GAME.karts.forEach(k => {
         if (k.isPlayer) return;
 
+        let effectiveMaxSpeed = k.maxSpeed * (1 + k.coins * 0.02);
+        if (k.boostTimer > 0 || k.invincibleTimer > 0) effectiveMaxSpeed *= 1.45;
+        if (k.shrunkenTimer > 0) effectiveMaxSpeed *= 0.5;
+        if (Math.abs(k.offset) > GAME.trackWidth / 2 - 1 && k.boostTimer <= 0 && k.invincibleTimer <= 0) {
+          effectiveMaxSpeed *= 0.4;
+        }
+
         // Steering AI pathfinding towards center spline with rubberbanding
         let speedMult = 1.0;
         if (GAME.playerKart) {
           // Catch-up rubberband
-          if (k.rank > GAME.playerKart.rank) speedMult = 1.08;
-          else if (k.rank < GAME.playerKart.rank) speedMult = 0.94;
+          if (k.rank > GAME.playerKart.rank) speedMult = 1.05;
+          else if (k.rank < GAME.playerKart.rank) speedMult = 0.95;
         }
 
-        if (k.speed < k.maxSpeed * speedMult) {
-          k.speed += k.accel * 0.9;
+        const targetSpeed = effectiveMaxSpeed * speedMult;
+        if (k.speed < targetSpeed) {
+          k.speed += k.accel * 0.85;
+        } else {
+          k.speed *= 0.98;
         }
 
         // Keep near center
