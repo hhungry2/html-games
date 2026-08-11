@@ -991,7 +991,9 @@
       startTime: 0,
       elapsedTime: 0,
       cameraMode: 0, // 0: Chasing, 1: Close-up, 2: Top-down
-      keys: {}
+      keys: {},
+      dt: 0.016,
+      roadLift: 1.2
     };
 
     /* ==========================================================================
@@ -1112,6 +1114,7 @@
 
       GAME.trackCurve = new THREE.CatmullRomCurve3(points, true);
       GAME.trackPoints = GAME.trackCurve.getSpacedPoints(300);
+      GAME.roadLift = (GAME.trackWidth / 2) * 0.15;
 
       // Create Extruded Track Geometry
       const geometry = new THREE.TubeGeometry(GAME.trackCurve, 300, GAME.trackWidth / 2, 8, true);
@@ -1171,7 +1174,7 @@
           starPositions[i] = (Math.random() - 0.5) * 1000;
         }
         starsGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-        const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 2, transparent: true, opacity: 0.8 });
+        const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 2, transparent: true, opacity: 0.8, fog: false });
         const starField = new THREE.Points(starsGeo, starMat);
         mainGroup.add(starField);
       }
@@ -1181,6 +1184,7 @@
       const startTangent = GAME.trackCurve.getTangentAt(0);
       const finishArchGroup = new THREE.Group();
       finishArchGroup.position.copy(startPoint);
+      finishArchGroup.position.y += GAME.roadLift;
       finishArchGroup.lookAt(startPoint.clone().add(startTangent));
 
       const pillarGeo = new THREE.CylinderGeometry(0.8, 0.8, 12);
@@ -1218,7 +1222,7 @@
         for (let offset of [-4, 0, 4]) {
           const box = new THREE.Mesh(boxGeo, boxMat.clone());
           box.position.copy(pt).add(normal.clone().multiplyScalar(offset));
-          box.position.y += 1.5;
+          box.position.y += GAME.roadLift + 1.2;
           box.userData = { active: true, respawnTimer: 0, initialY: box.position.y };
           mainGroup.add(box);
           GAME.itemBoxes.push(box);
@@ -1240,7 +1244,7 @@
           const coin = new THREE.Mesh(coinGeo, coinMat.clone());
           coin.rotation.x = Math.PI / 2;
           coin.position.copy(pt).add(normal.clone().multiplyScalar(offset));
-          coin.position.y += 1.0;
+          coin.position.y += GAME.roadLift + 0.4;
           coin.userData = { active: true, respawnTimer: 0 };
           mainGroup.add(coin);
           GAME.trackCoins.push(coin);
@@ -1362,15 +1366,15 @@
 
       update() {
         // Timers update
-        if (this.boostTimer > 0) this.boostTimer -= 0.016;
-        if (this.invincibleTimer > 0) this.invincibleTimer -= 0.016;
-        if (this.shrunkenTimer > 0) this.shrunkenTimer -= 0.016;
-        if (this.spunOutTimer > 0) this.spunOutTimer -= 0.016;
+        if (this.boostTimer > 0) this.boostTimer -= GAME.dt;
+        if (this.invincibleTimer > 0) this.invincibleTimer -= GAME.dt;
+        if (this.shrunkenTimer > 0) this.shrunkenTimer -= GAME.dt;
+        if (this.spunOutTimer > 0) this.spunOutTimer -= GAME.dt;
 
         // Hop animation physics
         if (this.hopY > 0 || this.hopVY !== 0) {
-          this.hopY += this.hopVY;
-          this.hopVY -= 0.08;
+          this.hopY += this.hopVY * GAME.dt * 60;
+          this.hopVY -= 0.08 * 60 * GAME.dt;
           if (this.hopY <= 0) {
             this.hopY = 0;
             this.hopVY = 0;
@@ -1384,7 +1388,7 @@
         // Spin out effect
         if (this.spunOutTimer > 0) {
           this.mesh.rotation.y += 0.4;
-          this.speed *= 0.9;
+          this.speed *= Math.pow(0.9, GAME.dt * 60);
           return;
         }
 
@@ -1400,12 +1404,12 @@
 
         // Limit speed to effective max speed
         if (this.speed > effectiveMaxSpeed) {
-          this.speed *= 0.98;
+          this.speed *= Math.pow(0.98, GAME.dt * 60);
         }
 
         // Move kart along track spline safely
         const totalDist = GAME.trackCurve.getLength();
-        const distStep = (this.speed * 40) / totalDist;
+        const distStep = (this.speed * 40 * GAME.dt * 60) / totalDist;
         this.progress = ((this.progress + distStep) % 1.0 + 1.0) % 1.0;
 
         // Rainbow Invincibility Effect
@@ -1436,11 +1440,11 @@
         const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
 
         // Apply lateral steering offset
-        this.offset += this.steering * (this.speed * 0.8);
+        this.offset += this.steering * (this.speed * 0.8 * GAME.dt * 60);
         this.offset = Math.max(-GAME.trackWidth / 2 + 1, Math.min(GAME.trackWidth / 2 - 1, this.offset));
 
         const finalPos = pt.clone().add(normal.clone().multiplyScalar(this.offset));
-        finalPos.y += this.hopY;
+        finalPos.y += GAME.roadLift + this.hopY;
 
         this.mesh.position.copy(finalPos);
 
@@ -1451,7 +1455,7 @@
 
         // Wheel Rotation Animation
         this.wheels.forEach(w => {
-          w.rotation.x += this.speed * 0.5;
+          w.rotation.x += this.speed * 0.5 * GAME.dt * 60;
         });
 
         // Drift Spark Particles
@@ -1484,6 +1488,7 @@
        ========================================================================== */
     function setupInputs() {
       window.addEventListener('keydown', (e) => {
+        if (e.code === 'Space') e.preventDefault();
         GAME.keys[e.code] = true;
 
         if (e.code === 'KeyC') {
@@ -1503,7 +1508,7 @@
         GAME.keys[e.code] = false;
         
         // Release Drift -> Mini Turbo
-        if ((e.code === 'Space' || e.code === 'ShiftLeft') && GAME.playerKart) {
+        if ((e.code === 'Space' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') && GAME.playerKart) {
           if (GAME.playerKart.driftState > 0) {
             const boostTime = GAME.playerKart.driftState === 2 ? 1.5 : 0.8;
             GAME.playerKart.triggerBoost(boostTime);
@@ -1568,21 +1573,21 @@
 
       if (isGasPressed) {
         if (k.speed < effectiveMaxSpeed) {
-          k.speed += k.accel;
+          k.speed += k.accel * GAME.dt * 60;
         }
       } else if (isBrakePressed) {
-        k.speed = Math.max(-0.2, k.speed - k.accel * 1.5);
+        k.speed = Math.max(-0.2, k.speed - k.accel * 1.5 * GAME.dt * 60);
       } else {
         if (k.boostTimer <= 0) {
-          k.speed *= 0.94; // Drag when gas is released
+          k.speed *= Math.pow(0.94, GAME.dt * 60); // Drag when gas is released
           if (Math.abs(k.speed) < 0.001) k.speed = 0;
         }
       }
 
       // Drift Mechanics
-      const isDrifting = GAME.keys['Space'] || GAME.keys['ShiftLeft'];
+      const isDrifting = GAME.keys['Space'] || GAME.keys['ShiftLeft'] || GAME.keys['ShiftRight'];
       if (isDrifting && Math.abs(turn) > 0 && k.speed > 0.3) {
-        k.driftTime += 0.016;
+        k.driftTime += GAME.dt;
         if (k.driftTime > 1.5) {
           k.driftState = 2; // Orange Mini Turbo
         } else if (k.driftTime > 0.6) {
@@ -1625,9 +1630,9 @@
 
         const targetSpeed = effectiveMaxSpeed * speedMult;
         if (k.speed < targetSpeed) {
-          k.speed += k.accel * 0.85;
+          k.speed += k.accel * 0.85 * GAME.dt * 60;
         } else {
-          k.speed *= 0.98;
+          k.speed *= Math.pow(0.98, GAME.dt * 60);
         }
 
         // Keep near center
@@ -1667,6 +1672,7 @@
         if (spinCount > 15) {
           clearInterval(interval);
           box.classList.remove('spinning');
+          GAME.playerKart.rouletteActive = false;
           const finalItem = getItemForRank(GAME.playerKart.rank);
           GAME.playerKart.activeItem = finalItem;
           icon.textContent = finalItem.emoji;
@@ -1716,6 +1722,7 @@
         const banMat = new THREE.MeshStandardMaterial({ color: 0xfde047 });
         const banana = new THREE.Mesh(banGeo, banMat);
         banana.position.copy(kart.mesh.position);
+        banana.position.y += 0.6;
         mainGroup.add(banana);
 
         GAME.itemsOnTrack.push({
@@ -1732,34 +1739,44 @@
         const item = GAME.itemsOnTrack[i];
 
         if (item.type === 'green_shell' || item.type === 'red_shell') {
-          item.progress = (item.progress + 0.005) % 1.0;
+          item.progress = (item.progress + 0.005 * GAME.dt * 60) % 1.0;
           const pt = GAME.trackCurve.getPointAt(item.progress);
           item.mesh.position.copy(pt);
           item.mesh.position.y += 0.8;
 
           // Hit detection with karts
+          let hit = false;
           GAME.karts.forEach(k => {
+            if (hit) return;
             if (k !== item.owner && k.mesh.position.distanceTo(item.mesh.position) < 2.5) {
+              hit = true;
               k.spinOut();
-              mainGroup.remove(item.mesh);
-              GAME.itemsOnTrack.splice(i, 1);
             }
           });
+          if (hit) {
+            mainGroup.remove(item.mesh);
+            GAME.itemsOnTrack.splice(i, 1);
+          }
         } else if (item.type === 'banana') {
+          let hit = false;
           GAME.karts.forEach(k => {
+            if (hit) return;
             if (k.mesh.position.distanceTo(item.mesh.position) < 2.0) {
+              hit = true;
               k.spinOut();
-              mainGroup.remove(item.mesh);
-              GAME.itemsOnTrack.splice(i, 1);
             }
           });
+          if (hit) {
+            mainGroup.remove(item.mesh);
+            GAME.itemsOnTrack.splice(i, 1);
+          }
         }
       }
 
       // Item Box Hit & Respawn logic
       GAME.itemBoxes.forEach(box => {
         if (!box.userData.active) {
-          box.userData.respawnTimer += 0.016;
+          box.userData.respawnTimer += GAME.dt;
           if (box.userData.respawnTimer > 5.0) {
             box.userData.active = true;
             box.visible = true;
@@ -1772,8 +1789,11 @@
               box.userData.active = false;
               box.visible = false;
               sound.playCoin();
-              if (k.isPlayer && !k.activeItem) {
+              if (k.isPlayer && !k.activeItem && !k.rouletteActive) {
+                k.rouletteActive = true;
                 triggerItemRoulette();
+              } else if (!k.isPlayer && !k.activeItem && Math.random() < 0.6) {
+                k.activeItem = getItemForRank(k.rank);
               }
             }
           });
@@ -1784,7 +1804,7 @@
       if (GAME.trackCoins) {
         GAME.trackCoins.forEach(coin => {
           if (!coin.userData.active) {
-            coin.userData.respawnTimer += 0.016;
+            coin.userData.respawnTimer += GAME.dt;
             if (coin.userData.respawnTimer > 8.0) {
               coin.userData.active = true;
               coin.visible = true;
@@ -1987,6 +2007,7 @@
 
       document.getElementById('screen-title').style.display = 'none';
       document.getElementById('screen-hud').style.display = 'block';
+      document.getElementById('hud-item-icon').textContent = '';
 
       buildTrack(GAME.selectedTrack);
 
@@ -2069,8 +2090,14 @@
     /* ==========================================================================
        MAIN GAME LOOP
        ========================================================================== */
+    let lastFrame = performance.now();
+
     function gameLoop() {
       requestAnimationFrame(gameLoop);
+
+      const now = performance.now();
+      GAME.dt = Math.min((now - lastFrame) / 1000, 0.05);
+      lastFrame = now;
 
       if (GAME.state === 'RACING') {
         processPlayerInput();
