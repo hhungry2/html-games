@@ -594,7 +594,14 @@ function playerHurt(dmg,fromX){
   PL.hp-=dmg;
   if(PL.hp<=0){ PL.hp=0; killPlayer(); return; }
   PL.inv=72; PL.hurtT=22;
-  PL.climbing=false; PL.sliding=0; PL.h=22;
+  PL.climbing=false;
+  /* スライド姿勢(h=13)のまま h だけ戻すと足元が9px下に伸びて地面にめり込み、
+     以降まったく動けなくなる。足元を固定して上へ伸ばす。
+     頭上が塞がっている場合は立てないのでスライド姿勢を維持する */
+  if(PL.h<22){
+    if(!hitSolid(PL.x,PL.y-9,PL.w,9)){ PL.y-=9; PL.h=22; PL.sliding=0; }
+    else PL.sliding=Math.max(PL.sliding,1);
+  } else PL.sliding=0;
   PL.vx=(PL.x+PL.w/2<fromX?-1:1)*1.15; PL.vy=-1.4;
   PL.chargeT=0; PL.charging=false;
   SFX.hurt();
@@ -667,10 +674,13 @@ function updatePlayer(){
     if(moveY(PL,PL.vy)) PL.vy=0;
     PL.onGround=grounded(PL);
     const canStand=!hitSolid(PL.x,PL.y-9,PL.w,9);
-    if((PL.sliding<=0||blocked||!PL.onGround) && canStand){
+    const wantJump=!PL.lock && jumpP;
+    /* 起き上がりは必ず1回だけ。2回引くと canStand で確認した9pxを超えて
+       持ち上がり、頭上のブロックにめり込んで動けなくなる */
+    if((PL.sliding<=0||blocked||!PL.onGround||wantJump) && canStand){
       PL.y-=9; PL.h=22; PL.sliding=0;
+      if(wantJump){ PL.vy=-JUMPV; PL.jumpHeld=true; }
     } else if(PL.sliding<=0&&!canStand){ PL.sliding=1; }
-    if(!PL.lock && jumpP && canStand){ PL.y-=9; PL.h=22; PL.sliding=0; PL.vy=-JUMPV; }
     PL.dir=PL.slideDir;
     checkHazards(); return;
   }
@@ -859,7 +869,9 @@ function heroClimb(sh){
   if(sh){ R(11,12,4,4,P.b3); R(15,11,4,6,P.b4); R(19,12,2,4,P.b1); }
 }
 function heroSlide(sh){
-  ctx.save(); ctx.translate(0,11);
+  /* スライド中の当たり判定は高さ13。スプライトも同じ13px分なので、
+     足元が地面に接するよう上端を合わせる（立ち姿と同じく1pxだけ下にはみ出す） */
+  ctx.save(); ctx.translate(0,3);
   R(5,0,8,1,P.b2); R(4,1,10,1,P.b2); R(3,2,12,3,P.b2);
   R(6,1,4,1,P.b3); R(3,5,12,1,P.b1);
   R(2,6,3,3,P.b3); R(13,6,3,3,P.b3);
