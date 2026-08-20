@@ -44,6 +44,9 @@ BM風ゲーム
 ななかクラッシュ風 飛距離アタック「ポップ†クラッシュ!!」（角度→パワーで発射・エアリアル/コンボ・再クラッシュ・スマホ/PC対応）  
 [**nanaca_crash.html**](https://hhungry2.github.io/html-games/nanaca_crash.html) | [Vercel](https://html-games-eight.vercel.app/nanaca_crash.html)  
 
+バルーンファイト風アクション「BALLOON FIGHTER」（風船2個ではばたく・敵を上から突く・フィッシュ・ボーナス面・スマホ/PC対応）  
+[**balloon_fight.html**](https://hhungry2.github.io/html-games/balloon_fight.html) | [Vercel](https://html-games-eight.vercel.app/balloon_fight.html)  
+
 【ツール】  
 
 スマホセンサー測定ダッシュボード（ジャイロ・加速度）  
