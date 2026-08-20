@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>LODE RUNNER NEO</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#04060e;
+  --panel:rgba(12,18,34,.7);
+  --line:rgba(120,190,255,.18);
+  --txt:#dce7ff;
+  --dim:#7488b0;
+  --acc:#2fe0ff;
+  --acc2:#ffc94d;
+  --acc3:#ff4d7a;
+}
+html,body{height:100%}
+body{
+  background:
+    radial-gradient(1100px 760px at 15% -12%, #12224c 0%, transparent 58%),
+    radial-gradient(900px 700px at 112% 112%, #3a1032 0%, transparent 55%),
+    radial-gradient(700px 500px at 50% 45%, #0a1130 0%, transparent 70%),
+    var(--bg);
+  color:var(--txt);
+  font-family:ui-monospace,"SF Mono",Consolas,Menlo,"DejaVu Sans Mono",monospace;
+  display:flex;overflow:auto;
+  touch-action:manipulation;
+  -webkit-tap-highlight-color:transparent;
+  user-select:none;
+}
+body::after{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:99;
+  background:repeating-linear-gradient(to bottom, rgba(255,255,255,.028) 0 1px, transparent 1px 3px);
+  mix-blend-mode:overlay;opacity:.55;
+}
+#wrap{position:relative;z-index:1;margin:auto;padding:10px;display:flex;flex-direction:column;align-items:center;gap:8px;width:100%;max-width:780px}
+
+#hud{
+  width:100%;display:flex;gap:6px;align-items:stretch;
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:7px 9px;
+  backdrop-filter:blur(6px);
+}
+.cell{flex:1;display:flex;flex-direction:column;gap:1px;min-width:0}
+.cell b{font-size:9px;letter-spacing:.14em;color:var(--dim);font-weight:600}
+.cell span{font-size:15px;font-weight:700;letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#vScore span{color:var(--acc)}
+#vGold span{color:var(--acc2)}
+#vLives span{color:var(--acc3)}
+
+#stage{position:relative;width:100%;line-height:0;border-radius:12px;overflow:hidden;
+  border:1px solid var(--line);
+  box-shadow:0 0 0 1px rgba(0,0,0,.6), 0 18px 60px rgba(0,0,0,.6), inset 0 0 60px rgba(20,60,120,.18);
+  background:#050813;
+}
+canvas{display:block;width:100%;height:auto;image-rendering:optimizeQuality}
+
+#ov{
+  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+  background:radial-gradient(600px 400px at 50% 40%, rgba(10,20,50,.82), rgba(3,5,12,.94));
+  text-align:center;padding:16px;line-height:1.55;backdrop-filter:blur(3px);
+}
+#ov.hide{display:none}
+#ov h1{font-size:clamp(22px,5.6vw,40px);letter-spacing:.16em;
+  background:linear-gradient(180deg,#fff,#7fe6ff 55%,#2fa8ff);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 0 14px rgba(47,224,255,.45));}
+#ov h2{font-size:clamp(15px,3.6vw,24px);letter-spacing:.1em;color:var(--acc2)}
+#ov p{font-size:clamp(10.5px,2.5vw,13px);color:var(--dim);max-width:44ch}
+#ov .key{color:var(--txt);background:rgba(120,190,255,.12);border:1px solid var(--line);border-radius:5px;padding:1px 6px;margin:0 1px;display:inline-block}
+#ov button{
+  margin-top:4px;font:inherit;font-size:14px;font-weight:700;letter-spacing:.12em;
+  color:#03121c;background:linear-gradient(180deg,#8ff0ff,#22c2f5);
+  border:0;border-radius:9px;padding:10px 26px;cursor:pointer;
+  box-shadow:0 6px 22px rgba(34,194,245,.4);
+}
+#ov button:active{transform:translateY(1px)}
+
+#pad{width:100%;display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:end}
+#dpad{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:5px;max-width:190px}
+#digs{display:grid;grid-template-columns:1fr 1fr;gap:8px;justify-self:end;width:100%;max-width:200px}
+.btn{
+  background:var(--panel);border:1px solid var(--line);border-radius:11px;
+  color:var(--txt);font:inherit;font-size:16px;font-weight:700;
+  aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;touch-action:none;
+}
+#digs .btn{aspect-ratio:auto;height:58px;font-size:11px;letter-spacing:.08em;flex-direction:column;gap:2px}
+#digs .btn i{font-style:normal;font-size:17px;color:var(--acc2)}
+.btn.on{background:rgba(47,224,255,.22);border-color:rgba(47,224,255,.55);color:#fff}
+.btn.sp{visibility:hidden}
+#help{font-size:10.5px;color:var(--dim);text-align:center;letter-spacing:.04em;line-height:1.7}
+#help b{color:var(--txt);font-weight:600}
+@media (min-width:760px){ #pad{display:none} }
+@media (max-width:759px){ #help{display:none} }
+</style>
+</head>
+<body>
+<div id="wrap">
+
+  <div id="hud">
+    <div class="cell" id="vScore"><b>SCORE</b><span id="hScore">0</span></div>
+    <div class="cell" id="vGold"><b>GOLD</b><span id="hGold">0 / 0</span></div>
+    <div class="cell"><b>STAGE</b><span id="hLevel">1</span></div>
+    <div class="cell" id="vLives"><b>RUNNERS</b><span id="hLives">♦♦♦</span></div>
+  </div>
+
+  <div id="stage">
+    <canvas id="cv" width="728" height="416"></canvas>
+    <div id="ov">
+      <h1>LODE RUNNER</h1>
+      <h2 id="ovSub">NEO</h2>
+      <p id="ovTxt">
+        金塊をすべて集めて最上段へ脱出せよ。<br>
+        <span class="key">←→</span> 移動　<span class="key">↑↓</span> はしご/ロープ　<span class="key">Z</span> 左を掘る　<span class="key">X</span> 右を掘る<br>
+        攻撃はできない。穴を掘って敵を落とせ。
+      </p>
+      <button id="ovBtn">START</button>
+    </div>
+  </div>
+
+  <div id="pad">
+    <div id="dpad">
+      <div class="btn sp"></div><div class="btn" data-k="up">▲</div><div class="btn sp"></div>
+      <div class="btn" data-k="left">◀</div><div class="btn sp"></div><div class="btn" data-k="right">▶</div>
+      <div class="btn sp"></div><div class="btn" data-k="down">▼</div><div class="btn sp"></div>
+    </div>
+    <div id="digs">
+      <div class="btn" data-k="digL"><i>◤</i>DIG L</div>
+      <div class="btn" data-k="digR"><i>◥</i>DIG R</div>
+    </div>
+  </div>
+
+  <div id="help">
+    <b>←→</b> 走る / <b>↑↓</b> はしご・ロープ / <b>Z</b>・<b>,</b> 左下を掘る / <b>X</b>・<b>.</b> 右下を掘る / <b>P</b> ポーズ / <b>R</b> やり直し
+  </div>
+</div>
+
+<script>
+(()=>{
+'use strict';
+
+/* ==========================================================================
+   定数
+   ========================================================================== */
+const COLS=28, ROWS=16, T=26;
+const W=COLS*T, H=ROWS*T;
+
+const EMPTY=0, BRICK=1, STONE=2, LADDER=3, ROPE=4, EXITL=5, FAKE=6;
+
+const P_RUN=0.115, P_CLIMB=0.135, P_FALL=0.072, P_HANG=0.108;
+const E_RUN=0.165, E_CLIMB=0.195, E_FALL=0.085, E_HANG=0.155;
+
+const DIG_TIME=0.42;
+const HOLE_OPEN=5.0, HOLE_CLOSE=0.9;
+const TRAP_TIME=2.4, ESCAPE_TIME=0.55;
+const RESPAWN_TIME=1.3;
+
+/* ==========================================================================
+   ステージデータ
+   '.' 空  '#' 掘れるレンガ  '@' 掘れない岩  'H' はしご  '-' ロープ
+   '%' ニセレンガ(踏み抜く)  '$' 金塊  'S' 脱出はしご(全金塊で出現)
+   'X' プレイヤー  'E' 敵
+   ========================================================================== */
+const LEVELS=[
+{name:"FIRST DESCENT", map:[
+"............S...............",
+"............S...............",
+"....$.......S........$......",
+"..##########H##########.....",
+"............H...............",
+".....H..E...H......H........",
+"..###H######H######H###.....",
+".....H..----H----..H........",
+"..$..H......H......H...$....",
+"..###H######H######H###.....",
+".....H......H......H........",
+"..$..H......H......H...$....",
+"..###H######H######H###.....",
+".....H......H......H........",
+"..$E.H..$...H...$..H...$.X..",
+"############################"
+]},
+{name:"ROPE & SHAFT", map:[
+"......................S.....",
+"......................S.....",
+"..............$...$...S.....",
+".....#####...#########H#####",
+"......-----------..E..H.....",
+"........$.............H.....",
+"####H##################.....",
+"....H.......................",
+"....H.....$.......E.........",
+".....#################H#####",
+"......................H.....",
+".........-------......H.....",
+"####H#####.....########.....",
+"....H.......$.......E.......",
+"....H...............$.....X.",
+"############################"
+]},
+{name:"BURIED VAULT", map:[
+".........................S..",
+".........................S..",
+".......$.................H..",
+"#########################H..",
+"..$....$....$....$...@@@@H..",
+"#########################H..",
+"..E.............E....@@@@H..",
+"#########################H..",
+"..$....$....$....$...@@@@H..",
+"#########################H..",
+".........................H..",
+"########.........########H..",
+".......----------........H..",
+".........................H..",
+"..$..$...E...$.......X...H..",
+"############################"
+]},
+{name:"TRAP CASTLE", map:[
+"..............S.............",
+"..............S.............",
+"..H...$.......S.......$...H.",
+"##H###@@@#####H#####@@@###H#",
+"..H..$...E....H....E...$..H.",
+"..H########...H...########H.",
+"..H.......H...H...H.......H.",
+"..H-------H...H...H-------H.",
+"..H.......H.$.H.$.H.......H.",
+"..H#######H###H###H#######H.",
+"..H..$....H.......H....$..H.",
+"..H#######H##%%%##H#######H.",
+"..H....$..H..$$$..H..$....H.",
+"..H#######H#######H#######H.",
+"..H....E..H...X...H..E....H.",
+"############################"
+]},
+{name:"THE LAST HAUL", map:[
+"..............S.............",
+"..............S.............",
+"..............H.............",
+".....$$$$$....H....$$$$$....",
+"..############H############.",
+"..------------H------------.",
+"..H.....E.....H...........H.",
+"..H###########H###########H.",
+"..H..$.....E..H..E.....$..H.",
+"..H######%%%###%%%########H.",
+"..H..$..H..........H..$...H.",
+"..H#####H##########H######H.",
+"..H.....H....$.....H......H.",
+"..H#####H##########H######H.",
+"..H...E.H.....X....H.E....H.",
+"############################"
+]}
+];
+
+/* ==========================================================================
+   状態
+   ========================================================================== */
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+const bg=document.createElement('canvas'); bg.width=W; bg.height=H;
+const bgx=bg.getContext('2d');
+
+let grid=new Int8Array(COLS*ROWS);
+let goldMap=new Uint8Array(COLS*ROWS);
+let holes=new Array(COLS*ROWS).fill(null);
+let bgDirty=true;
+
+let player=null, enemies=[], spawns=[];
+let goldTotal=0, goldLeft=0, exitOpen=false, goldHome=[];
+let score=0, lives=3, levelIdx=0;
+let mode='title';      // title | play | dead | clear | over | allclear | pause
+let modeT=0;
+let flash=0, shake=0, msg='', msgT=0, freezeT=0;
+let particles=[];
+let time=0;
+
+/* ==========================================================================
+   タイル問い合わせ
+   ========================================================================== */
+function tile(c,r){
+  if(c<0||c>=COLS||r>=ROWS) return STONE;
+  if(r<0) return EMPTY;
+  return grid[r*COLS+c];
+}
+function isSolid(c,r){ const t=tile(c,r); return t===BRICK||t===STONE; }
+function isLad(c,r){ const t=tile(c,r); return t===LADDER||(t===EXITL&&exitOpen); }
+function isRope(c,r){ return tile(c,r)===ROPE; }
+function passable(c,r){ return !isSolid(c,r); }
+
+function trappedAt(c,r){
+  for(const e of enemies){
+    if(!e.alive) continue;
+    if((e.state==='trapped'||e.state==='escape') && Math.round(e.x)===c && Math.round(e.y)===r) return e;
+  }
+  return null;
+}
+function supportedAt(c,r,forPlayer){
+  if(!passable(c,r)) return false;
+  if(isLad(c,r)) return true;
+  if(isRope(c,r)) return true;
+  if(r+1>=ROWS) return true;
+  if(isSolid(c,r+1)) return true;
+  if(isLad(c,r+1)) return true;
+  if(forPlayer && trappedAt(c,r+1)) return true;
+  return false;
+}
+
+/* ==========================================================================
+   ステージ読み込み
+   ========================================================================== */
+function loadLevel(i){
+  const L=LEVELS[i];
+  grid=new Int8Array(COLS*ROWS);
+  goldMap=new Uint8Array(COLS*ROWS);
+  holes=new Array(COLS*ROWS).fill(null);
+  enemies=[]; spawns=[]; particles=[];
+  goldTotal=0; exitOpen=false; goldHome=[];
+  let px=1,py=ROWS-2;
+
+  for(let r=0;r<ROWS;r++){
+    const row=L.map[r];
+    for(let c=0;c<COLS;c++){
+      const ch=row[c]; const k=r*COLS+c;
+      let t=EMPTY;
+      switch(ch){
+        case '#': t=BRICK; break;
+        case '@': t=STONE; break;
+        case 'H': t=LADDER; break;
+        case '-': t=ROPE;  break;
+        case 'S': t=EXITL; break;
+        case '%': t=FAKE;  break;
+        case '$': goldMap[k]=1; goldTotal++; goldHome.push(k); break;
+        case 'X': px=c; py=r; break;
+        case 'E': spawns.push({c,r}); break;
+      }
+      grid[k]=t;
+    }
+  }
+  goldLeft=goldTotal;
+  player=mkEntity(px,py,true);
+  for(const s of spawns) enemies.push(mkEntity(s.c,s.r,false));
+  bgDirty=true; freezeT=1.2;
+  msg=L.name; msgT=2.2;
+  updHud();
+}
+
+function mkEntity(c,r,isPlayer){
+  return {
+    x:c, y:r, mv:null, dir:1, anim:0,
+    isPlayer, alive:true, state:'ok',
+    gold:0, digT:0, trapT:0, deadT:0, carried:0,
+    kind:'stand', steps:0, holdT:0
+  };
+}
+
+/* ==========================================================================
+   移動 (1マス単位のステップ移動)
+   ========================================================================== */
+function startMove(e,tx,ty,kind,dur){
+  e.mv={fx:e.x,fy:e.y,tx,ty,t:0,dur,kind};
+  e.kind=kind;
+  if(tx>e.x) e.dir=1; else if(tx<e.x) e.dir=-1;
+}
+function advance(e,dt){
+  if(!e.mv) return false;
+  const m=e.mv; m.t+=dt;
+  const k=Math.min(1,m.t/m.dur);
+  e.x=m.fx+(m.tx-m.fx)*k;
+  e.y=m.fy+(m.ty-m.fy)*k;
+  if(k>=1){ e.x=m.tx; e.y=m.ty; e.mv=null; arrive(e); return true; }
+  return false;
+}
+function arrive(e){
+  const c=Math.round(e.x), r=Math.round(e.y), k=r*COLS+c;
+  e.steps++;
+  if(e.isPlayer){
+    if(goldMap[k]){ goldMap[k]=0; goldLeft--; score+=120; pickFx(c,r); sfxGold(); updHud();
+      if(goldLeft===0){ exitOpen=true; bgDirty=true; msg='EXIT OPEN!'; msgT=2.0; sfxOpen(); }
+    }
+  }else{
+    if(goldMap[k] && !e.gold && Math.random()<0.75){ goldMap[k]=0; e.gold=1; }
+    else if(e.gold && e.steps>e.dropAt && grid[k]===EMPTY && !goldMap[k] && supportedAt(c,r,false)){
+      goldMap[k]=1; e.gold=0;
+    }
+    const h=holes[k];
+    if(h && h.stage!=='dig' && e.state==='ok'){
+      e.state='trapped'; e.trapT=0; e.mv=null; sfxTrap();
+      if(e.gold){ const up=(r-1)*COLS+c;
+        if(r-1>=0 && grid[up]===EMPTY && !goldMap[up]){ goldMap[up]=1; e.gold=0; }
+      }
+    }
+  }
+}
+
+/* ==========================================================================
+   プレイヤー
+   ========================================================================== */
+const keys={left:0,right:0,up:0,down:0,digL:0,digR:0};
+let digEdgeL=false, digEdgeR=false;
+
+function updPlayer(dt){
+  const p=player;
+  if(p.digT>0){ p.digT-=dt; return; }
+  if(advance(p,dt)) {}
+  if(p.mv) return;
+
+  const c=Math.round(p.x), r=Math.round(p.y);
+
+  // 掘る
+  if(digEdgeL||digEdgeR){
+    const d=digEdgeL?-1:1;
+    digEdgeL=digEdgeR=false;
+    if(tryDig(c,r,d)) return;
+  }
+
+  // 落下
+  if(!supportedAt(c,r,true)){
+    if(passable(c,r+1)){ startMove(p,c,r+1,'fall',P_FALL); p.kind='fall'; return; }
+  }
+
+  const onLad=isLad(c,r), onRope=isRope(c,r);
+
+  if(keys.up && onLad && passable(c,r-1)){ startMove(p,c,r-1,'climb',P_CLIMB); return; }
+  if(keys.down && passable(c,r+1)){
+    const kind=isLad(c,r+1)?'climb':'fall';
+    startMove(p,c,r+1,kind, kind==='climb'?P_CLIMB:P_FALL); return;
+  }
+  if(keys.left && passable(c-1,r)){ startMove(p,c-1,r, onRope?'hang':'run', onRope?P_HANG:P_RUN); return; }
+  if(keys.right && passable(c+1,r)){ startMove(p,c+1,r, onRope?'hang':'run', onRope?P_HANG:P_RUN); return; }
+
+  p.kind = onRope?'hangIdle' : (onLad?'ladIdle':'stand');
+}
+
+function tryDig(c,r,d){
+  // 足元が固い床でないと掘れない (はしご・ロープ上は不可)
+  if(isLad(c,r)||isRope(c,r)) return false;
+  if(!isSolid(c,r+1)) return false;
+  const tc=c+d, tr=r+1;
+  if(tc<0||tc>=COLS||tr>=ROWS) return false;
+  if(tile(tc,tr)!==BRICK) return false;
+  if(!passable(tc,r)) return false;          // 掘る方向に壁があると届かない
+  const k=tr*COLS+tc;
+  if(holes[k]) return false;
+  if(goldMap[k]) return false;
+  holes[k]={stage:'dig',t:0};
+  player.digT=DIG_TIME; player.dir=d; player.kind='dig';
+  bgDirty=true; sfxDig();
+  return true;
+}
+
+/* ==========================================================================
+   敵AI (プレイヤーへの距離場を逆向きBFSで作る)
+   ========================================================================== */
+const dist=new Int32Array(COLS*ROWS);
+const que=new Int32Array(COLS*ROWS);
+let fieldT=0;
+
+function add(c,r,d,ok){
+  if(!ok) return;
+  if(c<0||c>=COLS||r<0||r>=ROWS) return;
+  if(!passable(c,r)) return;
+  const k=r*COLS+c;
+  if(dist[k]>=0) return;
+  dist[k]=d; que[qTail++]=k;
+}
+let qTail=0;
+function buildField(){
+  dist.fill(-1); qTail=0;
+  const pc=Math.round(player.x), pr=Math.round(player.y);
+  if(pc<0||pc>=COLS||pr<0||pr>=ROWS) return;
+  let head=0;
+  dist[pr*COLS+pc]=0; que[qTail++]=pr*COLS+pc;
+  while(head<qTail){
+    const v=que[head++]; const vc=v%COLS, vr=(v/COLS)|0; const nd=dist[v]+1;
+    add(vc,vr-1,nd, passable(vc,vr));
+    add(vc,vr+1,nd, isLad(vc,vr+1)&&passable(vc,vr));
+    add(vc-1,vr,nd, passable(vc,vr)&&supportedAt(vc-1,vr,false));
+    add(vc+1,vr,nd, passable(vc,vr)&&supportedAt(vc+1,vr,false));
+  }
+}
+
+function occupied(c,r,self){
+  for(const e of enemies){
+    if(e===self||!e.alive||e.state==='dead') continue;
+    if(e.mv){ if(Math.round(e.mv.tx)===c&&Math.round(e.mv.ty)===r) return true; }
+    else if(Math.round(e.x)===c&&Math.round(e.y)===r) return true;
+  }
+  return false;
+}
+
+function updEnemy(e,dt,spd){
+  if(e.state==='dead'){
+    e.deadT-=dt;
+    if(e.deadT<=0) respawn(e);
+    return;
+  }
+  if(e.state==='trapped'){
+    e.trapT+=dt;
+    if(e.trapT>=TRAP_TIME){
+      const c=Math.round(e.x), r=Math.round(e.y);
+      const pref=(player.x<e.x)?-1:1;
+      const opts=[pref,-pref];
+      for(const d of opts){
+        if(passable(c+d,r-1)&&passable(c+d,r)&&!occupied(c+d,r-1,e)){
+          e.state='escape'; startMove(e,c+d,r-1,'escape',ESCAPE_TIME); return;
+        }
+      }
+      if(passable(c,r-1)&&!occupied(c,r-1,e)){ e.state='escape'; startMove(e,c,r-1,'escape',ESCAPE_TIME); }
+    }
+    return;
+  }
+  if(advance(e,dt)){
+    if(e.state==='trapped'){ e.mv=null; return; }   // 着地した瞬間に穴へハマった
+  }
+  if(e.mv) return;
+  if(e.state==='escape') e.state='ok';
+
+  const c=Math.round(e.x), r=Math.round(e.y);
+
+  if(!supportedAt(c,r,false)){
+    if(passable(c,r+1)){ startMove(e,c,r+1,'fall',E_FALL*spd); return; }
+  }
+
+  // 候補手
+  const cand=[];
+  if(isLad(c,r)&&passable(c,r-1)) cand.push({c:c,r:r-1,k:'climb',d:E_CLIMB});
+  if(passable(c,r+1))             cand.push({c:c,r:r+1,k:isLad(c,r+1)?'climb':'fall',d:isLad(c,r+1)?E_CLIMB:E_FALL});
+  const hang=isRope(c,r);
+  if(passable(c-1,r))             cand.push({c:c-1,r:r,k:hang?'hang':'run',d:hang?E_HANG:E_RUN});
+  if(passable(c+1,r))             cand.push({c:c+1,r:r,k:hang?'hang':'run',d:hang?E_HANG:E_RUN});
+
+  let best=null,bd=1e9;
+  for(const o of cand){
+    if(occupied(o.c,o.r,e)) continue;
+    const dv=dist[o.r*COLS+o.c];
+    if(dv<0) continue;
+    if(dv<bd){ bd=dv; best=o; }
+  }
+  if(!best){
+    // 経路なし: プレイヤーの方向へ寄る / うろつく
+    const d=(player.x<e.x)?-1:(player.x>e.x?1:(Math.random()<.5?-1:1));
+    const pick=cand.find(o=>o.c===c+d&&!occupied(o.c,o.r,e)) || cand.find(o=>o.k==='run'&&!occupied(o.c,o.r,e));
+    if(pick) best=pick; else { e.kind='stand'; e.holdT=0.25; return; }
+  }
+  startMove(e,best.c,best.r,best.k,best.d*spd);
+}
+
+function respawn(e){
+  let bestS=null,bd=-1;
+  for(const s of spawns){
+    if(occupied(s.c,s.r,e)) continue;
+    const d=Math.abs(s.c-player.x)+Math.abs(s.r-player.y)*1.5;
+    if(d>bd){ bd=d; bestS=s; }
+  }
+  if(!bestS) bestS=spawns[0]||{c:1,r:1};
+  e.x=bestS.c; e.y=bestS.r; e.mv=null; e.state='ok'; e.gold=0;
+  e.dropAt=e.steps+8+((Math.random()*14)|0);
+  spawnFx(bestS.c,bestS.r,'#ff4d7a',14);
+}
+
+function killEnemy(e){
+  if(e.gold){ dropGoldSomewhere(); e.gold=0; }
+  e.state='dead'; e.deadT=RESPAWN_TIME; e.mv=null;
+  score+=200; updHud();
+  spawnFx(Math.round(e.x),Math.round(e.y),'#ff4d7a',22);
+  sfxCrush();
+}
+function dropGoldSomewhere(){
+  const free=k=>grid[k]===EMPTY && !goldMap[k] && !holes[k];
+  // まずは元々金塊があった場所へ戻す (到達可能が保証されている)
+  const home=goldHome.filter(free);
+  if(home.length){ goldMap[home[(Math.random()*home.length)|0]]=1; updHud(); return; }
+  const c1=[];
+  for(let r=0;r<ROWS-1;r++) for(let c=0;c<COLS;c++){
+    const k=r*COLS+c;
+    if(free(k) && supportedAt(c,r,false)) c1.push(k);
+  }
+  if(c1.length){ goldMap[c1[(Math.random()*c1.length)|0]]=1; }
+  else{
+    // 置き場が無い: 回収済み扱いにし、必要なら脱出はしごを開ける
+    goldLeft--;
+    if(goldLeft<=0 && !exitOpen){ goldLeft=0; exitOpen=true; bgDirty=true; msg='EXIT OPEN!'; msgT=2.0; sfxOpen(); }
+  }
+  updHud();
+}
+
+/* ==========================================================================
+   穴の寿命
+   ========================================================================== */
+function updHoles(dt){
+  for(let k=0;k<holes.length;k++){
+    const h=holes[k]; if(!h) continue;
+    h.t+=dt;
+    if(h.stage==='dig'){
+      if(h.t>=DIG_TIME){ h.stage='open'; h.t=0; grid[k]=EMPTY; bgDirty=true;
+        const c=k%COLS, r=(k/COLS)|0; spawnFx(c,r,'#d9903f',12); }
+    }else if(h.stage==='open'){
+      if(h.t>=HOLE_OPEN){ h.stage='close'; h.t=0; }
+    }else{
+      if(h.t>=HOLE_CLOSE){
+        grid[k]=BRICK; holes[k]=null; bgDirty=true;
+        const c=k%COLS, r=(k/COLS)|0;
+        // 中にいるものを圧殺
+        for(const e of enemies){
+          if(e.state==='dead'||!e.alive) continue;
+          if(Math.round(e.x)===c&&Math.round(e.y)===r) killEnemy(e);
+        }
+        if(mode==='play' && Math.round(player.x)===c && Math.round(player.y)===r) die();
+      }
+    }
+  }
+}
+
+/* ==========================================================================
+   ライフ / 進行
+   ========================================================================== */
+function die(){
+  if(mode!=='play') return;
+  mode='dead'; modeT=0; shake=14; flash=.5;
+  spawnFx(Math.round(player.x),Math.round(player.y),'#8ff0ff',26);
+  sfxDie();
+}
+function afterDeath(){
+  lives--;
+  if(lives<=0){ mode='over'; showOverlay('GAME OVER','SCORE '+score,'力尽きた…　もう一度挑戦しよう。','RETRY'); }
+  else { loadLevel(levelIdx); mode='play'; }
+  updHud();
+}
+function clearLevel(){
+  mode='clear'; modeT=0;
+  score+=1500+goldTotal*50+lives*300;
+  sfxClear(); updHud();
+}
+function nextLevel(){
+  levelIdx++;
+  if(levelIdx>=LEVELS.length){
+    mode='allclear';
+    showOverlay('ALL CLEAR','SCORE '+score,'全ステージ制覇。見事な逃走劇だった。','PLAY AGAIN');
+  }else{
+    loadLevel(levelIdx); mode='play'; updHud();
+  }
+}
+
+function startGame(){
+  score=0; lives=3; levelIdx=0;
+  loadLevel(0); mode='play'; hideOverlay(); updHud();
+}
+
+/* ==========================================================================
+   エフェクト
+   ========================================================================== */
+function spawnFx(c,r,col,n){
+  for(let i=0;i<n;i++){
+    const a=Math.random()*Math.PI*2, s=40+Math.random()*160;
+    particles.push({x:c*T+T/2,y:r*T+T/2,vx:Math.cos(a)*s,vy:Math.sin(a)*s-60,
+      life:.5+Math.random()*.5,max:1,col,sz:1.5+Math.random()*2.5});
+  }
+}
+function pickFx(c,r){
+  for(let i=0;i<12;i++){
+    const a=-Math.PI/2+(Math.random()-.5)*2.2, s=50+Math.random()*130;
+    particles.push({x:c*T+T/2,y:r*T+T/2,vx:Math.cos(a)*s,vy:Math.sin(a)*s,
+      life:.45+Math.random()*.4,max:1,col:'#ffd766',sz:1.5+Math.random()*2});
+  }
+}
+function updFx(dt){
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];
+    p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=520*dt; p.vx*=.99;
+    p.life-=dt; if(p.life<=0) particles.splice(i,1);
+  }
+}
+
+/* ==========================================================================
+   サウンド
+   ========================================================================== */
+let AC=null;
+function ac(){ if(!AC){ try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } return AC; }
+function tone(f,dur,type,vol,slide){
+  const a=ac(); if(!a) return;
+  const o=a.createOscillator(), g=a.createGain();
+  o.type=type||'square'; o.frequency.setValueAtTime(f,a.currentTime);
+  if(slide) o.frequency.exponentialRampToValueAtTime(Math.max(30,slide),a.currentTime+dur);
+  g.gain.setValueAtTime(0.0001,a.currentTime);
+  g.gain.exponentialRampToValueAtTime(vol||.12,a.currentTime+0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001,a.currentTime+dur);
+  o.connect(g); g.connect(a.destination); o.start(); o.stop(a.currentTime+dur+.02);
+}
+function noise(dur,vol){
+  const a=ac(); if(!a) return;
+  const n=a.sampleRate*dur|0, b=a.createBuffer(1,n,a.sampleRate), d=b.getChannelData(0);
+  for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n);
+  const s=a.createBufferSource(); s.buffer=b;
+  const g=a.createGain(); g.gain.value=vol||.14;
+  const f=a.createBiquadFilter(); f.type='lowpass'; f.frequency.value=1100;
+  s.connect(f); f.connect(g); g.connect(a.destination); s.start();
+}
+function sfxGold(){ tone(880,.07,'square',.10); setTimeout(()=>tone(1320,.10,'square',.10),55); }
+function sfxDig(){ noise(.16,.16); tone(150,.12,'sawtooth',.07,70); }
+function sfxTrap(){ tone(220,.14,'square',.10,110); }
+function sfxCrush(){ noise(.22,.2); tone(90,.25,'sawtooth',.10,40); }
+function sfxDie(){ tone(520,.5,'sawtooth',.13,60); }
+function sfxOpen(){ [660,880,1100,1320].forEach((f,i)=>setTimeout(()=>tone(f,.14,'triangle',.11),i*70)); }
+function sfxClear(){ [523,659,784,1047,1319].forEach((f,i)=>setTimeout(()=>tone(f,.18,'triangle',.12),i*95)); }
+
+/* ==========================================================================
+   描画 : タイル
+   ========================================================================== */
+function drawBrickShape(g,x,y,s,slice){
+  // slice: 1=完全 0=消滅 (中央から侵食)
+  if(slice<=0) return;
+  const w=s*slice/2;
+  g.save(); g.beginPath();
+  g.rect(x,y,w,s); g.rect(x+s-w,y,w,s); g.clip();
+  const grd=g.createLinearGradient(x,y,x,y+s);
+  grd.addColorStop(0,'#b8663a'); grd.addColorStop(.5,'#8d4526'); grd.addColorStop(1,'#5e2c18');
+  g.fillStyle=grd; g.fillRect(x,y,s,s);
+  g.fillStyle='rgba(255,190,140,.30)'; g.fillRect(x,y,s,2);
+  g.fillStyle='rgba(0,0,0,.35)'; g.fillRect(x,y+s-2,s,2);
+  g.strokeStyle='rgba(20,8,4,.55)'; g.lineWidth=1.5;
+  g.beginPath();
+  g.moveTo(x,y+s/2+.5); g.lineTo(x+s,y+s/2+.5);
+  g.moveTo(x+s/2+.5,y);  g.lineTo(x+s/2+.5,y+s/2);
+  g.moveTo(x+s*0.15,y+s/2); g.lineTo(x+s*0.15,y+s);
+  g.moveTo(x+s*0.85,y+s/2); g.lineTo(x+s*0.85,y+s);
+  g.stroke();
+  g.restore();
+}
+function drawStone(g,x,y,s){
+  const grd=g.createLinearGradient(x,y,x,y+s);
+  grd.addColorStop(0,'#5c6b84'); grd.addColorStop(1,'#2f394d');
+  g.fillStyle=grd; g.fillRect(x,y,s,s);
+  g.fillStyle='rgba(190,215,255,.20)'; g.fillRect(x+2,y+2,s-4,2);
+  g.strokeStyle='rgba(10,14,24,.6)'; g.lineWidth=1.5; g.strokeRect(x+.75,y+.75,s-1.5,s-1.5);
+  g.fillStyle='rgba(255,255,255,.05)';
+  g.beginPath(); g.moveTo(x+s*.2,y+s*.75); g.lineTo(x+s*.5,y+s*.35); g.lineTo(x+s*.8,y+s*.8); g.fill();
+}
+function drawLadder(g,x,y,s,col,glow){
+  g.save();
+  if(glow){ g.shadowColor=col; g.shadowBlur=10; }
+  g.strokeStyle=col; g.lineWidth=Math.max(2,s*.115); g.lineCap='round';
+  const l=x+s*.22, r=x+s*.78;
+  g.beginPath(); g.moveTo(l,y); g.lineTo(l,y+s); g.moveTo(r,y); g.lineTo(r,y+s); g.stroke();
+  g.lineWidth=Math.max(1.6,s*.09);
+  g.beginPath();
+  g.moveTo(l,y+s*.22); g.lineTo(r,y+s*.22);
+  g.moveTo(l,y+s*.62); g.lineTo(r,y+s*.62);
+  g.stroke();
+  g.restore();
+}
+function drawRope(g,x,y,s){
+  g.save();
+  g.strokeStyle='#cbd8ff'; g.lineWidth=Math.max(2,s*.1); g.lineCap='round';
+  g.shadowColor='rgba(180,210,255,.6)'; g.shadowBlur=6;
+  g.beginPath(); g.moveTo(x,y+s*.3); g.lineTo(x+s,y+s*.3); g.stroke();
+  g.shadowBlur=0; g.strokeStyle='rgba(150,175,230,.5)'; g.lineWidth=1.4;
+  for(let i=0;i<3;i++){ const px=x+s*(.2+i*.3);
+    g.beginPath(); g.moveTo(px,y+s*.3); g.lineTo(px,y+s*.44); g.stroke(); }
+  g.restore();
+}
+function drawGold(g,x,y,s,t){
+  const b=.5+.5*Math.sin(t*4+x*.09+y*.05);
+  g.save();
+  g.shadowColor='rgba(255,205,80,'+(.55+b*.4)+')'; g.shadowBlur=10+b*8;
+  const cx=x+s/2, cy=y+s/2+1, w=s*.34, h=s*.26;
+  const grd=g.createLinearGradient(cx,cy-h,cx,cy+h);
+  grd.addColorStop(0,'#fff2b0'); grd.addColorStop(.45,'#ffcf4a'); grd.addColorStop(1,'#c68a11');
+  g.fillStyle=grd;
+  g.beginPath();
+  g.moveTo(cx-w,cy+h); g.lineTo(cx-w*.72,cy-h); g.lineTo(cx+w*.72,cy-h); g.lineTo(cx+w,cy+h);
+  g.closePath(); g.fill();
+  g.shadowBlur=0;
+  g.fillStyle='rgba(255,255,255,'+(.35+b*.4)+')';
+  g.fillRect(cx-w*.5,cy-h*.55,w*.42,2.2);
+  g.strokeStyle='rgba(110,70,0,.55)'; g.lineWidth=1.2; g.stroke();
+  g.restore();
+}
+function drawBg(){
+  bgx.clearRect(0,0,W,H);
+  const grd=bgx.createLinearGradient(0,0,0,H);
+  grd.addColorStop(0,'#070c1c'); grd.addColorStop(1,'#04060f');
+  bgx.fillStyle=grd; bgx.fillRect(0,0,W,H);
+  bgx.strokeStyle='rgba(90,140,220,.055)'; bgx.lineWidth=1;
+  for(let c=0;c<=COLS;c++){ bgx.beginPath(); bgx.moveTo(c*T+.5,0); bgx.lineTo(c*T+.5,H); bgx.stroke(); }
+  for(let r=0;r<=ROWS;r++){ bgx.beginPath(); bgx.moveTo(0,r*T+.5); bgx.lineTo(W,r*T+.5); bgx.stroke(); }
+
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    const k=r*COLS+c; if(holes[k]) continue;   // アニメ中は毎フレーム描く
+    const x=c*T, y=r*T;
+    switch(grid[k]){
+      case BRICK: drawBrickShape(bgx,x,y,T,1); break;
+      case FAKE:  drawBrickShape(bgx,x,y,T,1); break;
+      case STONE: drawStone(bgx,x,y,T); break;
+      case LADDER:drawLadder(bgx,x,y,T,'#4fd6ff',false); break;
+      case ROPE:  drawRope(bgx,x,y,T); break;
+      case EXITL: if(exitOpen) drawLadder(bgx,x,y,T,'#8bffb0',true); break;
+    }
+  }
+  bgDirty=false;
+}
+
+/* ==========================================================================
+   描画 : キャラクター
+   ========================================================================== */
+function drawRunner(g,e,body,limb,t){
+  const s=T;
+  const x=e.x*T+s/2, y=e.y*T+s/2;
+  const ph=e.anim;
+  g.save(); g.translate(x,y);
+  g.lineCap='round'; g.lineJoin='round';
+  g.shadowColor=body; g.shadowBlur=9;
+
+  const hr=s*.155, hy=-s*.30;
+  const lw=Math.max(2.4,s*.115);
+
+  let la=0,lb=0, aa=0, ab=0, lean=0;
+  const k=e.kind;
+  if(k==='run'||k==='escape'){
+    const sw=Math.sin(ph*13);
+    la=sw*.85; lb=-sw*.85; aa=-sw*.7; ab=sw*.7; lean=e.dir*.12;
+  }else if(k==='climb'){
+    const sw=Math.sin(ph*11);
+    la=sw*.5; lb=-sw*.5; aa=-1.3-sw*.35; ab=-1.3+sw*.35;
+  }else if(k==='fall'){
+    la=.35; lb=-.5; aa=-1.9; ab=-1.7; lean=e.dir*.18;
+  }else if(k==='hang'||k==='hangIdle'){
+    const sw=Math.sin(ph*(k==='hang'?12:3));
+    la=sw*.6+.2; lb=-sw*.6-.2; aa=-2.0; ab=-2.0;
+  }else if(k==='dig'){
+    la=.35; lb=-.35; aa=e.dir>0?1.1:-1.1; ab=e.dir>0?.5:-.5; lean=e.dir*.15;
+  }else if(k==='ladIdle'){
+    aa=-1.35; ab=-1.35; la=.25; lb=-.25;
+  }else{
+    const br=Math.sin(t*2.4)*.06;
+    la=.2+br; lb=-.2-br; aa=.35; ab=-.35;
+  }
+
+  g.rotate(lean);
+
+  // 脚
+  g.strokeStyle=limb; g.lineWidth=lw;
+  g.beginPath();
+  g.moveTo(0,s*.02); g.lineTo(Math.sin(la)*s*.20, s*.02+Math.cos(la)*s*.30);
+  g.moveTo(0,s*.02); g.lineTo(Math.sin(lb)*s*.20, s*.02+Math.cos(lb)*s*.30);
+  g.stroke();
+  // 胴
+  g.strokeStyle=body; g.lineWidth=lw*1.25;
+  g.beginPath(); g.moveTo(0,-s*.14); g.lineTo(0,s*.04); g.stroke();
+  // 腕
+  g.strokeStyle=limb; g.lineWidth=lw*.9;
+  g.beginPath();
+  g.moveTo(0,-s*.12); g.lineTo(Math.sin(aa)*s*.22, -s*.12+Math.cos(aa)*s*.22);
+  g.moveTo(0,-s*.12); g.lineTo(Math.sin(ab)*s*.22, -s*.12+Math.cos(ab)*s*.22);
+  g.stroke();
+  // 頭
+  g.fillStyle=body;
+  g.beginPath(); g.arc(0,hy,hr,0,7); g.fill();
+  g.shadowBlur=0;
+  g.fillStyle='rgba(255,255,255,.85)';
+  g.beginPath(); g.arc(e.dir*hr*.35,hy-hr*.15,hr*.24,0,7); g.fill();
+  g.restore();
+}
+
+function drawEntity(g,e,t){
+  if(e.state==='dead') return;
+  if(e.isPlayer) drawRunner(g,e,'#9ff4ff','#e8fbff',t);
+  else{
+    const dim = e.state==='trapped';
+    drawRunner(g,e, dim?'#ff9ab4':'#ff5f86', dim?'#ffd3de':'#ffb3c6', t);
+    if(e.gold){
+      g.save(); g.shadowColor='#ffd24a'; g.shadowBlur=9; g.fillStyle='#ffd24a';
+      g.beginPath(); g.arc(e.x*T+T/2, e.y*T+T*.13, T*.09, 0, 7); g.fill(); g.restore();
+    }
+  }
+}
+
+/* ==========================================================================
+   メイン描画
+   ========================================================================== */
+function render(dt){
+  if(bgDirty) drawBg();
+  ctx.save();
+  if(shake>0){ ctx.translate((Math.random()-.5)*shake,(Math.random()-.5)*shake); shake*=Math.pow(.001,dt); if(shake<.4) shake=0; }
+  ctx.clearRect(-20,-20,W+40,H+40);
+  ctx.drawImage(bg,0,0);
+
+  // 穴のアニメーション
+  for(let k=0;k<holes.length;k++){
+    const h=holes[k]; if(!h) continue;
+    const c=k%COLS, r=(k/COLS)|0, x=c*T, y=r*T;
+    if(h.stage==='dig'){
+      const p=1-h.t/DIG_TIME;
+      drawBrickShape(ctx,x,y,T,p);
+      ctx.save(); ctx.globalAlpha=.5*(1-p);
+      ctx.fillStyle='#ffb459'; ctx.fillRect(x,y+T*.4,T,2); ctx.restore();
+    }else if(h.stage==='close'){
+      const p=h.t/HOLE_CLOSE;
+      drawBrickShape(ctx,x,y,T,p);
+      ctx.save(); ctx.globalAlpha=.55*(1-p);
+      ctx.shadowColor='#ff8a3a'; ctx.shadowBlur=12;
+      ctx.strokeStyle='#ffb459'; ctx.lineWidth=2; ctx.strokeRect(x+1,y+1,T-2,T-2); ctx.restore();
+    }else{
+      // 開いた穴の縁
+      ctx.save(); ctx.strokeStyle='rgba(180,110,60,.30)'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(x+1,y); ctx.lineTo(x+1,y+T); ctx.moveTo(x+T-1,y); ctx.lineTo(x+T-1,y+T); ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // 金塊
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    if(goldMap[r*COLS+c]) drawGold(ctx,c*T,r*T,T,time);
+  }
+
+  for(const e of enemies) drawEntity(ctx,e,time);
+  if(mode!=='dead' || Math.floor(modeT*14)%2===0) drawEntity(ctx,player,time);
+
+  // 粒子
+  for(const p of particles){
+    ctx.save(); ctx.globalAlpha=Math.max(0,p.life);
+    ctx.fillStyle=p.col; ctx.shadowColor=p.col; ctx.shadowBlur=6;
+    ctx.fillRect(p.x-p.sz/2,p.y-p.sz/2,p.sz,p.sz); ctx.restore();
+  }
+
+  ctx.restore();
+
+  // メッセージ
+  if(msgT>0){
+    const a=Math.min(1,msgT*1.6);
+    ctx.save(); ctx.globalAlpha=a;
+    ctx.font='700 22px ui-monospace,monospace'; ctx.textAlign='center';
+    ctx.shadowColor='rgba(47,224,255,.8)'; ctx.shadowBlur=16;
+    ctx.fillStyle='#dff4ff'; ctx.fillText(msg, W/2, H*.30);
+    ctx.restore();
+  }
+  if(mode==='clear'){
+    ctx.save();
+    ctx.globalAlpha=Math.min(.75,modeT*1.6);
+    ctx.fillStyle='#03101c'; ctx.fillRect(0,0,W,H);
+    ctx.globalAlpha=Math.min(1,modeT*2);
+    ctx.font='700 30px ui-monospace,monospace'; ctx.textAlign='center';
+    ctx.shadowColor='#8bffb0'; ctx.shadowBlur=20; ctx.fillStyle='#d9ffe6';
+    ctx.fillText('STAGE CLEAR', W/2, H/2-4);
+    ctx.font='700 14px ui-monospace,monospace'; ctx.shadowBlur=8; ctx.fillStyle='#9fdcff';
+    ctx.fillText('SCORE '+score, W/2, H/2+26);
+    ctx.restore();
+  }
+  if(flash>0){
+    ctx.save(); ctx.globalAlpha=flash*.5; ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H); ctx.restore();
+    flash-=dt*2.2; if(flash<0) flash=0;
+  }
+  if(mode==='pause'){
+    ctx.save(); ctx.fillStyle='rgba(3,6,15,.72)'; ctx.fillRect(0,0,W,H);
+    ctx.font='700 26px ui-monospace,monospace'; ctx.textAlign='center';
+    ctx.fillStyle='#dce7ff'; ctx.fillText('PAUSE', W/2, H/2);
+    ctx.font='700 12px ui-monospace,monospace'; ctx.fillStyle='#7488b0';
+    ctx.fillText('P で再開', W/2, H/2+24); ctx.restore();
+  }
+}
+
+/* ==========================================================================
+   HUD / オーバーレイ
+   ========================================================================== */
+const hScore=document.getElementById('hScore'), hGold=document.getElementById('hGold'),
+      hLevel=document.getElementById('hLevel'), hLives=document.getElementById('hLives');
+function updHud(){
+  hScore.textContent=score.toLocaleString();
+  hGold.textContent=(goldTotal-goldLeft)+' / '+goldTotal;
+  hLevel.textContent=(levelIdx+1)+' / '+LEVELS.length;
+  hLives.textContent=lives>0?'♦'.repeat(lives):'—';
+}
+const ov=document.getElementById('ov'), ovBtn=document.getElementById('ovBtn'),
+      ovSub=document.getElementById('ovSub'), ovTxt=document.getElementById('ovTxt');
+const ovH1=ov.querySelector('h1');
+function showOverlay(title,sub,txt,btn){
+  ovH1.textContent=title; ovSub.textContent=sub; ovTxt.innerHTML=txt; ovBtn.textContent=btn;
+  ov.classList.remove('hide');
+}
+function hideOverlay(){ ov.classList.add('hide'); }
+ovBtn.addEventListener('click',()=>{ ac(); startGame(); });
+
+/* ==========================================================================
+   入力
+   ========================================================================== */
+const KEYMAP={
+  ArrowLeft:'left', ArrowRight:'right', ArrowUp:'up', ArrowDown:'down',
+  KeyA:'left', KeyD:'right', KeyW:'up', KeyS:'down',
+  KeyZ:'digL', Comma:'digL', KeyX:'digR', Period:'digR'
+};
+addEventListener('keydown',ev=>{
+  if(ev.code==='KeyP'){ if(mode==='play'){mode='pause';} else if(mode==='pause'){mode='play';} ev.preventDefault(); return; }
+  if(ev.code==='KeyR'){ if(mode==='play'||mode==='pause'){ loadLevel(levelIdx); mode='play'; } ev.preventDefault(); return; }
+  if(ev.code==='Enter'||ev.code==='Space'){
+    if(!ov.classList.contains('hide')){ ac(); startGame(); ev.preventDefault(); return; }
+  }
+  const k=KEYMAP[ev.code]; if(!k) return;
+  ev.preventDefault();
+  if(!keys[k]){ if(k==='digL') digEdgeL=true; if(k==='digR') digEdgeR=true; }
+  keys[k]=1; ac();
+},{passive:false});
+addEventListener('keyup',ev=>{ const k=KEYMAP[ev.code]; if(k){ keys[k]=0; ev.preventDefault(); } },{passive:false});
+addEventListener('blur',()=>{ for(const k in keys) keys[k]=0; });
+
+document.querySelectorAll('#pad .btn[data-k]').forEach(b=>{
+  const k=b.dataset.k;
+  const on=e=>{ e.preventDefault(); ac();
+    if(!keys[k]){ if(k==='digL') digEdgeL=true; if(k==='digR') digEdgeR=true; }
+    keys[k]=1; b.classList.add('on'); };
+  const off=e=>{ e.preventDefault(); keys[k]=0; b.classList.remove('on'); };
+  b.addEventListener('pointerdown',on);
+  b.addEventListener('pointerup',off);
+  b.addEventListener('pointercancel',off);
+  b.addEventListener('pointerleave',off);
+});
+
+/* ==========================================================================
+   ループ
+   ========================================================================== */
+let last=performance.now();
+function frame(now){
+  let dt=(now-last)/1000; last=now;
+  if(dt>1/25) dt=1/25;
+  time+=dt;
+  if(msgT>0) msgT-=dt;
+
+  if(mode==='play'){
+    const spd=Math.max(.72, 1-(levelIdx*0.05));   // 上のステージほど敵が速い
+    updPlayer(dt);
+    fieldT-=dt;
+    if(fieldT<=0){ buildField(); fieldT=0.12; }
+    if(freezeT>0) freezeT-=dt;
+    else for(const e of enemies){
+      if(e.holdT>0){ e.holdT-=dt; if(e.holdT>0) continue; }
+      updEnemy(e,dt,spd);
+    }
+    updHoles(dt);
+    // 接触判定
+    const px=player.x, py=player.y;
+    for(const e of enemies){
+      if(e.state==='dead') continue;
+      if(e.state==='trapped'&&py<e.y-0.35) continue;
+      if(Math.abs(e.x-px)<0.62 && Math.abs(e.y-py)<0.62){ die(); break; }
+    }
+    if(mode==='play' && exitOpen && player.y<=0.02) clearLevel();
+  }
+  else if(mode==='dead'){ modeT+=dt; if(modeT>1.1) afterDeath(); }
+  else if(mode==='clear'){ modeT+=dt; if(modeT>2.0) nextLevel(); }
+
+  updFx(dt);
+  render(dt);
+  requestAnimationFrame(frame);
+}
+
+/* 初期表示 */
+loadLevel(0); mode='title'; msgT=0; updHud();
+requestAnimationFrame(t=>{ last=t; frame(t); });
+
+})();
+</script>
+</body>
+</html>
