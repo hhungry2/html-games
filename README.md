@@ -41,6 +41,9 @@ BM風ゲーム
 風来のシレン風ローグライク（事前生成マップ全3階・満腹度/レベル/ワナ・スマホ/PC対応）  
 [**fuurai_dungeon.html**](https://hhungry2.github.io/html-games/fuurai_dungeon.html) | [Vercel](https://html-games-eight.vercel.app/fuurai_dungeon.html)  
 
+ななかクラッシュ風 飛距離アタック「ポップ†クラッシュ!!」（角度→パワーで発射・エアリアル/コンボ・再クラッシュ・スマホ/PC対応）  
+[**nanaca_crash.html**](https://hhungry2.github.io/html-games/nanaca_crash.html) | [Vercel](https://html-games-eight.vercel.app/nanaca_crash.html)  
+
 【ツール】  
 
 スマホセンサー測定ダッシュボード（ジャイロ・加速度）  
