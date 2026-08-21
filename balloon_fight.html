@@ -1,0 +1,1204 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#070b22">
+<title>BALLOON FIGHTER（バルーンファイト風アクション）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DotGothic16&family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{
+    height:100%;overflow:hidden;overscroll-behavior:none;
+    background:#05081a;color:#cfe4ff;
+    font-family:"DotGothic16","MS Gothic",monospace;
+    -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
+    touch-action:none;position:fixed;inset:0;
+  }
+  #wrap{
+    position:fixed;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:8px;
+  }
+  #cv{
+    display:block;background:#000;
+    image-rendering:pixelated;image-rendering:crisp-edges;
+    border:3px solid #33477f;border-radius:6px;
+    box-shadow:0 0 34px rgba(90,150,255,.28);
+    touch-action:none;
+  }
+  #hint{font-size:12px;color:#7f9cc8;letter-spacing:.5px;text-align:center;padding:0 10px;line-height:1.5}
+
+  /* ===== タッチ操作パネル ===== */
+  #pad{
+    display:none;position:fixed;left:0;right:0;bottom:0;z-index:10;
+    padding:10px 14px calc(12px + env(safe-area-inset-bottom));
+    justify-content:space-between;align-items:flex-end;pointer-events:none;
+  }
+  body.touch #pad{display:flex}
+  body.touch #hint{display:none}
+  #pad .side{display:flex;gap:min(14px,3.2vw);align-items:flex-end}
+  .btn{
+    pointer-events:auto;--bs:min(78px,19.5vw);
+    width:var(--bs);height:var(--bs);border-radius:50%;
+    background:rgba(28,44,84,.74);border:2px solid rgba(126,178,255,.75);
+    color:#dceaff;font:bold 22px/var(--bs) monospace;text-align:center;
+    box-shadow:0 3px 10px rgba(0,0,0,.45);touch-action:none;
+  }
+  .btn.flap{--bs:min(96px,24vw);font-size:26px;background:rgba(74,44,96,.78);border-color:rgba(255,150,200,.8)}
+  .sysbtn{
+    position:fixed;top:calc(8px + env(safe-area-inset-top));
+    width:42px;height:42px;border-radius:10px;z-index:11;
+    background:rgba(28,44,84,.7);border:2px solid rgba(126,178,255,.6);
+    color:#dceaff;font:bold 15px/38px monospace;text-align:center;
+    pointer-events:auto;touch-action:none;
+  }
+  #pauseBtn{right:10px}
+  #muteBtn{right:60px}
+  .btn.act,.sysbtn.act{background:rgba(80,138,214,.92);transform:scale(.94)}
+  .sysbtn.off{opacity:.45}
+  body.touch #wrap{padding-bottom:calc(min(96px,24vw) + 26px)}
+  body.landscape.touch #wrap{padding-bottom:0}
+  body.landscape .btn{opacity:.85}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="cv" width="512" height="448"></canvas>
+  <div id="hint">← → 移動 ／ Space・↑・Z はばたく（連打で上昇・長押しで自動）<br>P ポーズ ／ M サウンド切替</div>
+</div>
+<div id="pad">
+  <div class="side">
+    <div class="btn" data-k="left">◀</div>
+    <div class="btn" data-k="right">▶</div>
+  </div>
+  <div class="side">
+    <div class="btn flap" data-k="flap">羽</div>
+  </div>
+</div>
+<div id="muteBtn" class="sysbtn" data-k="mute">♪</div>
+<div id="pauseBtn" class="sysbtn" data-k="pause">| |</div>
+<script>
+"use strict";
+(function(){
+
+/* ==================================================================
+   BALLOON FIGHTER  —  バルーンファイト風アクション（1ファイル版）
+   ・風船2個で空を飛び、敵の風船を上から突いて割る
+   ・下から突かれると自分の風船が割れる／全部割れると落下してミス
+   ・画面左右はループ、下は水（フィッシュに注意）
+   ================================================================== */
+
+/* ===================== 基本設定 ===================== */
+const cv  = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const W = cv.width, H = cv.height;          // 512 x 448
+const STEP = 1000/60;
+
+const WATER_Y = 404;                        // 水面
+const CEIL_Y  = 74;                         // プレイエリア上端（スコア表示の下）
+const PLAT_H  = 12;                         // 足場の厚み
+
+/* 物理（60fps基準・添字は風船の数） */
+const GRAV     = [0.30, 0.145, 0.115];
+const FLAP_POW = [0.95, 1.80,  2.10];
+const FLAP_CAP = [-2.0, -3.10, -3.40];
+const AIR_ACC = 0.075, AIR_DRAG = 0.992, AIR_MAXVX = 2.5;
+const GND_ACC = 0.30,  GND_FRIC = 0.86,  GND_MAXVX = 1.9;
+const FLAP_REPEAT = 13;                     // 長押し時の自動はばたき間隔
+
+/* 得点 */
+const SC_POP = 500, SC_KILL = 1000, SC_WATER = 500, SC_BUBBLE = 500, SC_BONUS_BALLOON = 500;
+const EXTRA_EVERY = 10000;
+
+/* 敵の種類（色・攻撃性） */
+const ETYPES = [
+  {body:'#3ad46b', bal:'#7dff9f', aggr:0.42, flap:0.26, acc:0.055, name:'green'},
+  {body:'#ff77c8', bal:'#ffb2e0', aggr:0.68, flap:0.34, acc:0.070, name:'pink'},
+  {body:'#ffd23f', bal:'#ffe98a', aggr:0.92, flap:0.44, acc:0.088, name:'yellow'}
+];
+
+/* 面レイアウト（足場：x,y=上面,w） */
+const LAYOUTS = [
+  [ {x:0,y:372,w:112},{x:400,y:372,w:112},{x:184,y:308,w:144},
+    {x:56,y:236,w:120},{x:336,y:236,w:120},{x:200,y:150,w:112} ],
+  [ {x:64,y:380,w:384},{x:0,y:284,w:120},{x:392,y:284,w:120},
+    {x:176,y:212,w:160},{x:40,y:132,w:104},{x:368,y:132,w:104} ],
+  [ {x:0,y:376,w:104},{x:204,y:376,w:104},{x:408,y:376,w:104},
+    {x:104,y:296,w:104},{x:304,y:296,w:104},
+    {x:0,y:216,w:104},{x:204,y:216,w:104},{x:408,y:216,w:104},
+    {x:104,y:136,w:104},{x:304,y:136,w:104} ],
+  [ {x:96,y:384,w:320},{x:0,y:296,w:104},{x:408,y:296,w:104},
+    {x:168,y:250,w:176},{x:48,y:160,w:128},{x:336,y:160,w:128} ]
+];
+
+/* ===================== サウンド ===================== */
+const SND = (function(){
+  let ac=null, master=null, bgmGain=null, noiseBuf=null, muted=false;
+  let bgmPlaying=false, bgmStep=0, bgmNext=0, bgmTimer=null;
+
+  const NF={A2:110,B2:123.47,C3:130.81,D3:146.83,E3:164.81,F3:174.61,G3:196,
+            A3:220,B3:246.94,C4:261.63,D4:293.66,E4:329.63,F4:349.23,G4:392,
+            A4:440,B4:493.88,C5:523.25,D5:587.33,E5:659.25,G5:783.99,A5:880};
+  const BASS=[NF.A2,NF.A3,NF.E3,NF.A3, NF.F3,NF.C4,NF.F3,NF.C4,
+              NF.G3,NF.D4,NF.G3,NF.D4, NF.E3,NF.B3,NF.E3,NF.G3];
+  const LEAD=[NF.E5,0,NF.C5,0, NF.A4,0,NF.C5,NF.E5, NF.D5,0,NF.B4,0, NF.G4,NF.B4,NF.D5,0];
+  const STEP_DUR=0.135;
+
+  function ensure(){
+    if(!ac){
+      const AC = window.AudioContext||window.webkitAudioContext;
+      if(!AC) return null;
+      ac = new AC();
+      master = ac.createGain(); master.gain.value = 0.30; master.connect(ac.destination);
+      bgmGain = ac.createGain(); bgmGain.gain.value = 0.42; bgmGain.connect(master);
+      const n = Math.floor(ac.sampleRate*0.6);
+      noiseBuf = ac.createBuffer(1,n,ac.sampleRate);
+      const d = noiseBuf.getChannelData(0);
+      for(let i=0;i<n;i++) d[i]=Math.random()*2-1;
+    }
+    if(ac.state==='suspended') ac.resume();
+    return ac;
+  }
+  function tone(f0,f1,dur,type,vol,dest,t0){
+    if(!ensure()||muted) return;
+    const t = t0!=null? t0 : ac.currentTime;
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type||'square';
+    o.frequency.setValueAtTime(f0,t);
+    if(f1 && f1!==f0) o.frequency.exponentialRampToValueAtTime(Math.max(20,f1), t+dur);
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(vol,t+0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(g); g.connect(dest||master);
+    o.start(t); o.stop(t+dur+0.02);
+  }
+  function noise(dur,vol,f0,f1,t0){
+    if(!ensure()||muted) return;
+    const t = t0!=null? t0 : ac.currentTime;
+    const s = ac.createBufferSource(); s.buffer = noiseBuf;
+    const bp = ac.createBiquadFilter(); bp.type='bandpass'; bp.Q.value=1.1;
+    bp.frequency.setValueAtTime(f0,t);
+    if(f1) bp.frequency.exponentialRampToValueAtTime(Math.max(60,f1),t+dur);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(vol,t);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    s.connect(bp); bp.connect(g); g.connect(master);
+    s.start(t); s.stop(t+dur+0.02);
+  }
+  /* --- BGM（軽いループ） --- */
+  function bgmTick(){
+    if(!ac||!bgmPlaying) return;
+    const now = ac.currentTime;
+    while(bgmNext < now + 0.25){
+      const b = BASS[bgmStep%16], l = LEAD[bgmStep%16];
+      if(b) tone(b,b,STEP_DUR*0.85,'triangle',0.30,bgmGain,bgmNext);
+      if(l) tone(l,l,STEP_DUR*0.55,'square',0.085,bgmGain,bgmNext);
+      if(bgmStep%4===0) noise(0.045,0.06,2400,1200,bgmNext);
+      bgmStep++; bgmNext += STEP_DUR;
+    }
+  }
+  return {
+    ensure,
+    isMuted(){ return muted; },
+    toggleMute(){
+      muted=!muted;
+      if(ac) master.gain.setTargetAtTime(muted?0:0.30, ac.currentTime, 0.02);
+      return muted;
+    },
+    startBgm(){
+      if(!ensure()) return;
+      if(bgmPlaying) return;
+      bgmPlaying=true; bgmStep=0; bgmNext=ac.currentTime+0.08;
+      if(bgmTimer) clearInterval(bgmTimer);
+      bgmTimer = setInterval(bgmTick,40);
+    },
+    stopBgm(){ bgmPlaying=false; if(bgmTimer){clearInterval(bgmTimer); bgmTimer=null;} },
+    flap(){ noise(0.09,0.20,900,340); tone(240,150,0.07,'square',0.06); },
+    pop(){ noise(0.14,0.42,1900,240); tone(600,90,0.10,'square',0.12); },
+    bounce(){ tone(420,700,0.07,'square',0.14); },
+    kill(){ tone(520,0,0.06,'square',0.16); tone(780,0,0.06,'square',0.16,null,(ac?ac.currentTime:0)+0.07);
+            tone(1040,0,0.10,'square',0.16,null,(ac?ac.currentTime:0)+0.14); },
+    bubble(){ tone(880,1500,0.09,'sine',0.18); },
+    splash(){ noise(0.30,0.30,700,180); },
+    thud(){ noise(0.16,0.28,320,90); tone(150,60,0.16,'square',0.12); },
+    death(){ tone(500,70,0.55,'square',0.20); noise(0.4,0.10,600,120); },
+    clear(){ const t0=ac?ac.currentTime:0;
+      [NF.C4,NF.E4,NF.G4,NF.C5].forEach((f,i)=>tone(f,f,0.13,'square',0.17,null,t0+i*0.11)); },
+    start(){ const t0=ac?ac.currentTime:0;
+      [NF.G3,NF.C4,NF.E4,NF.G4,NF.C5].forEach((f,i)=>tone(f,f,0.10,'square',0.16,null,t0+i*0.08)); },
+    extra(){ const t0=ac?ac.currentTime:0;
+      [NF.E5,NF.G5,NF.A5].forEach((f,i)=>tone(f,f,0.09,'square',0.16,null,t0+i*0.07)); },
+    pump(){ tone(180,320,0.08,'square',0.10); },
+    fish(){ tone(120,60,0.22,'sawtooth',0.13); },
+    gameover(){ const t0=ac?ac.currentTime:0;
+      [NF.C4,NF.B3,NF.A3,NF.G3,NF.E3].forEach((f,i)=>tone(f,f,0.22,'square',0.18,null,t0+i*0.19)); }
+  };
+})();
+
+/* ===================== 入力 ===================== */
+const keys = {left:false,right:false,flap:false};
+let flapEdge=false, anyPress=false, paused=false;
+
+const KEYMAP = {
+  ArrowLeft:'left', KeyA:'left',
+  ArrowRight:'right', KeyD:'right',
+  Space:'flap', ArrowUp:'flap', KeyZ:'flap', KeyW:'flap', KeyX:'flap', Enter:'flap'
+};
+function press(k,v){
+  if(k==='pause'){ if(v) togglePause(); return; }
+  if(k==='mute'){ if(v){ SND.toggleMute(); refreshMuteBtn(); } return; }
+  if(!(k in keys)) return;
+  if(v && !keys[k] && k==='flap') flapEdge=true;
+  keys[k]=v;
+  if(v) anyPress=true;
+}
+addEventListener('keydown',e=>{
+  SND.ensure();
+  if(e.repeat){ if(KEYMAP[e.code]) e.preventDefault(); return; }
+  if(e.code==='KeyP'){ e.preventDefault(); togglePause(); return; }
+  if(e.code==='KeyM'){ e.preventDefault(); SND.toggleMute(); refreshMuteBtn(); return; }
+  const k = KEYMAP[e.code];
+  if(!k) return;
+  e.preventDefault(); press(k,true);
+});
+addEventListener('keyup',e=>{
+  const k = KEYMAP[e.code];
+  if(!k) return;
+  e.preventDefault(); press(k,false);
+});
+document.querySelectorAll('[data-k]').forEach(el=>{
+  const k = el.dataset.k;
+  const on = e=>{ e.preventDefault(); SND.ensure(); el.classList.add('act'); press(k,true);
+                  if(el.setPointerCapture && e.pointerId!=null){ try{el.setPointerCapture(e.pointerId);}catch(_){} } };
+  const off= e=>{ el.classList.remove('act'); press(k,false); };
+  el.addEventListener('pointerdown',on);
+  el.addEventListener('pointerup',off);
+  el.addEventListener('pointercancel',off);
+  el.addEventListener('lostpointercapture',off);
+  el.addEventListener('contextmenu',e=>e.preventDefault());
+});
+cv.addEventListener('pointerdown',e=>{ e.preventDefault(); SND.ensure(); anyPress=true; });
+
+function refreshMuteBtn(){
+  document.getElementById('muteBtn').classList.toggle('off', SND.isMuted());
+}
+function togglePause(){
+  if(gameState==='title'||gameState==='gameover') return;
+  paused=!paused;
+  if(paused) SND.stopBgm(); else SND.startBgm();
+}
+
+/* ===================== 画面サイズ ===================== */
+function isTouch(){ return matchMedia('(pointer:coarse)').matches || ('ontouchstart' in window); }
+if(isTouch()) document.body.classList.add('touch');
+function resize(){
+  document.body.classList.toggle('landscape', window.innerWidth > window.innerHeight);
+  const touch = document.body.classList.contains('touch');
+  const land  = window.innerWidth > window.innerHeight;
+  const reserveY = touch ? (land ? 24 : Math.min(96, window.innerWidth*0.24) + 46) : 60;
+  const availW = window.innerWidth  - 18;
+  const availH = window.innerHeight - reserveY - 14;
+  const s = Math.max(0.28, Math.min(availW/W, availH/H));
+  cv.style.width  = Math.floor(W*s)+'px';
+  cv.style.height = Math.floor(H*s)+'px';
+}
+addEventListener('resize',resize);
+addEventListener('orientationchange',()=>setTimeout(resize,150));
+
+/* ===================== ゲーム状態 ===================== */
+let gameState='title';       // title / intro / play / clear / gameover / bonus / bonusEnd
+let stateT=0, frameCount=0;
+let score=0, hi=0, lives=3, phase=1, nextExtra=EXTRA_EVERY;
+let platforms=[], enemies=[], bubbles=[], parts=[], pops=[], bballs=[];
+let player=null, spawnPt={x:100,y:300}, enemyPts=[];
+let bonusT=0, bonusPopped=0, bonusSpawned=0, bonusTotal=20, bonusSpawnT=0;
+let shake=0;
+
+try{ hi = parseInt(localStorage.getItem('bf_hi')||'0',10)||0; }catch(_){ hi=0; }
+function saveHi(){ try{ localStorage.setItem('bf_hi',String(hi)); }catch(_){} }
+
+/* 背景の星 */
+const stars=[];
+for(let i=0;i<70;i++) stars.push({x:Math.random()*W, y:20+Math.random()*(WATER_Y-60), r:Math.random()<0.25?1.5:1, p:Math.random()*Math.PI*2});
+
+const fish = {state:'hide', x:W/2, y:H+60, t:200, target:null, anim:0};
+
+/* ===================== ユーティリティ ===================== */
+const rnd = (a,b)=> a + Math.random()*(b-a);
+const irnd = n => (Math.random()*n)|0;
+const clamp = (v,a,b)=> v<a?a:(v>b?b:v);
+function wrapDX(d){ if(d>W/2) d-=W; else if(d<-W/2) d+=W; return d; }
+function wrapX(c){ if(c.x<0) c.x+=W; else if(c.x>=W) c.x-=W; }
+
+function addScore(n,x,y){
+  score += n;
+  if(x!=null) pops.push({x:x,y:y,txt:String(n),t:52,vy:-0.55});
+  if(score >= nextExtra){
+    nextExtra += EXTRA_EVERY; lives++; SND.extra();
+    pops.push({x:x!=null?x:W/2, y:(y!=null?y:120)-16, txt:'1UP', t:80, vy:-0.4, col:'#7dff9f'});
+  }
+  if(score>hi){ hi=score; }
+}
+function burst(x,y,col,n,spd){
+  for(let i=0;i<n;i++){
+    const a = Math.random()*Math.PI*2, s = rnd(0.6,1)*(spd||2.4);
+    parts.push({x:x,y:y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-0.5,life:rnd(18,34),col:col,sz:rnd(1.6,3.4),g:0.10});
+  }
+}
+function splashFx(x){
+  for(let i=0;i<16;i++){
+    parts.push({x:x+rnd(-8,8),y:WATER_Y,vx:rnd(-1.6,1.6),vy:rnd(-3.4,-1.2),life:rnd(20,38),col:'#9fe4ff',sz:rnd(1.4,3),g:0.16});
+  }
+  SND.splash();
+}
+
+/* ===================== キャラクター ===================== */
+function makeChar(x,y){
+  return {x:x,y:y,vx:0,vy:0,balloons:2,slots:[true,true],onGround:false,
+          facing:1,flapAnim:0,flapCd:0,state:'fly',isPlayer:false,inv:0,
+          hitCd:0,bounceCd:0,col:'#ff5252',body:'#eaf4ff',t:0};
+}
+function makePlayer(x,y){
+  const p = makeChar(x,y);
+  p.isPlayer=true; p.col='#ff5252'; p.body='#e9f3ff'; p.inv=64; p.deadT=0;
+  return p;
+}
+function makeEnemy(x,y,typeIdx,delay){
+  const e = makeChar(x,y);
+  const t = ETYPES[typeIdx];
+  e.type=typeIdx; e.col=t.bal; e.body=t.body; e.aggr=t.aggr; e.flapRate=t.flap; e.acc=t.acc;
+  e.state='appear'; e.appearT=delay||0; e.thinkT=irnd(20); e.moveDir=Math.random()<0.5?-1:1;
+  e.wantUp=true; e.pumpT=0; e.paraSwing=Math.random()*Math.PI*2;
+  return e;
+}
+function topOff(c){
+  if(c.state==='para') return -24;
+  return (c.balloons>0 && (c.state==='fly'||c.state==='appear')) ? -28 : -9;
+}
+
+/* --------- 足場との当たり判定（左右ループ考慮） --------- */
+function collidePlatforms(c){
+  c.onGround=false;
+  const hw = 7;
+  for(const pf of platforms){
+    for(let k=-1;k<=1;k++){
+      const px = pf.x + k*W, py = pf.y, pw = pf.w;
+      if(c.x+hw <= px || c.x-hw >= px+pw) continue;
+      const top = c.y + topOff(c), bot = c.y + 9;
+      if(bot <= py || top >= py+PLAT_H) continue;
+      const oTop = bot - py, oBot = (py+PLAT_H) - top;
+      const oL = (c.x+hw) - px, oR = (px+pw) - (c.x-hw);
+      const minV = Math.min(oTop,oBot), minH = Math.min(oL,oR);
+      if(minV <= minH){
+        if(oTop < oBot){                       // 上に着地
+          c.y -= oTop; if(c.vy>0) c.vy = 0;
+          c.onGround = true; onLand(c);
+        }else{                                 // 下から頭（風船）をぶつけた
+          c.y += oBot; c.vy = Math.max(0.5, -c.vy*0.35);
+          if(c.isPlayer && c.state==='fly') SND.bounce();
+        }
+      }else{
+        if(oL < oR) c.x -= oL; else c.x += oR;
+        c.vx = -c.vx*0.4;
+      }
+    }
+  }
+}
+function onLand(c){
+  if(c.isPlayer){
+    if(c.state==='fall'){ SND.thud(); killPlayer(); }
+    return;
+  }
+  if(c.state==='para'){                        // パラシュート着地 → 風船をふくらませる
+    c.state='pump'; c.pumpT=170; c.vx=0; c.vy=0; SND.pump();
+  }
+}
+
+/* --------- 共通物理 --------- */
+function physics(c){
+  const b = (c.state==='fly') ? c.balloons : 0;
+  if(c.state==='para'){
+    c.vy += 0.05; if(c.vy>0.9) c.vy=0.9;
+    c.paraSwing += 0.05;
+    c.vx = Math.sin(c.paraSwing)*0.55;
+  }else{
+    c.vy += GRAV[Math.min(b,2)];
+    const maxFall = b>0 ? 2.8 : 4.4;
+    if(c.vy>maxFall) c.vy=maxFall;
+    c.vx *= c.onGround ? GND_FRIC : AIR_DRAG;
+  }
+  const lim = c.onGround ? GND_MAXVX : AIR_MAXVX;
+  c.vx = clamp(c.vx,-lim,lim);
+  c.x += c.vx; c.y += c.vy;
+  wrapX(c);
+  const t = c.y + topOff(c);
+  if(t < CEIL_Y){                              // 天井
+    c.y += (CEIL_Y - t);
+    c.vy = Math.abs(c.vy)*0.35 + 0.5;
+    if(c.isPlayer && c.state==='fly') SND.bounce();
+  }
+  collidePlatforms(c);
+  if(c.flapAnim>0) c.flapAnim--;
+  if(c.flapCd>0) c.flapCd--;
+  if(c.hitCd>0) c.hitCd--;
+  if(c.bounceCd>0) c.bounceCd--;
+  if(Math.abs(c.vx)>0.25) c.facing = c.vx>0?1:-1;
+  c.t++;
+}
+function flap(c){
+  const b = (c.state==='fly') ? Math.min(c.balloons,2) : 0;
+  c.vy = Math.max(FLAP_CAP[b], c.vy - FLAP_POW[b]);
+  c.onGround=false; c.flapAnim=12; c.flapCd=FLAP_REPEAT;
+  if(c.isPlayer) SND.flap();
+}
+
+/* ===================== プレイヤー ===================== */
+function updatePlayer(p){
+  if(p.state==='dead'){ p.deadT--; return; }
+  if(p.inv>0) p.inv--;
+
+  const acc = p.onGround ? GND_ACC : AIR_ACC;
+  if(keys.left)  { p.vx -= acc; p.facing=-1; }
+  if(keys.right) { p.vx += acc; p.facing= 1; }
+
+  if(flapEdge) p.flapCd = 0;
+  if(keys.flap && p.flapCd<=0 && (p.state==='fly'||p.state==='fall')) flap(p);
+
+  physics(p);
+
+  if(p.y + 6 > WATER_Y){
+    if(gameState==='play'){                    // 着水＝ミス
+      splashFx(p.x); killPlayer(); return;
+    }else{                                     // ボーナス面・演出中は跳ね返すだけ
+      p.y = WATER_Y - 6; p.vy = -2.2;
+      for(let i=0;i<6;i++) parts.push({x:p.x+rnd(-6,6),y:WATER_Y,vx:rnd(-1.2,1.2),vy:rnd(-2.6,-1),life:rnd(14,26),col:'#9fe4ff',sz:rnd(1.4,2.6),g:0.16});
+      SND.splash();
+    }
+  }
+  if(p.y > H+40){
+    if(gameState==='play') killPlayer();
+    else { p.y = WATER_Y-20; p.vy = -2.0; }
+  }
+}
+function killPlayer(){
+  if(player.state==='dead') return;
+  player.state='dead'; player.deadT=110;
+  burst(player.x,player.y-8,'#ffd9d9',14,3);
+  lives--; shake=10;
+  SND.death();
+}
+function respawn(){
+  const p = makePlayer(spawnPt.x, spawnPt.y);
+  p.inv = 120;
+  player = p;
+  for(let i=0;i<12;i++) parts.push({x:p.x+rnd(-10,10),y:p.y+rnd(-14,6),vx:rnd(-1,1),vy:rnd(-1.6,0),life:rnd(14,26),col:'#ffffff',sz:rnd(1.5,3),g:0.02});
+}
+
+/* ===================== 敵 ===================== */
+function updateEnemy(e){
+  if(e.state==='appear'){
+    e.appearT--;
+    if(e.appearT<=0){ e.state='fly'; e.vy=-1.2; burst(e.x,e.y-10,e.col,10,1.8); }
+    return;
+  }
+  if(e.state==='pump'){
+    e.pumpT--;
+    if(e.pumpT%34===0) SND.pump();
+    if(e.pumpT<=0){
+      e.state='fly'; e.balloons=1; e.slots=[true,false]; e.vy=-2.2;
+      burst(e.x-8,e.y-20,e.col,8,1.6);
+    }
+    physics(e);
+    return;
+  }
+  if(e.state==='para'){
+    physics(e);
+    if(e.y + 6 > WATER_Y){                     // 水に落ちた
+      splashFx(e.x); addScore(SC_WATER, e.x, e.y-20); e.dead=true;
+    }
+    return;
+  }
+
+  /* ---- 飛行AI ---- */
+  const tgt = (player && player.state!=='dead') ? player : null;
+  e.thinkT--;
+  if(e.thinkT<=0){
+    e.thinkT = 10 + irnd(16);
+    if(tgt){
+      const dx = wrapDX(tgt.x - e.x);
+      e.moveDir = Math.abs(dx)<14 ? (Math.random()<0.5?-1:1) : Math.sign(dx);
+      if(Math.random() > e.aggr) e.moveDir = [-1,0,1][irnd(3)];
+      e.wantUp = (e.y > tgt.y - 26);
+      if(e.balloons<2 && Math.random()<0.4) e.wantUp = true;   // 風船が減ると必死になる
+    }else{
+      if(Math.random()<0.35) e.moveDir = [-1,0,1][irnd(3)];
+      e.wantUp = e.y > 250;
+    }
+  }
+  if(e.y > WATER_Y-70) e.wantUp = true;        // 水没回避
+  if(e.y < CEIL_Y+34) e.wantUp = false;
+
+  e.vx += e.moveDir * e.acc;
+  if(e.wantUp && e.flapCd<=0 && Math.random() < e.flapRate) flap(e);
+
+  physics(e);
+
+  if(e.y + 6 > WATER_Y){ splashFx(e.x); addScore(SC_WATER,e.x,e.y-20); e.dead=true; }
+}
+
+/* ===================== 当たり判定（キャラ同士） ===================== */
+function canPop(c){ return c.state==='fly' && c.balloons>0; }
+function popBalloon(c, attacker){
+  const idx = c.slots.lastIndexOf(true);
+  if(idx<0) return;
+  c.slots[idx]=false; c.balloons--; c.hitCd=34;
+  const bx = c.x + (idx===0?-8:8), by = c.y-20;
+  burst(bx,by,c.col,12,2.6);
+  SND.pop();
+  if(c.balloons<=0){
+    if(c.isPlayer){ c.state='fall'; c.vy=-1.0; shake=6; }
+    else{ c.state='para'; c.vy=-0.6; c.vx*=0.3; c.paraSwing=Math.random()*Math.PI*2;
+          if(attacker && attacker.isPlayer) addScore(SC_POP, c.x, c.y-24); }
+  }else if(!c.isPlayer && attacker && attacker.isPlayer){
+    addScore(SC_POP, c.x, c.y-24);
+  }
+}
+function softBounce(a,b,dx,dy){          // 音・反動なしで重なりを解くだけ
+  const len = Math.hypot(dx,dy)||1;
+  const nx=dx/len, ny=dy/len;
+  a.vx -= nx*0.28; a.vy -= ny*0.20;
+  b.vx += nx*0.28; b.vy += ny*0.20;
+}
+function bounceApart(a,b,dx,dy){
+  let nx=dx, ny=dy;
+  const len = Math.hypot(nx,ny)||1;
+  nx/=len; ny/=len;
+  const rvx = a.vx-b.vx, rvy = a.vy-b.vy;
+  const sp = rvx*nx + rvy*ny;
+  const imp = (sp>0? sp : 0) + 0.9;
+  a.vx -= nx*imp; a.vy -= ny*imp*0.7;
+  b.vx += nx*imp; b.vy += ny*imp*0.7;
+  a.onGround=false; b.onGround=false;
+  a.bounceCd=12; b.bounceCd=12;
+  SND.bounce();
+}
+function charVsChar(a,b){
+  const dx = wrapDX(b.x-a.x), dy = b.y-a.y;
+  if(Math.abs(dx)>44 || Math.abs(dy)>52) return;
+  const aB = canPop(a), bB = canPop(b);
+
+  if(aB && Math.abs(dx)<18 && Math.abs(dy+18.5)<16.5){   // bがaの風船を踏んだ
+    if(a.hitCd<=0){ popBalloon(a,b); bounceApart(a,b,dx,dy); }
+    else softBounce(a,b,dx,dy);
+    return;
+  }
+  if(bB && Math.abs(dx)<18 && Math.abs(dy-18.5)<16.5){   // aがbの風船を踏んだ
+    if(b.hitCd<=0){ popBalloon(b,a); bounceApart(a,b,dx,dy); }
+    else softBounce(a,b,dx,dy);
+    return;
+  }
+  const balHit  = aB && bB && Math.abs(dx)<22 && Math.abs(dy)<17;
+  const bodyHit = Math.abs(dx)<14 && Math.abs(dy)<16;
+  if(balHit || bodyHit){
+    if(a.bounceCd<=0 && b.bounceCd<=0) bounceApart(a,b,dx,dy);
+    else softBounce(a,b,dx,dy);
+  }
+}
+function playerVsEnemy(p,e){
+  if(p.state==='dead') return;
+  if(e.state==='para' || e.state==='pump'){    // 落下中・ポンプ中はトドメを刺せる
+    const dx = wrapDX(e.x-p.x), dy = e.y-p.y;
+    if(e.hitCd<=0 && Math.abs(dx)<18 && Math.abs(dy)<26){
+      e.dead=true; addScore(SC_KILL,e.x,e.y-16);
+      burst(e.x,e.y-6,e.body,16,3); SND.kill();
+    }
+    return;
+  }
+  if(e.state!=='fly') return;
+  if(p.inv>0 && p.state==='fly'){              // 無敵中は当たらない
+    const dx = wrapDX(e.x-p.x), dy = e.y-p.y;
+    if(Math.abs(dx)<24 && Math.abs(dy)<30) return;
+  }
+  charVsChar(p,e);
+}
+
+/* ===================== フィッシュ・バブル ===================== */
+function updateFish(){
+  fish.anim++;
+  if(fish.state==='hide'){
+    fish.t--;
+    fish.y = H+60;
+    if(fish.t<=0){
+      const cands = [];
+      if(player && player.state!=='dead' && player.y > WATER_Y-70) cands.push(player);
+      for(const e of enemies) if(!e.dead && (e.state==='fly'||e.state==='para') && e.y > WATER_Y-70) cands.push(e);
+      if(cands.length){
+        fish.target = cands[irnd(cands.length)];
+        fish.x = fish.target.x; fish.y = WATER_Y+34; fish.state='rise'; SND.fish();
+      }else fish.t = 24;
+    }
+  }else if(fish.state==='rise'){
+    fish.y -= 2.3;
+    if(fish.target){
+      const dx = wrapDX(fish.target.x - fish.x);
+      fish.x += clamp(dx,-1.1,1.1); wrapX(fish);
+      const dy = fish.target.y - fish.y;
+      if(Math.abs(dx)<18 && dy>-4 && dy<26 && fish.target.state!=='dead' && !fish.target.dead){
+        fish.state='grab'; fish.grabbed=fish.target;
+      }
+    }
+    if(fish.y < WATER_Y-86) fish.state='sink';
+  }else if(fish.state==='grab'){
+    fish.y += 1.9;
+    const g = fish.grabbed;
+    if(g){ g.x = fish.x; g.y = fish.y + 10; g.vx=0; g.vy=0; }
+    if(fish.y > WATER_Y+6){
+      if(g){
+        if(g.isPlayer){ splashFx(fish.x); killPlayer(); }
+        else{ g.dead=true; splashFx(fish.x); addScore(SC_WATER,fish.x,WATER_Y-24); }
+      }
+      fish.grabbed=null; fish.state='sink';
+    }
+  }else{                                        // sink
+    fish.y += 2.6;
+    if(fish.y > H+50){ fish.state='hide'; fish.t = 150+irnd(220); fish.target=null; }
+  }
+}
+function updateBubbles(){
+  if(gameState!=='play') return;
+  if(frameCount % 7 === 0 && bubbles.length<4 && Math.random()<0.10){
+    bubbles.push({x:rnd(20,W-20), y:WATER_Y-2, vy:rnd(-0.85,-0.55), p:Math.random()*6.28, r:rnd(5,7.5)});
+  }
+  for(let i=bubbles.length-1;i>=0;i--){
+    const b = bubbles[i];
+    b.y += b.vy; b.p += 0.06; b.x += Math.sin(b.p)*0.7; wrapX(b);
+    if(player && player.state!=='dead'){
+      const dx = wrapDX(b.x-player.x), dy = b.y-player.y;
+      if(Math.abs(dx)<16 && dy>-30 && dy<14){
+        addScore(SC_BUBBLE,b.x,b.y); SND.bubble();
+        burst(b.x,b.y,'#bff0ff',8,1.8);
+        bubbles.splice(i,1); continue;
+      }
+    }
+    if(b.y < CEIL_Y-10) bubbles.splice(i,1);
+  }
+}
+function updateParticles(){
+  for(let i=parts.length-1;i>=0;i--){
+    const p = parts[i];
+    p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.life--;
+    if(p.life<=0) parts.splice(i,1);
+  }
+  for(let i=pops.length-1;i>=0;i--){
+    const p = pops[i]; p.y += p.vy; p.t--;
+    if(p.t<=0) pops.splice(i,1);
+  }
+  if(shake>0) shake--;
+}
+
+/* ===================== 面の構築・進行 ===================== */
+let introIsBonus=false;
+
+function buildPhase(){
+  const L = LAYOUTS[(phase-1) % LAYOUTS.length];
+  platforms = L.map(p=>({x:p.x,y:p.y,w:p.w}));
+  const low = platforms.slice().sort((a,b)=>b.y-a.y)[0];
+  spawnPt = {x: low.x + low.w*0.35, y: low.y - 12};
+  enemyPts = platforms.slice().sort((a,b)=>a.y-b.y).map(p=>({x:p.x+p.w*0.5, y:p.y-14}));
+
+  player = makePlayer(spawnPt.x, spawnPt.y);
+  enemies = []; bubbles=[]; bballs=[]; parts=[]; pops=[];
+  fish.state='hide'; fish.t=200+irnd(160); fish.y=H+60; fish.target=null; fish.grabbed=null;
+
+  const num = Math.min(3 + Math.floor((phase-1)/2), 6);
+  const maxT = Math.min(2, Math.floor((phase-1)/2));
+  for(let i=0;i<num;i++){
+    const pt = enemyPts[i % enemyPts.length];
+    const t = irnd(maxT+1);
+    const e = makeEnemy(pt.x + rnd(-18,18), pt.y, t, 40 + i*26);
+    enemies.push(e);
+  }
+}
+function startBonusPhase(){
+  platforms = []; enemies=[]; bubbles=[]; bballs=[]; parts=[]; pops=[];
+  fish.state='hide'; fish.y=H+60; fish.t=99999; fish.target=null; fish.grabbed=null;
+  spawnPt = {x:W/2, y:330};
+  player = makePlayer(W/2, 330); player.vy = -1.5;
+  bonusT = 24*60; bonusPopped=0; bonusSpawned=0; bonusTotal=20; bonusSpawnT=40;
+}
+function startPhase(){
+  introIsBonus = (phase % 3 === 0);
+  if(introIsBonus) startBonusPhase(); else buildPhase();
+  gameState='intro'; stateT=110; paused=false;
+}
+function startGame(){
+  score=0; lives=3; phase=1; nextExtra=EXTRA_EVERY;
+  SND.ensure(); SND.start();
+  startPhase();
+}
+function gameOver(){
+  gameState='gameover'; stateT=250; SND.stopBgm(); SND.gameover();
+  if(score>hi){ hi=score; } saveHi();
+}
+
+/* ===================== ステップ処理 ===================== */
+const titleBalls=[];
+for(let i=0;i<7;i++) titleBalls.push({x:rnd(20,W-20), y:rnd(0,H), v:rnd(0.25,0.6), p:Math.random()*6.28,
+                                      col:['#ff5252','#3ad46b','#ff77c8','#ffd23f','#63b8ff'][irnd(5)]});
+
+function stepTitle(){
+  for(const b of titleBalls){
+    b.y -= b.v; b.p += 0.02; b.x += Math.sin(b.p)*0.4;
+    if(b.y < -30){ b.y = H+30; b.x = rnd(20,W-20); }
+  }
+  updateParticles();
+  if(anyPress) startGame();
+}
+function stepPlay(){
+  updatePlayer(player);
+  if(player.state==='dead' && player.deadT<=0){
+    if(lives>0) respawn(); else { gameOver(); return; }
+  }
+  for(const e of enemies) if(!e.dead) updateEnemy(e);
+  for(let i=0;i<enemies.length;i++){
+    for(let j=i+1;j<enemies.length;j++){
+      const a=enemies[i], b=enemies[j];
+      if(a.dead||b.dead) continue;
+      if(a.state==='fly' && b.state==='fly') charVsChar(a,b);
+    }
+  }
+  for(const e of enemies) if(!e.dead) playerVsEnemy(player,e);
+  enemies = enemies.filter(e=>!e.dead);
+  updateFish(); updateBubbles(); updateParticles();
+  if(enemies.length===0 && player.state!=='dead'){
+    gameState='clear'; stateT=150; SND.stopBgm(); SND.clear();
+  }
+}
+function stepBonus(){
+  updatePlayer(player);
+  if(player.state==='dead' && player.deadT<=0){
+    if(lives>0) respawn(); else { gameOver(); return; }
+  }
+  bonusT--;
+  if(bonusSpawned<bonusTotal){
+    bonusSpawnT--;
+    if(bonusSpawnT<=0){
+      bonusSpawnT = 24+irnd(16); bonusSpawned++;
+      bballs.push({x:rnd(28,W-28), y:WATER_Y-6, vy:-rnd(0.75,1.15), p:Math.random()*6.28,
+                   col:['#ff5252','#3ad46b','#ff77c8','#ffd23f','#63b8ff'][irnd(5)]});
+    }
+  }
+  for(let i=bballs.length-1;i>=0;i--){
+    const b = bballs[i];
+    b.y += b.vy; b.p += 0.05; b.x += Math.sin(b.p)*0.6; wrapX(b);
+    if(player.state!=='dead'){
+      const dx = wrapDX(b.x-player.x), dy = b.y-player.y;
+      if(Math.abs(dx)<18 && dy>-32 && dy<16){
+        bonusPopped++; addScore(SC_BONUS_BALLOON,b.x,b.y); SND.pop();
+        burst(b.x,b.y,b.col,12,2.4); bballs.splice(i,1); continue;
+      }
+    }
+    if(b.y < CEIL_Y-10) bballs.splice(i,1);
+  }
+  updateParticles();
+  if(bonusT<=0 || (bonusSpawned>=bonusTotal && bballs.length===0)){
+    gameState='bonusEnd'; stateT=210; SND.stopBgm();
+    if(bonusPopped>=bonusTotal){ addScore(3000, W/2, 210); SND.extra(); }
+    SND.clear();
+  }
+}
+function step(){
+  frameCount++;
+  switch(gameState){
+    case 'title': stepTitle(); break;
+    case 'intro':
+      stateT--; updateParticles();
+      if(stateT<=0){ gameState = introIsBonus ? 'bonus' : 'play'; SND.startBgm(); }
+      break;
+    case 'play': stepPlay(); break;
+    case 'bonus': stepBonus(); break;
+    case 'clear':
+      stateT--; updatePlayer(player); updateParticles();
+      if(stateT<=0){ phase++; startPhase(); }
+      break;
+    case 'bonusEnd':
+      stateT--; updatePlayer(player); updateParticles();
+      if(stateT<=0){ phase++; startPhase(); }
+      break;
+    case 'gameover':
+      stateT--; updateParticles();
+      if(stateT<=0 || (anyPress && stateT<180)){ gameState='title'; }
+      break;
+  }
+  flapEdge=false; anyPress=false;
+}
+
+/* ===================== 描画ヘルパ ===================== */
+function roundRect(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y);
+  ctx.closePath();
+}
+function setFont(size,retro){
+  ctx.font = (retro ? '' : '') + size+'px ' + (retro
+      ? '"Press Start 2P","DotGothic16","MS Gothic",monospace'
+      : '"DotGothic16","MS Gothic",monospace');
+}
+function txt(s,x,y,size,col,align,retro,sh){
+  setFont(size,retro);
+  ctx.textAlign = align||'left'; ctx.textBaseline='alphabetic';
+  if(sh!==false){ ctx.fillStyle='rgba(0,0,0,.72)'; ctx.fillText(s,x+2,y+2); }
+  ctx.fillStyle=col; ctx.fillText(s,x,y);
+}
+function pad(n,d){ let s=String(n); while(s.length<d) s='0'+s; return s; }
+
+function drawBalloon(x,y,col,scale){
+  const s = scale==null?1:scale;
+  ctx.save();
+  ctx.translate(x,y); ctx.scale(s,s);
+  ctx.lineWidth=2; ctx.strokeStyle='rgba(6,8,26,.85)';
+  ctx.fillStyle=col;
+  ctx.beginPath(); ctx.ellipse(0,0,7.5,8.5,0,0,6.283); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-2.6,7.6); ctx.lineTo(2.6,7.6); ctx.lineTo(0,11.2); ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,.55)';
+  ctx.beginPath(); ctx.ellipse(-2.6,-3,2.1,2.9,-0.5,0,6.283); ctx.fill();
+  ctx.restore();
+}
+function drawParachute(x,y,col){
+  ctx.save();
+  ctx.strokeStyle='rgba(240,248,255,.85)'; ctx.lineWidth=1.4;
+  ctx.beginPath(); ctx.moveTo(x-11,y-16); ctx.lineTo(x-4,y-6);
+  ctx.moveTo(x+11,y-16); ctx.lineTo(x+4,y-6); ctx.stroke();
+  ctx.fillStyle=col; ctx.strokeStyle='rgba(6,8,26,.85)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(x,y-16,12,Math.PI,0); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,.35)';
+  ctx.beginPath(); ctx.arc(x-4,y-16,5,Math.PI,0); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function drawPump(c){
+  const x=c.x, y=c.y;
+  const grow = 1 - Math.max(0, c.pumpT)/170;
+  ctx.save();
+  ctx.fillStyle='#8b7ad8'; ctx.strokeStyle='rgba(6,8,26,.85)'; ctx.lineWidth=2;
+  roundRect(x+6,y-2,8,10,2); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle='#d8d0ff'; ctx.lineWidth=2.5;
+  const ph = (c.pumpT%34<17)?3:7;
+  ctx.beginPath(); ctx.moveTo(x+10,y-2); ctx.lineTo(x+10,y-2-ph); ctx.stroke();
+  ctx.restore();
+  if(grow>0.06) drawBalloon(x-8, y-14 - 8*grow, c.col, 0.35+grow*0.75);
+}
+function drawBody(c){
+  const x=c.x, y=c.y, f=c.facing;
+  const flapping = c.flapAnim>0;
+  const armUp = flapping ? (c.flapAnim>6 ? 1 : 0.45) : 0;
+  ctx.save();
+  ctx.lineJoin='round'; ctx.lineCap='round';
+  /* 脚 */
+  ctx.strokeStyle='#242a4d'; ctx.lineWidth=3;
+  const spread = flapping?4.5:2;
+  ctx.beginPath();
+  ctx.moveTo(x-2.5,y+3); ctx.lineTo(x-2.5-spread,y+8.5);
+  ctx.moveTo(x+2.5,y+3); ctx.lineTo(x+2.5+spread,y+8.5);
+  ctx.stroke();
+  /* 腕 */
+  ctx.strokeStyle = c.isPlayer ? '#ffd77a' : '#f4f8ff';
+  ctx.lineWidth=3;
+  const ay = y-2 - armUp*7.5;
+  ctx.beginPath();
+  ctx.moveTo(x-4,y-1); ctx.lineTo(x-9.5,ay);
+  ctx.moveTo(x+4,y-1); ctx.lineTo(x+9.5,ay);
+  ctx.stroke();
+  /* 胴体 */
+  ctx.fillStyle=c.body; ctx.strokeStyle='rgba(6,8,26,.9)'; ctx.lineWidth=2;
+  roundRect(x-5.5,y-3,11,9,3.5); ctx.fill(); ctx.stroke();
+  /* 頭 */
+  ctx.beginPath(); ctx.arc(x,y-8,5.2,0,6.283);
+  ctx.fillStyle='#ffdfb5'; ctx.fill(); ctx.stroke();
+  /* ヘルメット */
+  ctx.beginPath(); ctx.arc(x,y-8.4,5.5,Math.PI*1.02,Math.PI*2.02); ctx.closePath();
+  ctx.fillStyle = c.isPlayer ? '#2f6dff' : c.body; ctx.fill(); ctx.stroke();
+  /* 目 */
+  ctx.fillStyle='#1a1f38';
+  ctx.beginPath(); ctx.arc(x+f*2.1,y-7.2,1.25,0,6.283); ctx.fill();
+  ctx.restore();
+}
+function drawCharacter(c){
+  if(c.state==='dead') return;
+  if(c.isPlayer && c.inv>0 && (frameCount>>2)%2===0) return;
+  if(c.state==='para') drawParachute(c.x,c.y,c.col);
+  if((c.state==='fly'||c.state==='appear') && c.balloons>0){
+    ctx.strokeStyle='rgba(232,242,255,.8)'; ctx.lineWidth=1.3;
+    ctx.beginPath();
+    for(let i=0;i<2;i++){
+      if(!c.slots[i]) continue;
+      const bx = c.x + (i===0?-8:8);
+      ctx.moveTo(bx, c.y-8.6); ctx.lineTo(c.x + (i===0?-2:2), c.y-11.5);
+    }
+    ctx.stroke();
+    for(let i=0;i<2;i++) if(c.slots[i]) drawBalloon(c.x+(i===0?-8:8), c.y-20, c.col);
+  }
+  if(c.state==='pump') drawPump(c);
+  drawBody(c);
+}
+function drawWrapped(c,fn){
+  fn(c);
+  if(c.x < 42){ const ox=c.x; c.x=ox+W; fn(c); c.x=ox; }
+  else if(c.x > W-42){ const ox=c.x; c.x=ox-W; fn(c); c.x=ox; }
+}
+
+/* ===================== 背景 ===================== */
+let skyGrad=null;
+function drawSky(){
+  if(!skyGrad){
+    skyGrad = ctx.createLinearGradient(0,0,0,WATER_Y);
+    skyGrad.addColorStop(0,'#05081e');
+    skyGrad.addColorStop(0.55,'#0b1338');
+    skyGrad.addColorStop(1,'#16265c');
+  }
+  ctx.fillStyle=skyGrad; ctx.fillRect(0,0,W,WATER_Y);
+}
+function drawStarsMoon(){
+  for(const s of stars){
+    const a = 0.35 + 0.45*Math.abs(Math.sin(frameCount*0.02 + s.p));
+    ctx.fillStyle='rgba(255,255,255,'+a.toFixed(2)+')';
+    ctx.fillRect(s.x, s.y, s.r, s.r);
+  }
+  /* 月 */
+  ctx.save();
+  const mg = ctx.createRadialGradient(432,116,18,432,116,44);
+  mg.addColorStop(0,'rgba(255,246,205,.22)');
+  mg.addColorStop(1,'rgba(255,246,205,0)');
+  ctx.fillStyle=mg;
+  ctx.beginPath(); ctx.arc(432,116,44,0,6.283); ctx.fill();
+  ctx.fillStyle='#fff4c8';
+  ctx.beginPath(); ctx.arc(432,116,22,0,6.283); ctx.fill();
+  ctx.fillStyle='rgba(214,198,140,.55)';
+  ctx.beginPath(); ctx.arc(426,110,5,0,6.283); ctx.fill();
+  ctx.beginPath(); ctx.arc(439,122,3.4,0,6.283); ctx.fill();
+  ctx.beginPath(); ctx.arc(432,127,2.4,0,6.283); ctx.fill();
+  ctx.restore();
+}
+function drawWater(){
+  const g = ctx.createLinearGradient(0,WATER_Y,0,H);
+  g.addColorStop(0,'#2a7fd8'); g.addColorStop(1,'#071f4d');
+  ctx.fillStyle=g; ctx.fillRect(0,WATER_Y,W,H-WATER_Y);
+  ctx.strokeStyle='rgba(190,238,255,.85)'; ctx.lineWidth=2;
+  ctx.beginPath();
+  for(let x=0;x<=W;x+=4){
+    const y = WATER_Y + Math.sin(x*0.05 + frameCount*0.05)*2.6;
+    if(x===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,.16)';
+  for(let i=0;i<9;i++){
+    const x = (i*61 + (frameCount*0.35)) % W;
+    const y = WATER_Y + 12 + (i%3)*10;
+    ctx.fillRect(x, y + Math.sin(frameCount*0.06+i)*1.5, 12, 2);
+  }
+}
+function drawPlatforms(){
+  for(const pf of platforms){
+    ctx.fillStyle='rgba(0,0,0,.28)'; ctx.fillRect(pf.x+2, pf.y+PLAT_H, pf.w, 4);
+    ctx.fillStyle='#43305f'; ctx.fillRect(pf.x, pf.y, pf.w, PLAT_H);
+    ctx.fillStyle='#5ce38d'; ctx.fillRect(pf.x, pf.y, pf.w, 4);
+    ctx.fillStyle='#2fae63'; ctx.fillRect(pf.x, pf.y+4, pf.w, 2);
+    ctx.strokeStyle='rgba(0,0,0,.30)'; ctx.lineWidth=1;
+    ctx.beginPath();
+    for(let x=pf.x+8;x<pf.x+pf.w;x+=16){ ctx.moveTo(x+0.5,pf.y+6); ctx.lineTo(x+0.5,pf.y+PLAT_H); }
+    ctx.stroke();
+    ctx.strokeStyle='rgba(255,255,255,.18)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(pf.x,pf.y+0.5); ctx.lineTo(pf.x+pf.w,pf.y+0.5); ctx.stroke();
+  }
+}
+function drawFish(){
+  if(fish.state==='hide') return;
+  const x=fish.x, y=fish.y;
+  const open = (fish.state==='rise'||fish.state==='grab');
+  const gap = open ? 7 + Math.sin(fish.anim*0.3)*2 : 2;
+  ctx.save();
+  ctx.strokeStyle='rgba(4,6,20,.9)'; ctx.lineWidth=2;
+  /* 体 */
+  ctx.fillStyle='#2b3f7a';
+  ctx.beginPath(); ctx.ellipse(x,y+26,15,30,0,0,6.283); ctx.fill(); ctx.stroke();
+  /* 上あご */
+  ctx.fillStyle='#3d55a0';
+  ctx.beginPath();
+  ctx.moveTo(x-15,y+gap); ctx.quadraticCurveTo(x,y-16-gap, x+15,y+gap); ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  /* 歯 */
+  ctx.fillStyle='#fff';
+  for(let i=-2;i<=2;i++){
+    ctx.beginPath();
+    ctx.moveTo(x+i*5-2.4, y+gap-1); ctx.lineTo(x+i*5+2.4, y+gap-1); ctx.lineTo(x+i*5, y+gap+4.5);
+    ctx.closePath(); ctx.fill();
+  }
+  /* 目 */
+  ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(x-7,y+16,3.4,0,6.283); ctx.fill();
+  ctx.beginPath(); ctx.arc(x+7,y+16,3.4,0,6.283); ctx.fill();
+  ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(x-6.4,y+16.6,1.7,0,6.283); ctx.fill();
+  ctx.beginPath(); ctx.arc(x+7.6,y+16.6,1.7,0,6.283); ctx.fill();
+  ctx.restore();
+}
+function drawBubble(b){
+  ctx.save();
+  ctx.strokeStyle='rgba(200,240,255,.9)'; ctx.lineWidth=2;
+  ctx.fillStyle='rgba(140,220,255,.28)';
+  ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,6.283); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,.7)';
+  ctx.beginPath(); ctx.arc(b.x-b.r*0.35,b.y-b.r*0.35,b.r*0.22,0,6.283); ctx.fill();
+  ctx.restore();
+}
+function drawParticles(){
+  for(const p of parts){
+    ctx.globalAlpha = Math.min(1, p.life/16);
+    ctx.fillStyle = p.col;
+    ctx.fillRect(p.x-p.sz/2, p.y-p.sz/2, p.sz, p.sz);
+  }
+  ctx.globalAlpha=1;
+  for(const p of pops){
+    ctx.globalAlpha = Math.min(1, p.t/18);
+    txt(p.txt, p.x, p.y, 11, p.col||'#ffee88', 'center', true);
+  }
+  ctx.globalAlpha=1;
+}
+
+/* ===================== HUD・オーバーレイ ===================== */
+function drawLifeIcon(x,y,col){
+  ctx.save();
+  ctx.translate(x,y); ctx.scale(0.62,0.62);
+  drawBalloon(0,0,col);
+  ctx.restore();
+}
+function drawHUD(){
+  const bg = ctx.createLinearGradient(0,0,0,CEIL_Y);
+  bg.addColorStop(0,'rgba(2,4,16,.72)');
+  bg.addColorStop(1,'rgba(2,4,16,0)');
+  ctx.fillStyle=bg; ctx.fillRect(0,0,W,CEIL_Y);
+  ctx.fillStyle='rgba(130,170,255,.20)'; ctx.fillRect(0,CEIL_Y-1,W,1);
+  txt('SCORE', 10, 20, 9, '#8fb4ff','left',true);
+  txt(pad(score,6), 10, 36, 13, '#ffffff','left',true);
+  txt('TOP', W/2, 20, 9, '#8fb4ff','center',true);
+  txt(pad(hi,6), W/2, 36, 13, '#ffe27a','center',true);
+  if(gameState==='bonus'||gameState==='bonusEnd'){
+    txt('BONUS', W-10, 20, 9, '#8fb4ff','right',true);
+    txt(bonusPopped+'/'+bonusTotal, W-10, 36, 13, '#7dff9f','right',true);
+  }else{
+    txt('PHASE', W-10, 20, 9, '#8fb4ff','right',true);
+    txt(pad(phase,2), W-10, 36, 13, '#ffffff','right',true);
+  }
+  for(let i=0;i<Math.min(lives,6);i++) drawLifeIcon(20+i*17, 56, '#ff5252');
+  if(lives>6) txt('x'+lives, 20+6*17+2, 60, 10, '#ffb0b0','left',true);
+
+  if(gameState==='bonus'){
+    const wpx = 180, t = clamp(bonusT/(24*60),0,1);
+    ctx.fillStyle='rgba(0,0,0,.5)'; ctx.fillRect(W/2-wpx/2, 62, wpx, 8);
+    ctx.fillStyle = t<0.25 ? '#ff6b6b' : '#7dff9f';
+    ctx.fillRect(W/2-wpx/2+1, 63, (wpx-2)*t, 6);
+    ctx.strokeStyle='rgba(255,255,255,.5)'; ctx.lineWidth=1;
+    ctx.strokeRect(W/2-wpx/2+0.5, 62.5, wpx-1, 7);
+  }
+}
+function dim(a){ ctx.fillStyle='rgba(3,5,18,'+a+')'; ctx.fillRect(0,0,W,H); }
+function drawOverlay(){
+  if(gameState==='title'){
+    dim(0.55);
+    txt('BALLOON', W/2, 130, 30, '#ffd23f','center',true);
+    txt('FIGHTER', W/2, 172, 30, '#ff77c8','center',true);
+    txt('～ふうせんバトル～', W/2, 204, 16, '#bcd6ff','center',false);
+    if((frameCount>>5)%2===0)
+      txt(document.body.classList.contains('touch')?'TAP TO START':'PUSH SPACE KEY', W/2, 262, 12, '#ffffff','center',true);
+    txt('← → いどう　／　Space・↑・Z はばたく', W/2, 300, 13, '#9fc0f0','center',false);
+    txt('敵の風船を「上から」ぶつけて割ろう！', W/2, 324, 13, '#9fc0f0','center',false);
+    txt('落ちてきた敵に体当たりでしとめる', W/2, 346, 13, '#9fc0f0','center',false);
+    txt('水面のフィッシュに食べられないで', W/2, 368, 13, '#7fa8dd','center',false);
+    txt('TOP  '+pad(hi,6), W/2, 396, 10, '#ffe27a','center',true);
+  }else if(gameState==='intro'){
+    dim(0.6);
+    if(introIsBonus){
+      txt('BONUS PHASE', W/2, 200, 20, '#ffd23f','center',true);
+      txt('ふうせんを ぜんぶ われ！', W/2, 234, 15, '#ffffff','center',false);
+    }else{
+      txt('PHASE '+phase, W/2, 206, 24, '#ffffff','center',true);
+      txt('てき '+enemies.length+' たい', W/2, 240, 15, '#bcd6ff','center',false);
+    }
+  }else if(gameState==='clear'){
+    dim(0.35);
+    txt('PHASE CLEAR!', W/2, 200, 20, '#7dff9f','center',true);
+  }else if(gameState==='bonusEnd'){
+    dim(0.45);
+    txt('BONUS', W/2, 180, 20, '#ffd23f','center',true);
+    txt(bonusPopped+' / '+bonusTotal, W/2, 216, 18, '#ffffff','center',true);
+    if(bonusPopped>=bonusTotal) txt('PERFECT  +3000', W/2, 252, 15, '#ff77c8','center',true);
+  }else if(gameState==='gameover'){
+    dim(0.62);
+    txt('GAME OVER', W/2, 190, 24, '#ff6b6b','center',true);
+    txt('SCORE  '+pad(score,6), W/2, 232, 13, '#ffffff','center',true);
+    txt('TOP    '+pad(hi,6), W/2, 258, 13, '#ffe27a','center',true);
+    if(stateT<180 && (frameCount>>5)%2===0)
+      txt('PUSH ANY KEY', W/2, 310, 11, '#bcd6ff','center',true);
+  }
+  if(paused){
+    dim(0.55);
+    txt('PAUSE', W/2, 210, 22, '#ffffff','center',true);
+    txt('P キー / ポーズボタンで再開', W/2, 244, 13, '#bcd6ff','center',false);
+  }
+}
+
+/* ===================== 描画 ===================== */
+function draw(){
+  ctx.save();
+  if(shake>0) ctx.translate(rnd(-2.5,2.5), rnd(-2.5,2.5));
+  drawSky();
+  drawStarsMoon();
+  if(gameState==='title'){
+    for(const b of titleBalls) drawBalloon(b.x,b.y,b.col);
+  }
+  drawWater();
+  drawPlatforms();
+  for(const b of bubbles) drawBubble(b);
+  for(const b of bballs) drawBalloon(b.x,b.y,b.col);
+  drawFish();
+  for(const e of enemies){
+    if(e.state==='appear'){
+      const s = 1 - Math.min(1, e.appearT/40);
+      ctx.save(); ctx.globalAlpha = 0.35+0.65*s;
+      ctx.translate(e.x, e.y); ctx.scale(0.4+0.6*s, 0.4+0.6*s); ctx.translate(-e.x,-e.y);
+      drawCharacter(e); ctx.restore();
+    }else drawWrapped(e, drawCharacter);
+  }
+  if(player && gameState!=='title') drawWrapped(player, drawCharacter);
+  drawParticles();
+  ctx.restore();
+  if(gameState!=='title') drawHUD();
+  drawOverlay();
+}
+
+/* ===================== メインループ ===================== */
+let acc=0, last=performance.now();
+function frame(now){
+  requestAnimationFrame(frame);
+  const dt = Math.min(60, now-last); last=now;
+  if(!paused){
+    acc += dt;
+    let guard=0;
+    while(acc>=STEP && guard<5){ step(); acc-=STEP; guard++; }
+    if(acc>STEP*5) acc=0;
+  }
+  draw();
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){ if(gameState==='play'||gameState==='bonus'){ paused=true; SND.stopBgm(); } }
+});
+resize(); refreshMuteBtn();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
