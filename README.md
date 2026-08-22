@@ -56,7 +56,7 @@ BUBBLE BLAST NEO（パズルボブル風バブルシューター・レインボ�
 くにおくん風 ドッジボール「熱血ドッジボール NEO」（3対3の内野/外野バトル・走り投げ/ジャンプ投げ・ダッシュ→ジャンプ→投げでキャラ別必殺シュート・キャッチで無効化＆ボール奪取・全国4校トーナメント・スマホ/PC対応）  
 [**dodgeball.html**](https://hhungry2.github.io/html-games/dodgeball.html) | [Vercel](https://html-games-eight.vercel.app/dodgeball.html)  
 
-フォールガイズ風 パーティバトルロイヤル「TUMBLE PARTY」（20人のビーンで3ラウンド勝ち抜き・ジャンプ/ダイブ・回転スピナー/ニセ扉クラッシュ/転がる果実/ピストン・ROUND2 ジャンプクラブ・FINAL 王冠キャッチ・2D描画のみ/3D不使用・スマホ/PC対応）  
+フォールガイズ風 パーティバトルロイヤル「TUMBLE PARTY」（20人のビーンで全5ラウンド勝ち抜き・ジャンプ/ダイブ・全8ステージ：障害物レース／ジャンプクラブ／ヘックス・ア・ゴーン（3層の六角床）／フロア・アウト（床抜け）／ギミック・ラッシュ（コンベア・ジャンプ台・消える床・氷・動く床・回転床）／ロール・アウト（回転リング・短期決戦/生き残り勝負）／クラウン・マウンテン・ラウンドごとにステージがランダム抽選・ステージ単体プレイ可・敗退後も観戦継続・2D描画のみ/3D不使用・スマホ/PC対応）  
 [**fall_guys.html**](https://hhungry2.github.io/html-games/fall_guys.html) | [Vercel](https://html-games-eight.vercel.app/fall_guys.html)  
 
 【ツール】  
