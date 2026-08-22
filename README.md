@@ -35,6 +35,9 @@ BM風ゲーム
 パズルボブル風パズルゲーム（同色3つ以上で消去・スマホ/PC対応）  
 [**puzzle_bobble.html**](https://hhungry2.github.io/html-games/puzzle_bobble.html) | [Vercel](https://html-games-eight.vercel.app/puzzle_bobble.html)  
 
+BUBBLE BLAST NEO（パズルボブル風バブルシューター・レインボー/ボム・COMBO＆FEVER・全キャンバス描画・スマホ/PC対応）  
+[**bubble_blast.html**](https://hhungry2.github.io/html-games/bubble_blast.html) | [Vercel](https://html-games-eight.vercel.app/bubble_blast.html)  
+
 インサニアクアリウム風 熱帯魚育成ゲーム（エサやり・エイリアン撃退・スマホ/PC対応）  
 [**insaniquarium.html**](https://hhungry2.github.io/html-games/insaniquarium.html) | [Vercel](https://html-games-eight.vercel.app/insaniquarium.html)  
 
@@ -46,6 +49,15 @@ BM風ゲーム
 
 バルーンファイト風アクション「BALLOON FIGHTER」（風船2個ではばたく・敵を上から突く・フィッシュ・ボーナス面・スマホ/PC対応）  
 [**balloon_fight.html**](https://hhungry2.github.io/html-games/balloon_fight.html) | [Vercel](https://html-games-eight.vercel.app/balloon_fight.html)  
+
+バブルボブル風 アクションゲーム「BUBBLE DRAGON」（敵を泡に閉じこめて割る・連鎖ボーナス/EXTEND・火/水/雷の特殊泡・HURRY UP＆無敵スケルトン・全8ステージ+ループ・スマホ/PC対応）  
+[**bubble_bobble.html**](https://hhungry2.github.io/html-games/bubble_bobble.html) | [Vercel](https://html-games-eight.vercel.app/bubble_bobble.html)  
+
+くにおくん風 ドッジボール「熱血ドッジボール NEO」（3対3の内野/外野バトル・走り投げ/ジャンプ投げ・ダッシュ→ジャンプ→投げでキャラ別必殺シュート・キャッチで無効化＆ボール奪取・全国4校トーナメント・スマホ/PC対応）  
+[**dodgeball.html**](https://hhungry2.github.io/html-games/dodgeball.html) | [Vercel](https://html-games-eight.vercel.app/dodgeball.html)  
+
+フォールガイズ風 パーティバトルロイヤル「TUMBLE PARTY」（20人のビーンで3ラウンド勝ち抜き・ジャンプ/ダイブ・回転スピナー/ニセ扉クラッシュ/転がる果実/ピストン・ROUND2 ジャンプクラブ・FINAL 王冠キャッチ・2D描画のみ/3D不使用・スマホ/PC対応）  
+[**fall_guys.html**](https://hhungry2.github.io/html-games/fall_guys.html) | [Vercel](https://html-games-eight.vercel.app/fall_guys.html)  
 
 【ツール】  
 
