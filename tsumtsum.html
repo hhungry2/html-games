@@ -51,6 +51,7 @@
   @keyframes blink{50%{opacity:.35}}
   #tbarWrap{height:5px;background:rgba(0,0,0,.35);border-radius:3px;overflow:hidden;margin-top:3px}
   #tbar{height:100%;width:100%;background:linear-gradient(90deg,#7ee8fa,#3aa0ff);border-radius:3px}
+  #tbar.danger{background:linear-gradient(90deg,#ff9d6e,#ff3b5c)}
   /* ---------- canvas ---------- */
   #stage{position:relative;flex:1;min-height:0;display:flex;justify-content:center}
   canvas{
@@ -131,6 +132,7 @@
     100%{opacity:1;transform:none}
   }
   .reslbl{font-size:11px;letter-spacing:.42em;opacity:.65;padding-left:.42em}
+  #resMode{font-size:11px;font-weight:800;color:#9fc4ff;letter-spacing:.04em;margin-top:-4px}
   /* ランクメダル */
   #medal{
     position:relative;width:96px;height:96px;border-radius:50%;
@@ -199,6 +201,52 @@
   }
   #feverFlash.on{opacity:1;animation:fev 1.2s infinite}
   @keyframes fev{50%{opacity:.55}}
+  /* ---------- 残り時間わずかの警告 ---------- */
+  #dangerFlash{
+    position:absolute;inset:0;pointer-events:none;border-radius:18px;opacity:0;
+    background:radial-gradient(ellipse at 50% 50%,transparent 42%,rgba(255,40,60,.30) 78%,rgba(255,0,40,.62) 100%);
+    z-index:4;transition:opacity .25s
+  }
+  #dangerFlash.on{opacity:1;animation:dgr .8s infinite}
+  #dangerFlash.hot{animation-duration:.42s}
+  @keyframes dgr{50%{opacity:.42}}
+  body.danger #time{color:#ff5a6e;text-shadow:0 0 16px rgba(255,60,90,.95)}
+  body.danger #timeP{border-color:rgba(255,90,110,.75);box-shadow:0 0 18px rgba(255,50,80,.45)}
+  body.lite #dangerFlash.on{animation:none}
+  /* ---------- タイトルのモード選択・あそびかた ---------- */
+  #titleOv{justify-content:flex-start;gap:9px;overflow-y:auto;padding:18px 16px}
+  #titleOv .ttl{margin-top:auto}
+  #titleOv .best{font-size:11px;opacity:.6}
+  #modeList{display:flex;flex-direction:column;gap:6px;width:100%;max-width:300px}
+  .mode{
+    width:100%;padding:8px 12px;border-radius:14px;text-align:left;cursor:pointer;
+    border:1px solid rgba(255,255,255,.2);color:#c7d3ea;font-family:inherit;
+    background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.03));
+    display:flex;flex-direction:column;gap:1px;
+  }
+  .mode b{font-size:14px;font-weight:900}
+  .mode span{font-size:10px;opacity:.7;line-height:1.4}
+  .mode.sel{
+    border-color:#ffd478;color:#fff;
+    background:linear-gradient(180deg,rgba(255,200,90,.30),rgba(255,150,40,.14));
+    box-shadow:0 0 14px rgba(255,190,90,.35)
+  }
+  #helpToggle{
+    margin-top:2px;background:none;border:none;color:#9fb4d8;font-size:11px;
+    font-family:inherit;cursor:pointer;text-decoration:underline;padding:4px
+  }
+  #help{
+    width:100%;max-width:320px;display:flex;flex-direction:column;gap:8px;
+    text-align:left;font-size:11px;line-height:1.65;margin-bottom:auto;
+    background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.12);
+    border-radius:14px;padding:12px
+  }
+  #help.hide{display:none}
+  .hrow{display:flex;gap:8px;align-items:flex-start}
+  .hicon{font-size:15px;line-height:1.3;flex:none;width:20px;text-align:center}
+  #help b{color:#ffd478}
+  /* 各項目の先頭の語だけ見出しとして改行する（文中の強調は行内のまま） */
+  #help .hrow>div>b:first-child{display:block;font-size:11.5px}
 </style>
 </head>
 <body>
@@ -219,23 +267,61 @@
   <div id="stage">
     <canvas id="cv"></canvas>
     <div id="feverFlash"></div>
+    <div id="dangerFlash"></div>
 
     <div class="ov" id="titleOv">
       <div class="ttl">ツムパズル</div>
-      <div class="sub">
-        同じツムを<b>3つ以上</b>なぞってつなげよう！<br>
-        <b>5つ以上</b>つなげると<b>ボム</b>が出現💣<br>
-        ゲージが満タンで<b>フィーバー</b>＆<b>スキル</b>！<br>
-        制限時間 <b>120秒</b>でハイスコアをめざせ！
+      <div class="sub">同じツムを<b>3つ以上</b>なぞってつなげよう！</div>
+
+      <div id="modeList">
+        <button class="mode" data-mode="m90">
+          <b>90秒モード</b><span>さくっと1プレイ</span>
+        </button>
+        <button class="mode sel" data-mode="m120">
+          <b>120秒モード</b><span>じっくり高得点をねらう</span>
+        </button>
+        <button class="mode" data-mode="ext">
+          <b>タイムアタック</b><span>45秒スタート／たくさん消すと時間が増える</span>
+        </button>
       </div>
+
       <button class="btn" id="startBtn">スタート</button>
-      <div class="sub" style="opacity:.6;font-size:11px">ハイスコア <span id="bestTitle">0</span></div>
+      <div class="best"><span id="bestTitle">0</span></div>
+
+      <button id="helpToggle" aria-expanded="false">▼ あそびかた・スキルとフィーバーについて</button>
+      <div id="help" class="hide">
+        <div class="hrow">
+          <div class="hicon">💣</div>
+          <div><b>ボム</b>5つ以上つなげると場にボムが出現します。ボムは<b>そのツムと同じ色</b>なので、同じ色のチェインに巻き込んで消すと爆発し、<b>まわりのツムごと吹き飛ばして</b>まとめて消せます。ボム同士は連鎖して爆発します。</div>
+        </div>
+        <div class="hrow">
+          <div class="hicon">🔗</div>
+          <div><b>コンボ</b>続けて消すとコンボが加算され、スコアの倍率が上がります（最大+150%）。約3.6秒あいだが空くと途切れます。</div>
+        </div>
+        <div class="hrow">
+          <div class="hicon">🔥</div>
+          <div><b>フィーバー</b>ツムを消すと画面下の<b>FEVER GAUGE</b>がたまります。満タンになると<b>フィーバータイム（12秒）</b>に突入し、背景がオレンジに変わって集中線が回ります。この間は<b>スコアが2倍</b>、さらに突入時に<b>タイムが+5秒</b>。ゲージは消したツムの数だけたまるので、まとめ消しが近道です。</div>
+        </div>
+        <div class="hrow">
+          <div class="hicon">⚡</div>
+          <div><b>スキル</b>右下の<b>スキル</b>ボタン。ツムを消すとゲージがたまり、<b>100%になるとボタンが光ります</b>。押すと<b>場にいちばん多い色のツムを一気に消去</b>。コンボもつながるので、<b>フィーバー中に使うとスコアが大きく伸びます</b>。</div>
+        </div>
+        <div class="hrow">
+          <div class="hicon">⏰</div>
+          <div><b>タイムアタック</b>45秒から開始。<b>5つ以上つなげるたびに時間が増えます</b>（5個で+1秒／7個で+2秒／10個で+3秒／15個以上で+5秒）。上限は99秒。消し続けるほど長く遊べます。</div>
+        </div>
+        <div class="hrow">
+          <div class="hicon">🔋</div>
+          <div><b>軽量モード</b>動作が重いときは右下の<b>⚡軽量</b>をON。表示を軽くします（45fpsを下回ると自動でONになります）。</div>
+        </div>
+      </div>
     </div>
 
     <div class="ov hide" id="resultOv">
       <div id="resCard">
         <div id="newRec" class="hide">★ NEW RECORD ★</div>
         <div class="reslbl">RESULT</div>
+        <div id="resMode"></div>
         <div id="medal"><span id="rankLetter">C</span></div>
         <div id="stars"><i>★</i><i>★</i><i>★</i><i>★</i><i>★</i></div>
         <div class="rank" id="rankTxt"></div>
@@ -276,7 +362,18 @@ const WALL = 10, FLOOR = H - 8;     // 壁・床
 const R = 27;                       // ツム半径
 const TARGET = 75;                  // 場に出すツム数
 const GRAV = 0.62;
-const GAME_TIME = 120;              // 制限時間（やさしめ）
+/* ---------- モード ---------- */
+const MODES = {
+  m90:  {key:'m90',  label:'90秒',       time:90,  cap:90,  extend:false},
+  m120: {key:'m120', label:'120秒',      time:120, cap:120, extend:false},
+  ext:  {key:'ext',  label:'タイムアタック', time:45,  cap:99,  extend:true},
+};
+// タイムアタックで時間が増える条件（つないだ数 → 追加秒数）
+const TIME_BONUS = [
+  {n:15, sec:5}, {n:10, sec:3}, {n:7, sec:2}, {n:5, sec:1},
+];
+let mode = MODES.m120;
+let gameTime = mode.time;           // 現在のモードの制限時間
 const LINK_DIST = R*2 + 24;         // つなげられる距離（広め）
 const HIT_SCALE = 1.28;             // 指の当たり判定（広め）
 const CLUSTER_RATE = 0.45;          // 補充時に多い色を出す確率＝そろいやすさ
@@ -325,20 +422,28 @@ const PRAISE = [
 let tsums = [], fx = [], texts = [], rings = [];
 let chain = [];
 let banner = null, flash = 0, hitstop = 0, scoreDisp = 0;
-let score = 0, combo = 0, comboTimer = 0, maxCombo = 0, popped = 0;
-let timeLeft = GAME_TIME;
+let score = 0, combo = 0, comboTimer = 0, maxCombo = 0, popped = 0, elapsed = 0;
+let timeLeft = gameTime;
 let feverGauge = 0, feverActive = false, feverTime = 0;
 let skillGauge = 0;
 let playing = false, shake = 0, idSeq = 0;
 const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const store = {
-  get(){ try{ return +(localStorage.getItem('tsum_best') || 0); }catch(e){ return 0; } },
-  set(v){ try{ localStorage.setItem('tsum_best', v); }catch(e){} },
   getLite(){ try{ return localStorage.getItem('tsum_lite'); }catch(e){ return null; } },
-  setLite(v){ try{ localStorage.setItem('tsum_lite', v ? '1' : '0'); }catch(e){} }
+  setLite(v){ try{ localStorage.setItem('tsum_lite', v ? '1' : '0'); }catch(e){} },
+  getMode(){ try{ return localStorage.getItem('tsum_mode'); }catch(e){ return null; } },
+  setMode(v){ try{ localStorage.setItem('tsum_mode', v); }catch(e){} }
 };
-let best = store.get();
-document.getElementById('bestTitle').textContent = best.toLocaleString();
+// ハイスコアはモードごとに記録する
+const best = {
+  key(m){ return 'tsum_best_' + m; },
+  get(m){ try{ return +(localStorage.getItem(this.key(m)) || 0); }catch(e){ return 0; } },
+  set(m, v){ try{ localStorage.setItem(this.key(m), v); }catch(e){} }
+};
+function showBestForMode(){
+  document.getElementById('bestTitle').textContent =
+    mode.label + 'モードのハイスコア　' + best.get(mode.key).toLocaleString();
+}
 
 const FEVER_NEED = 42, SKILL_NEED = 26, FEVER_DUR = 12;
 
@@ -791,6 +896,12 @@ function releaseChain(){
   const pr = PRAISE.find(v => total >= v.n);
   if(pr) showBanner(pr.txt, pr.color);
 
+  // タイムアタック：たくさん消すと時間が増える
+  if(mode.extend){
+    const tb = TIME_BONUS.find(v => total >= v.n);
+    if(tb) addTime(tb.sec);
+  }
+
   noise(0.16, 0.2);
   arpeggio(total, feverActive);
 
@@ -821,15 +932,67 @@ function releaseChain(){
 }
 
 /* =========================================================
+   残り時間わずかの警告演出
+   ========================================================= */
+const DANGER_AT = 10;               // 残りこの秒数から警告
+let danger = false, lastTick = -1;
+const $dangerFlash = document.getElementById('dangerFlash');
+function setDanger(on, hot){
+  if(danger !== on){
+    danger = on;
+    $dangerFlash.classList.toggle('on', on);
+    document.body.classList.toggle('danger', on);
+    if(on){ showBanner('HURRY UP!', '#ff5a6e'); shake = Math.max(shake, 10); }
+  }
+  $dangerFlash.classList.toggle('hot', !!hot && on);
+}
+function updateDanger(dt){
+  const t = timeLeft;
+  setDanger(t <= DANGER_AT, t <= 5);
+  if(!danger){ lastTick = -1; return; }
+  // 1秒ごとに秒読み。最後の3秒は音を高くして数字も出す
+  const sec = Math.ceil(t);
+  if(sec !== lastTick && sec > 0){
+    lastTick = sec;
+    if(sec <= 3){
+      beep(1046, .18, 'square', .17);
+      popText(W/2, H*0.34, String(sec), '#ff5a6e', 64);
+    }else{
+      beep(740, .09, 'square', .12);
+    }
+  }
+}
+function endDanger(){
+  danger = false; lastTick = -1;
+  $dangerFlash.classList.remove('on', 'hot');
+  document.body.classList.remove('danger');
+}
+
+/* =========================================================
+   タイム加算（フィーバー突入・タイムアタックの条件達成）
+   ========================================================= */
+function addTime(sec, showText){
+  const before = timeLeft;
+  timeLeft = Math.min(mode.cap, timeLeft + sec);
+  const got = timeLeft - before;
+  if(got > 0.05 && showText !== false){
+    popText(W/2, H*0.20, '+' + Math.round(got) + '秒', '#9dff8a', 26);
+    beep(1046, .1, 'triangle', .12);
+    setTimeout(() => beep(1318, .14, 'triangle', .12), 85);
+  }
+  return got;
+}
+
+/* =========================================================
    フィーバー / スキル
    ========================================================= */
 function startFever(){
   feverActive = true; feverTime = FEVER_DUR; feverGauge = FEVER_NEED;
-  timeLeft = Math.min(GAME_TIME, timeLeft + 5);
+  const got = addTime(5, false);
   document.getElementById('feverFlash').classList.add('on');
   document.body.classList.add('fever');
   showBanner('FEVER!!', '#ffd24a');
-  popText(W/2, H/2 + 24, 'TIME +5', '#fff', 22);
+  if(got > 0.05) popText(W/2, H/2 + 24, 'TIME +' + Math.round(got), '#fff', 22);
   flash = 1; shake = Math.max(shake, 16); hitstop = 0.12;
   ring(W/2, H/2, W*1.5, '#ffd24a', 20);
   ring(W/2, H/2, W*1.1, '#ff7ba8', 12);
@@ -918,7 +1081,10 @@ function updateHUD(){
   const t = Math.max(0, Math.ceil(timeLeft));
   $time.textContent = t;
   $time.classList.toggle('warn', t <= 10);
-  $tbar.style.width = (Math.max(0,timeLeft)/GAME_TIME*100) + '%';
+  // タイムアタックは時間が伸びるので上限側を基準にする
+  const barMax = mode.extend ? mode.cap : gameTime;
+  $tbar.style.width = Math.min(100, Math.max(0,timeLeft)/barMax*100) + '%';
+  $tbar.classList.toggle('danger', danger);
   $fbar.style.width = (feverActive ? (feverTime/FEVER_DUR*100) : (feverGauge/FEVER_NEED*100)) + '%';
   const sp = Math.floor(skillGauge/SKILL_NEED*100);
   $skillPct.textContent = sp + '%';
@@ -1080,36 +1246,44 @@ function startGame(){
   banner = null; flash = 0; hitstop = 0; scoreDisp = 0;
   confetti = []; sparks = []; fwRings = []; rolling = false; starIdx = starMax = 0;
   fxActive = false; fcv.classList.remove('on');
-  score = 0; combo = 0; comboTimer = 0; maxCombo = 0; popped = 0;
-  timeLeft = GAME_TIME; feverGauge = 0; feverTime = 0;
-  endFever(); skillGauge = 0; shake = 0;
+  score = 0; combo = 0; comboTimer = 0; maxCombo = 0; popped = 0; elapsed = 0;
+  gameTime = mode.time;
+  timeLeft = gameTime; feverGauge = 0; feverTime = 0;
+  endFever(); endDanger(); skillGauge = 0; shake = 0;
   for(let i=0;i<TARGET;i++) tsums.push(makeTsum(-R - i*13 - Math.random()*50));
   playing = true;
   document.getElementById('titleOv').classList.add('hide');
   document.getElementById('resultOv').classList.add('hide');
   updateHUD();
 }
-// 制限時間を75→120秒にしたぶん、ランクの基準も約1.6倍に引き上げ
+// 120秒プレイを基準にした必要スコア。実際に遊んだ時間で割り増し/割り引きするので、
+// どのモードでも同じ感覚でランクが付く
 const RANKS = [
-  {min:800000, letter:'S', txt:'神業！ツムマスター', stars:5},
-  {min:480000, letter:'A', txt:'すごい！かなりの腕前', stars:4},
-  {min:260000, letter:'B', txt:'いい感じ！その調子', stars:3},
-  {min:110000, letter:'C', txt:'まずまず！次は上を狙おう', stars:2},
+  {min:560000, letter:'S', txt:'神業！ツムマスター', stars:5},
+  {min:330000, letter:'A', txt:'すごい！かなりの腕前', stars:4},
+  {min:175000, letter:'B', txt:'いい感じ！その調子', stars:3},
+  {min: 70000, letter:'C', txt:'まずまず！次は上を狙おう', stars:2},
   {min:     0, letter:'D', txt:'次はもっといける！',     stars:1},
 ];
+function rankOf(score, seconds){
+  const scale = Math.max(0.5, (seconds || 120) / 120);
+  return RANKS.find(r => score >= r.min * scale);
+}
 function endGame(){
-  playing = false; dragging = false; clearChain(); endFever();
+  playing = false; dragging = false; clearChain(); endFever(); endDanger();
   scoreDisp = score; banner = null; updateHUD();
-  const isNew = score > best && score > 0;
-  if(isNew){ best = score; store.set(best); }
+  const isNew = score > best.get(mode.key) && score > 0;
+  if(isNew) best.set(mode.key, score);
 
-  const rk = RANKS.find(r => score >= r.min);
+  const rk = rankOf(score, elapsed);
   document.getElementById('rankLetter').textContent = rk.letter;
   document.getElementById('medal').classList.toggle('r-d', rk.letter === 'D');
   document.getElementById('rankTxt').textContent = rk.letter + ' ランク　' + rk.txt;
+  document.getElementById('resMode').textContent =
+    mode.label + (mode.extend ? '　' + Math.round(elapsed) + '秒つづいた' : '');
   document.getElementById('stPop').textContent = popped;
   document.getElementById('stCombo').textContent = maxCombo;
-  document.getElementById('stBest').textContent = best.toLocaleString();
+  document.getElementById('stBest').textContent = best.get(mode.key).toLocaleString();
   document.getElementById('newRec').classList.toggle('hide', !isNew);
   for(const s of $stars.children) s.classList.remove('lit');
   $final.textContent = '0';
@@ -1121,7 +1295,35 @@ function endGame(){
   startCelebration(rk.stars);
 }
 document.getElementById('startBtn').addEventListener('click', startGame);
-document.getElementById('retryBtn').addEventListener('click', startGame);
+document.getElementById('retryBtn').addEventListener('click', () => {
+  // リトライはタイトルに戻して、モードを選び直せるようにする
+  document.getElementById('resultOv').classList.add('hide');
+  document.getElementById('titleOv').classList.remove('hide');
+  fxActive = false; fcv.classList.remove('on');
+  confetti = []; sparks = []; fwRings = []; rolling = false;
+  showBestForMode();
+});
+
+/* ---------- モード選択 ---------- */
+const $modes = [...document.querySelectorAll('.mode')];
+function selectMode(key){
+  mode = MODES[key] || MODES.m120;
+  gameTime = mode.time;
+  timeLeft = gameTime;
+  for(const b of $modes) b.classList.toggle('sel', b.dataset.mode === mode.key);
+  store.setMode(mode.key);
+  showBestForMode();
+  updateHUD();
+}
+for(const b of $modes){
+  b.addEventListener('click', () => { ac(); selectMode(b.dataset.mode); beep(660,.06,'triangle',.1); });
+}
+const $help = document.getElementById('help'), $helpToggle = document.getElementById('helpToggle');
+$helpToggle.addEventListener('click', () => {
+  const open = $help.classList.toggle('hide') === false;
+  $helpToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  $helpToggle.textContent = (open ? '▲ ' : '▼ ') + 'あそびかた・スキルとフィーバーについて';
+});
 
 /* =========================================================
    メインループ
@@ -1154,11 +1356,13 @@ function loop(now){
 
   if(playing){
     timeLeft -= dt;
+    elapsed += dt;
     if(comboTimer > 0){ comboTimer -= dt; if(comboTimer <= 0) combo = 0; }
     if(feverActive){
       feverTime -= dt;
       if(feverTime <= 0) endFever();
     }
+    updateDanger(dt);
     if(timeLeft <= 0){ timeLeft = 0; updateHUD(); endGame(); }
     else updateHUD();
   }
@@ -1401,6 +1605,16 @@ function draw(){
     ctx.restore();
   }
 
+  // 残り時間わずか：赤いふちどりが脈打つ
+  if(danger && playing){
+    const pulse = 0.5 + Math.sin(performance.now() * (timeLeft <= 5 ? 0.011 : 0.006)) * 0.5;
+    const vg = ctx.createRadialGradient(W/2, H/2, H*0.30, W/2, H/2, H*0.62);
+    vg.addColorStop(0, 'rgba(255,30,60,0)');
+    vg.addColorStop(1, 'rgba(255,20,55,' + (0.30 + pulse*0.34).toFixed(3) + ')');
+    ctx.fillStyle = vg;
+    ctx.fillRect(-20, -20, W+40, H+40);
+  }
+
   // 画面フラッシュ
   if(flash > 0){
     ctx.save();
@@ -1416,6 +1630,7 @@ function draw(){
 const savedLite = store.getLite();
 if(savedLite !== null) liteChosenByUser = true;
 applyQuality(savedLite === '1');
+selectMode(store.getMode() || 'm120');
 
 requestAnimationFrame(loop);
 
