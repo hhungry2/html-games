@@ -346,6 +346,21 @@ const STAGES = {
     hud:(alive,R)=> (R.qualify > 0 ? '残り ' + alive + '人（' + R.qualify + '人まで）'
                                    : '残り ' + alive + '人（生存で全員クリア）')
   },
+  slime: {
+    key:'slime', kind:'race', goal:'first', solo:20, chase:true, fallOut:true, knockMul:0.62,
+    label:'スライム・クライム', icon:'🟢',
+    blurb:'下から迫るスライムに飲まれる前にゴールへ。落ちても復帰なしの一発勝負',
+    build: buildSlime, update: updateRace, drawFloor: drawRaceFloor, ai: aiRace,
+    hud:(alive,R)=> G.finishOrder.length + ' / ' + R.qualify + '　残り' + alive + '人'
+  },
+  bounce: {
+    key:'bounce', kind:'bounce', goal:'survive', solo:12,
+    label:'バウンス・パーティー', icon:'🎈',
+    blurb:'トランポリンの島を跳ね回るサバイバル。高いバーは空中の自分を狙ってくる',
+    build: buildBounce, update: updateBounce, drawFloor: drawBounceFloor, ai: aiBounce,
+    hud:(alive,R)=> (R.qualify > 0 ? '残り ' + alive + '人（' + R.qualify + '人まで）'
+                                   : '残り ' + alive + '人（生存で全員クリア）')
+  },
   hex: {
     key:'hex', kind:'hex', goal:'survive', solo:12,
     label:'ヘックス・ア・ゴーン', icon:'⬡',
@@ -378,12 +393,21 @@ const STAGES = {
 };
 
 const ROUNDS = [
-  { stage:'race',    name:'ROUND 1', title:'ゲートクラッシュ・ダッシュ',
-    rule:'障害物を抜けてゴールへ！ 先着した上位だけが次に進める。ニセ扉は体当たりで破れる！', time:110, qualify:12 },
+  { stage:'race',    name:'ROUND 1', title:'ゲートクラッシュ・ダッシュ', rule:'', time:110, qualify:12, variants:[
+      { key:'gatecrash', stage:'race', title:'ゲートクラッシュ・ダッシュ', time:110, badge:'障害物レース',
+        short:'スピナー・スライム・ニセ扉・転がる果実・落とし穴の障害物レース',
+        rule:'障害物を抜けてゴールへ！ 先着した上位だけが次に進める。ニセ扉は体当たりで破れる！' },
+      { key:'slimeclimb', stage:'slime', title:'スライム・クライム', time:95, qualify:8, badge:'スライム追跡',
+        short:'下から迫るスライムに飲まれる前にゴールへ。落ちたら即脱落',
+        rule:'下からスライムが迫ってくる！ 飲み込まれたら脱落、穴に落ちても復帰できない一発勝負。ピストンと回転バーをかいくぐって、止まらず登り続けろ！' }
+    ] },
   { stage:'jump',    name:'ROUND 2', title:'ジャンプ・クラブ', rule:'', time:85, qualify:8, variants:[
       { key:'jumpclub', stage:'jump', title:'ジャンプ・クラブ', time:85, badge:'回転バー',
         short:'回転バーを飛び越え／くぐって円形ステージで生き残る',
         rule:'回転バーを避けて生き残れ！ 低いバー（ピンク・床すれすれ）はジャンプで飛び越え、高いバー（黄・浮いている）はジャンプ厳禁でくぐる。落ちたら脱落。' },
+      { key:'bounceparty', stage:'bounce', title:'バウンス・パーティー', time:75, badge:'跳ね回り',
+        short:'トランポリンの島を飛び移る。空中を狙う高いバーに注意',
+        rule:'着地すると自動で大きく跳ねる！ ジャンプボタンを押しながら着地するとさらに高く跳べる。島と島の間は奈落なので、空中で方向を決めて飛び移れ。低いバーは着地時に、高いバーは空中の自分を狙ってくる。時間経過でトランポリンは1枚ずつしぼんで消える！' },
       { key:'hexagone', stage:'hex', title:'ヘックス・ア・ゴーン', time:90, badge:'六角床',
         short:'踏んだ六角タイルが消える3層フィールド。最後の1人まで',
         rule:'踏んだ六角タイルは約1秒後に消える！ 足場を失うと1つ下の層へ落下し、最下層で落ちたら脱落。自分の通り道を節約しつつ、他プレイヤーが壊した場所を避けろ。3層を粘って最後まで生き残れ！' },
@@ -411,7 +435,7 @@ const G = {
   phase:'title',      // title / intro / play / result / over
   roundIdx:0, mode:'race',
   beans:[], player:null,
-  timeLeft:0, elapsed:0, rt:0, freeze:0, endT:0,
+  timeLeft:0, elapsed:0, rt:0, freeze:0, endT:0, slimeY:0,
   finishOrder:[], outOrder:[], winner:null,
   spectate:false, shake:0, flash:0, slow:0, cheer:0, loseT:0,
   stage:null, round:null, variantKey:null, practice:false
@@ -487,7 +511,7 @@ function makeBean(i, isPlayer){
     accent: isPlayer ? '#ff2d87' : '#ffffff', isPlayer,
     x:0, y:0, z:0, vx:0, vy:0, vz:0, face:Math.PI/2,
     state:'run', stun:0, inv:0, spin:0, spinRate:0, jumpCd:0, diveCd:0,
-    zoneMul:1, slip:0, skill:rnd(0.88,1.03), lane:rnd(-230,230), anim:Math.random()*10,
+    zoneMul:1, slip:0, lowG:0, skill:rnd(0.88,1.03), lane:rnd(-230,230), anim:Math.random()*10,
     out:false, done:false, place:0, finalRank:0, fallT:0, respawn:0,
     doorSel:{}, bridge:0, aiT:irnd(0,40), noJumpT:0, alive:true, layer:0, hT:null, dropT:0
   };
@@ -557,14 +581,14 @@ function updateBean(b, cmd){
   b.x += b.vx; b.y += b.vy;
 
   // 高さ
-  b.z += b.vz; b.vz -= GRAV;
+  b.z += b.vz; b.vz -= (b.lowG ? GRAV*0.62 : GRAV);
   if(b.z <= 0){
     const hard = b.vz < -3.4;
     b.z = 0; b.vz = 0;
     if(b.state === 'dive'){ b.state = 'prone'; b.stun = 24; burst(b.x,b.y,2,5,'#ffffff',1.8); sfx.land(); }
     else if(hard){ burst(b.x,b.y,2,4,'rgba(255,255,255,.8)',1.4); sfx.land(); }
   }
-  b.zoneMul = 1; b.slip = 0;
+  b.zoneMul = 1; b.slip = 0; b.lowG = 0;
 }
 
 // ---------------------------------------------------------------- 当たり判定
@@ -622,7 +646,7 @@ function collideBean(b, c){
     if(vn < 0){ b.vx -= vn*nx; b.vy -= vn*ny; }
     return;
   }
-  const p = c.power || 1;
+  const p = (c.power || 1) * ((G.stage && G.stage.knockMul) || 1);
   b.vx = nx*3.1*p + svx*1.15;
   b.vy = ny*3.1*p + svy*1.15;
   tumble(b, p);
@@ -751,12 +775,51 @@ function Piston(side, y, ph){
     }
   };
 }
+// 横から突き出してコースを塞ぐ壁（原作の「突き出す壁」）
+function Wall(y, side, len, period, phase, opt){
+  opt = opt || {};
+  return { kind:'wall', y, side, len, period, phase, ext:0, x:0, vx:0,
+    h: opt.h || 48, col: opt.col || '#ff9f5a', cx:0, cw:0,
+    up(){
+      const pa = pathAt(this.y); this.cx = pa.cx; this.cw = pa.w;
+      const t = ((G.rt + this.phase) % this.period) / this.period;
+      const e = clamp(Math.sin(t*TAU)*1.7, 0, 1);          // 出っぱなし→引っこみを繰り返す
+      this.vx = (e - this.ext) * this.len * (this.side < 0 ? 1 : -1);
+      this.ext = e;
+      const edge = this.side < 0 ? this.cx - this.cw/2 : this.cx + this.cw/2;
+      this.x = edge + (this.side < 0 ? -this.len/2 + this.ext*this.len
+                                     :  this.len/2 - this.ext*this.len);
+    },
+    col(out){
+      out.push({ t:'box', x:this.x, y:this.y, w:this.len, h:this.h, a:0, lo:0, hi:70,
+                 vx:this.vx*1.2, vy:0, power:1.05, mode:'knock' });
+    },
+    draw(){
+      const sx = this.x-cam.x, sy = this.y-cam.y;
+      ctx.save();
+      ctx.globalAlpha=.25; ctx.fillStyle='#000';
+      roundRect(sx-this.len/2, sy-this.h/2+8, this.len, this.h, 12); ctx.fill();
+      ctx.globalAlpha=1;
+      ctx.fillStyle = this.col;
+      roundRect(sx-this.len/2, sy-this.h/2-10, this.len, this.h, 12); ctx.fill();
+      ctx.fillStyle='rgba(255,255,255,.45)';
+      roundRect(sx-this.len/2+10, sy-this.h/2-4, this.len-20, 12, 6); ctx.fill();
+      ctx.fillStyle='rgba(0,0,0,.16)';
+      for(let k=18;k<this.len-14;k+=34){ roundRect(sx-this.len/2+k, sy+this.h/2-24, 16, 10, 5); ctx.fill(); }
+      ctx.restore();
+    }
+  };
+}
 function FruitLane(yFar, yNear, every, opt){
   opt = opt || {};
   const rMin = opt.rMin||26, rMax = opt.rMax||40, vMin = opt.vMin||1.8, vMax = opt.vMax||2.7;
   // yFar（ゴール側）の さらに画面外 で湧かせ、必ず画面の上から転がり込ませる
   const o = { kind:'fruitlane', yFar, yNear, every:every||58, list:[], t:0, big:!!opt.big,
-    spawn(y){ this.list.push({ x:rnd(70,730), y, r:rnd(rMin,rMax), vy:rnd(vMin,vMax), rot:Math.random()*TAU,
+    spawn(y){
+      const pa = pathAt(y);
+      const lo = pa.cx - pa.w/2 + 34, hi = pa.cx + pa.w/2 - 34;
+      const a0 = (opt.xMin !== undefined) ? opt.xMin : 0, a1 = (opt.xMax !== undefined) ? opt.xMax : 1;
+      this.list.push({ x:rnd(lo + (hi-lo)*a0, lo + (hi-lo)*a1), y, r:rnd(rMin,rMax), vy:rnd(vMin,vMax), rot:Math.random()*TAU,
                                om:rnd(-0.05,0.05), c: opt.big ? pick(['#ff6b6b','#ffa94d','#a78bfa']) : pick(FRUITC) }); },
     up(){
       this.t++;
@@ -940,6 +1003,112 @@ function buildRace(){
   cam.x = -80; cam.y = world.camMax;
 }
 
+// くねくね道：y に応じた通路の中心と幅
+function pathAt(y){
+  const P = world.path;
+  if(!P) return { cx:400, w:world.w };
+  if(y >= P[0].y) return { cx:P[0].cx, w:P[0].w };
+  for(let i=0;i<P.length-1;i++){
+    const a = P[i], b = P[i+1];
+    if(y <= a.y && y >= b.y){
+      const t = (a.y - y) / (a.y - b.y || 1);
+      const e = t*t*(3-2*t);                       // なめらかに繋ぐ
+      return { cx: a.cx + (b.cx-a.cx)*e, w: a.w + (b.w-a.w)*e };
+    }
+  }
+  const L = P[P.length-1];
+  return { cx:L.cx, w:L.w };
+}
+function offPath(b){
+  if(!world.path) return false;
+  const pa = pathAt(b.y);
+  return Math.abs(b.x - pa.cx) > pa.w/2 + 12;
+}
+
+// スライム・クライム：下から迫るスライムに追われる登坂レース
+function buildSlime(){
+  obstacles = []; zones = []; holes = []; parts = []; pads = []; tiles = []; plats = [];
+  world = { w:800, startY:-260, goalY:-4100, camMax:-470, camMin:-4360, cps:[-260],
+    // 原作のようにコースが蛇行し、道の外はすべてスライム
+    path:[
+      { y:  220, cx:400, w:340 },   // スタート台
+      { y: -140, cx:400, w:360 },
+      { y: -340, cx:380, w:520 },   // 傾斜を上る
+      { y: -920, cx:360, w:520 },   // ① 突き出す三連壁
+      { y:-1280, cx:520, w:500 },   // ゆるい右カーブ
+      { y:-1700, cx:560, w:480 },   // ② 転がる大玉（右が安全）
+      { y:-2000, cx:560, w:450 },   // ③ 突き出す二連壁
+      { y:-2350, cx:370, w:440 },   // ゆるい左カーブ
+      { y:-2620, cx:330, w:430 },   // ④ 低重力＋回転プレート
+      { y:-2790, cx:360, w:450 },   // ベルトコンベア＋ポール
+      { y:-2868, cx:380, w:430 },   // 橋の手前の広場
+      { y:-2900, cx:340, w:330 },   // ⑤ ジグザグの細道（両脇はスライム）
+      { y:-3010, cx:470, w:330 },
+      { y:-3110, cx:360, w:330 },
+      { y:-3175, cx:470, w:430 },   // 橋を渡り切った広場
+      { y:-3290, cx:500, w:460 },   // ⑥ ぬるぬる坂＋突き出す四連壁
+      { y:-3700, cx:470, w:460 },
+      { y:-3860, cx:390, w:470 },   // ⑦ 最後の難所
+      { y:-4120, cx:390, w:450 },
+      { y:-4320, cx:390, w:450 }
+    ]
+  };
+  G.slimeY = 240;
+  G.slimeFinale = '';
+
+  // ① 第一の難所：突き出す三連壁（手前の黄色い跳ね床でショートカット可）
+  pads.push({ x:270, y:-430, w:180, h:40, t:0, boost:6.4 });
+  obstacles.push(Wall(-570, -1, 230, 220,   0, {col:'#ff9f5a'}));
+  obstacles.push(Wall(-700,  1, 230, 220,  73, {col:'#ff9f5a'}));
+  obstacles.push(Wall(-830, -1, 230, 220, 146, {col:'#ff9f5a'}));
+
+  // ② 転がる大玉（左寄りに湧くので右側が安全）
+  obstacles.push(FruitLane(-1760, -1300, 66, { rMin:34, rMax:48, vMin:1.6, vMax:2.2, big:true, xMin:0.02, xMax:0.56 }));
+
+  // ③ 突き出す二連壁（周期がずれていて、たまに両方同時に出る）
+  obstacles.push(Wall(-1850,  1, 230, 240,   0, {col:'#c08bff'}));
+  obstacles.push(Wall(-1980, -1, 230, 240,  80, {col:'#c08bff'}));
+
+  // ④ 低重力ゾーン＋回転プレート
+  zones.push({ t:'lowg', x:120, y:-2640, w:560, h:200 });
+
+  // ベルトコンベア＋ピンクのポール
+  zones.push({ t:'conveyor', x:150, y:-2790, w:430, h:100, ax:0.05, ay:0 });
+  obstacles.push(Spinner(350, -2760, 150, 2, 0.028, {color:'#ff5fa2'}));
+
+  // ⑤ 細い一本橋（両脇はスライム・回転バー付き）
+
+
+  // ⑥ ぬるぬる坂 → 突き出す四連壁
+  zones.push({ t:'slick', x:270, y:-3320, w:460, h:170 });
+  obstacles.push(Wall(-3400,  1, 220, 210,   0, {col:'#5fc9ff'}));
+  obstacles.push(Wall(-3490, -1, 220, 210,  52, {col:'#5fc9ff'}));
+  obstacles.push(Wall(-3580,  1, 220, 210, 104, {col:'#5fc9ff'}));
+  obstacles.push(Wall(-3670, -1, 220, 210, 156, {col:'#5fc9ff'}));
+
+  // ⑦ 最後の難所：ポール5本 か 高速ハンマー3本（原作同様どちらかが出る）
+  if(Math.random() < 0.5){
+    G.slimeFinale = 'pole';
+    for(let i=0;i<5;i++)
+      obstacles.push(Spinner(290 + (i%2)*200, -3900 - i*62, 145, 2, (i%2?1:-1)*0.028, {color:'#ff5fa2'}));
+  } else {
+    G.slimeFinale = 'hammer';
+    for(let i=0;i<3;i++)
+      obstacles.push(Sweeper(-3930 - i*95, { w:110, h:68, amp:105, spd:0.024+i*0.004, ph:i*2.1,
+                                             hiZ:62, power:1.1, color:'#c08bff' }));
+  }
+  zones.push({ t:'slick', x:200, y:-4080, w:380, h:110 });
+
+  G.beans.forEach((b,i)=>{
+    b.x = 300 + (i%5)*50 + rnd(-8,8);
+    b.y = -60 - Math.floor(i/5)*52;
+    b.z = 0; b.vx = b.vy = b.vz = 0; b.face = -Math.PI/2;
+    b.state='run'; b.stun=0; b.inv=0; b.out=false; b.done=false; b.fallT=0; b.spin=0; b.cheer=0;
+    b.doorSel = {}; b.lane = rnd(-0.5,0.5);
+  });
+  cam.x = -80; cam.y = world.camMax;
+}
+
 // ROUND3：仕掛けだらけのアスレチックコース
 function buildGimmick(){
   obstacles = []; zones = []; holes = []; parts = []; pads = []; tiles = []; plats = [];
@@ -1074,7 +1243,7 @@ function checkPads(b){
   if(b.z > 4 || b.state === 'fall' || b.done || b.out) return;
   for(const p of pads){
     if(inRect(b, p)){
-      b.vz = 10.0; b.vy = Math.min(b.vy, -3.6); b.z = 2.5; p.t = 16;   // 前方へ大ジャンプ
+      b.vz = 10.0; b.vy = Math.min(b.vy, -(p.boost || 3.6)); b.z = 2.5; p.t = 16;   // 前方へ大ジャンプ
       sfx.pad(); burst(b.x, p.y+p.h/2, 8, 10, '#7ee08a', 2.4);
       break;
     }
@@ -1126,6 +1295,177 @@ function placeArenaBeans(radius){
     placed.push({x:bx, y:by});
   });
   cols.length = 0;
+}
+
+// ---------------------------------------------------------------- バウンス・パーティー
+// トランポリンの島を跳ね回るサバイバル。島の外は奈落。
+let bounce = { pads:[], waveT:0 };
+
+function buildBounce(){
+  obstacles = []; zones = []; holes = []; parts = []; pads = []; tiles = []; plats = [];
+  bounce.pads = []; bounce.waveT = 600;
+  const cols = 5, rows = 4, sx = 200, sy = 165;
+  const ox = 480 - (cols-1)*sx/2, oy = 320 - (rows-1)*sy/2;
+  const PAL = ['#ff7096','#5fc9ff','#ffd23f','#7ee08a','#c08bff'];
+  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
+    bounce.pads.push({ x: ox + c*sx + (r&1 ? 26 : -26), y: oy + r*sy, r: 62,
+                       state:'ok', t:0, sq:0, col: PAL[(c+r*2) % PAL.length] });
+  }
+  // どちらも低いバー＝跳ねて空中にいる間は当たらない（着地のタイミングが勝負）
+  obstacles.push(RotBar(480, 320, 480,  0.0075, false, {power:1.15}));
+  obstacles.push(RotBar(480, 320, 480, -0.0060, false, {a:1.5, power:1.15}));
+  const n = G.beans.length;
+  G.beans.forEach((b,i)=>{
+    const pad = bounce.pads[Math.floor(i * bounce.pads.length / n)];
+    b.x = pad.x + rnd(-22,22); b.y = pad.y + rnd(-18,18);
+    b.z = 0; b.vx = b.vy = b.vz = 0; b.face = -Math.PI/2;
+    b.state='run'; b.stun=0; b.inv=0; b.out=false; b.done=false; b.fallT=0; b.spin=0; b.cheer=0;
+    b.bT = null;
+  });
+  cam.x = 0; cam.y = 0;
+}
+function padAt(x, y, tol){
+  let best = null, bd = 1e9;
+  for(const p of bounce.pads){
+    if(p.state === 'gone') continue;
+    const d = Math.hypot(p.x-x, p.y-y) - p.r;
+    if(d < bd){ bd = d; best = p; }
+  }
+  return (best && bd <= (tol || 0)) ? best : null;
+}
+function updateBounce(){
+  const R = G.round;
+  const live = (G.freeze <= 0 && G.endT <= 0);
+  if(live){
+    for(const o of obstacles) o.up();
+    // 時間経過でトランポリンがしぼんで消える
+    if(--bounce.waveT <= 0){
+      const ok = bounce.pads.filter(p=> p.state === 'ok');
+      if(ok.length > 6){
+        const pad = ok[irnd(0, ok.length-1)];
+        pad.state = 'warn'; pad.t = 150;
+        showBanner('PAD LOST!', '#ff5f6d');
+      }
+      bounce.waveT = Math.round(430 - clamp(G.rt/3600,0,1)*230);
+    }
+    for(const p of bounce.pads){
+      if(p.sq > 0) p.sq--;
+      if(p.state === 'warn' && --p.t <= 0){
+        p.state = 'gone';
+        burst(p.x, p.y, 8, 20, p.col, 3.6);
+      }
+    }
+  }
+  cols.length = 0; for(const o of obstacles) o.col(cols);
+
+  for(const b of G.beans){
+    if(b.out && b.state !== 'fall') continue;
+    if(b.state === 'fall'){
+      updateBean(b, null);
+      if(b.fallT > 40 && !b.out) eliminate(b);
+      continue;
+    }
+    const cmd = cmdFor(b);
+    updateBean(b, cmd);
+    if(!live) continue;
+    for(const c of cols) collideBean(b, c);
+    if(b.z <= 0.02){
+      const pad = padAt(b.x, b.y, 22);              // 縁ギリギリの着地は救済する
+      if(pad){                                       // 少しはみ出していたら引き戻す
+        const dx = b.x-pad.x, dy = b.y-pad.y, d = Math.hypot(dx,dy);
+        if(d > pad.r-8 && d > 0){
+          const k = (pad.r-8)/d;
+          b.x = pad.x + dx*k; b.y = pad.y + dy*k;
+        }
+      }
+      if(!pad){
+        b.state = 'fall'; b.fallT = 0; sfx.fall();
+        if(b.isPlayer) G.flash = 8;
+        continue;
+      }
+      // 自動バウンド（ジャンプ入力で大きく跳ねる）
+      b.vz = (cmd && cmd.jump) ? 10.6 : 8.4;
+      b.z = 0.03; pad.sq = 12;
+      sfx.pad();
+      if(b.state === 'prone' || b.state === 'tumble'){ b.vz *= 0.75; }
+    }
+  }
+  beanVsBean();
+
+  const alive = G.beans.filter(b=> !b.out && b.state !== 'fall').length;
+  const me = G.player;
+  const need = G.practice ? 1 : R.qualify;
+  const clear = ()=>{
+    G.endT = 150;
+    if(me && !me.out && !G.spectate) qualifyFX('SURVIVED!!', me); else showBanner('SURVIVED!', '#3ddc84');
+    celebrateRound();
+  };
+  if(G.endT > 0){ if(--G.endT === 0) endRound(); }
+  else if(alive <= 1){ G.endT = 130; showBanner('LAST ONE!', '#ffd23f'); celebrateRound(); }
+  else if(need > 0 && alive <= need) clear();
+  else if(G.timeLeft <= 0) clear();
+}
+function aiBounce(b){
+  const cur = padAt(b.x, b.y);
+  let tgt = (cur && cur.state === 'ok') ? cur : null;
+  if(!tgt || (b.bT && b.bT.state !== 'ok')) b.bT = null;
+  if(!tgt){
+    let bd = 1e9;
+    for(const p of bounce.pads){
+      if(p.state !== 'ok') continue;
+      let sc = Math.hypot(p.x-b.x, p.y-b.y);
+      for(const o of G.beans){
+        if(o === b || o.out) continue;
+        if(Math.hypot(o.x-p.x, o.y-p.y) < 52) sc += 110;
+      }
+      if(sc < bd){ bd = sc; tgt = p; }
+    }
+  }
+  if(!tgt) return { mx:0, my:0, jump:false, dive:false };
+  const dx = tgt.x-b.x, dy = tgt.y-b.y, d = Math.hypot(dx,dy) || 1;
+  // 高いバーが近いときは着地を急ぐ（大きく跳ねない）
+  let hiNear = false;
+  for(const o of obstacles){
+    if(o.kind !== 'rotbar' || !o.high) continue;
+    let a = Math.atan2(b.y-o.cy, b.x-o.cx) - o.a;
+    a = Math.atan2(Math.sin(a), Math.cos(a));
+    if(a > Math.PI/2) a -= Math.PI; if(a < -Math.PI/2) a += Math.PI;
+    const t = o.om !== 0 ? a/o.om : 1e9;
+    if(t > 0 && t < 50) hiNear = true;
+  }
+  return { mx:dx/d, my:dy/d, jump: (d > 130 && !hiNear), dive:false };
+}
+function drawBounceFloor(){
+  ctx.fillStyle = '#3a1f6e'; ctx.fillRect(0,0,VW,VH);
+  ctx.fillStyle = 'rgba(255,255,255,.08)';
+  for(let i=0;i<7;i++){
+    const x = (i*167 + G.elapsed*0.35) % (VW+200) - 100, y = 50 + (i*131)%540;
+    ctx.beginPath(); ctx.ellipse(x, y, 84, 30, 0, 0, TAU); ctx.fill();
+  }
+  for(const p of bounce.pads){
+    if(p.state === 'gone') continue;
+    const sq = p.sq > 0 ? 1 - p.sq/34 : 1;
+    const warn = p.state === 'warn';
+    const wob = warn ? 1 - 0.12*Math.abs(Math.sin(G.elapsed*0.25)) : 1;
+    ctx.save();
+    ctx.globalAlpha = warn ? 0.55 + 0.3*Math.sin(G.elapsed*0.25) : 1;
+    ctx.fillStyle = 'rgba(0,0,0,.35)';
+    ctx.beginPath(); ctx.ellipse(p.x, p.y+12, p.r*wob, p.r*0.42*wob, 0,0,TAU); ctx.fill();
+    ctx.fillStyle = warn ? '#7a5aa8' : '#2b1a52';
+    ctx.beginPath(); ctx.ellipse(p.x, p.y+4, p.r*wob, p.r*0.62*wob, 0,0,TAU); ctx.fill();
+    ctx.fillStyle = warn ? '#b79bff' : p.col;
+    ctx.beginPath(); ctx.ellipse(p.x, p.y-2*sq, p.r*wob, p.r*0.56*sq*wob, 0,0,TAU); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.4)';
+    ctx.beginPath(); ctx.ellipse(p.x, p.y-10*sq, p.r*0.55*wob, p.r*0.22*sq*wob, 0,0,TAU); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.ellipse(p.x, p.y-2*sq, p.r*wob, p.r*0.56*sq*wob, 0,0,TAU); ctx.stroke();
+    if(warn){
+      ctx.strokeStyle = 'rgba(255,60,90,.95)'; ctx.lineWidth = 5; ctx.setLineDash([9,7]);
+      ctx.beginPath(); ctx.ellipse(p.x, p.y-2, p.r+7, (p.r+7)*0.56, 0,0,TAU); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
 }
 
 // ---------------------------------------------------------------- ヘックス・ア・ゴーン
@@ -1449,6 +1789,7 @@ function updateFloor(){
 
   const alive = G.beans.filter(b=> !b.out && b.state !== 'fall').length;
   const me = G.player;
+  const need = G.practice ? 1 : R.qualify;
   const clear = ()=>{
     G.endT = 150;
     if(me && !me.out && !G.spectate) qualifyFX('SURVIVED!!', me); else showBanner('SURVIVED!', '#3ddc84');
@@ -1456,7 +1797,7 @@ function updateFloor(){
   };
   if(G.endT > 0){ if(--G.endT === 0) endRound(); }
   else if(alive <= 1){ G.endT = 130; showBanner('LAST ONE!', '#ffd23f'); celebrateRound(); }
-  else if(R.qualify > 0 && alive <= R.qualify) clear();
+  else if(need > 0 && alive <= need) clear();
   else if(G.timeLeft <= 0) clear();
 }
 function aiFloor(b){
@@ -1861,7 +2202,12 @@ function guideFloor(b){
 }
 
 function aiRace(b){
-  let tx = clamp(400 + b.lane, 70, 730), ty = b.y - 260;
+  let ty = b.y - 260;
+  let tx;
+  if(world.path){
+    const pa = pathAt(ty), pn = pathAt(b.y);
+    tx = clamp(pa.cx + b.lane*(pa.w/2 - 40), pn.cx - pn.w/2 + 30, pn.cx + pn.w/2 - 30);
+  } else tx = clamp(400 + b.lane, 70, 730);
   const gf = guideFloor(b);
   if(gf){ tx = gf.x; ty = gf.y; }
 
@@ -1897,8 +2243,17 @@ function aiRace(b){
   const dg = nearDanger(b, 78);
   mx += dg.avx; my += dg.avy;
 
-  if(b.x < 60) mx += 1.2;
-  if(b.x > 740) mx -= 1.2;
+  if(world.path){                                   // 道の縁から離れる
+    const pn = pathAt(b.y);
+    if(pn.w > 140 && !onFloor(b)){                  // 丸太の上では道の中心に引っ張らない
+      const off = b.x - pn.cx, lim = pn.w/2 - 46;
+      if(off >  lim) mx -= 1.5;
+      if(off < -lim) mx += 1.5;
+    }
+  } else {
+    if(b.x < 60) mx += 1.2;
+    if(b.x > 740) mx -= 1.2;
+  }
 
   const jump = dg.jump && !dg.noJump;
   let dive = false;
@@ -1944,13 +2299,16 @@ function aiArena(b){
 
 // ---------------------------------------------------------------- ゾーン/落下
 function applyZones(b){
-  if(b.z > 6 || b.state === 'fall') return;
+  if(b.state === 'fall') return;
+  const air = b.z > 6;
   for(const z of zones){
     if(b.x > z.x && b.x < z.x+z.w && b.y > z.y && b.y < z.y+z.h){
+      if(z.t === 'lowg'){ b.lowG = 1; continue; }        // 低重力は空中でも効く
+      if(air) continue;
       if(z.t === 'slime'){ b.zoneMul = 0.55; b.vx *= 0.90; b.vy *= 0.90; }
       else if(z.t === 'wind'){ b.vx += z.ax; }
       else if(z.t === 'conveyor'){ b.vx += z.ax; b.vy += z.ay || 0; }
-      else if(z.t === 'ice'){ b.slip = 1; }
+      else if(z.t === 'ice' || z.t === 'slick'){ b.slip = 1; }
       else if(z.t === 'turn'){
         const rx = b.x-z.cx, ry = b.y-z.cy, d = Math.hypot(rx,ry);
         if(d < z.r){
@@ -1964,6 +2322,7 @@ function applyZones(b){
 function checkHoles(b){
   if(b.z > 2 || b.state === 'fall' || b.done || b.out) return;
   for(const h of holes){
+    if(h.virtual) continue;
     if(b.x > h.x+4 && b.x < h.x+h.w-4 && b.y > h.y+4 && b.y < h.y+h.h-4){
       if(onFloor(b)) return;
       b.state = 'fall'; b.fallT = 0; sfx.fall();
@@ -2059,6 +2418,7 @@ function startRound(idx){
     if(!v) v = pick(base.variants);                 // トーナメントでは毎回ランダム
   }
   const R = Object.assign({}, base, v || {});
+  if(R.qualify > 0) R.qualify = Math.min(R.qualify, Math.max(1, G.beans.length - 2));
   if(R.rule) R.rule = R.rule.replace('{Q}', R.qualify);
   G.round = R;
   G.stage = STAGES[R.stage];
@@ -2084,6 +2444,7 @@ function endRound(){
       const rest = G.beans.filter(b=> qualified.indexOf(b) < 0).sort((a,b)=> a.y - b.y);
       while(qualified.length < R.qualify && rest.length) qualified.push(rest.shift());
     }
+    if(!qualified.length && G.outOrder.length) qualified = G.outOrder.slice(-2);   // 全滅時の保険
     eliminated = G.beans.filter(b=> qualified.indexOf(b) < 0);
     // 未通過の順位付け（残り距離順）
     eliminated.sort((a,b)=> b.y - a.y);
@@ -2105,6 +2466,10 @@ function endRound(){
 // ---------------------------------------------------------------- 更新
 function updateRace(){
   updateGimmicks();
+  if(G.stage.chase && G.freeze <= 0 && G.endT <= 0){
+    const sp = 0.72 + clamp(G.rt/3600, 0, 1)*0.55;      // だんだん速くなる
+    G.slimeY -= sp;
+  }
   if(G.stage.goal === 'crown' && G.freeze <= 0 && !G.winner){
     crown.t++;
     crown.z = 62 + Math.sin(crown.t*0.040)*30;      // 上下に動く王冠（低い時が狙い目）
@@ -2127,7 +2492,9 @@ function updateRace(){
     }
     if(b.state === 'fall'){
       updateBean(b, null);
-      if(b.fallT > 34) respawnRace(b);
+      if(b.fallT > 34){
+        if(G.stage.fallOut) eliminate(b); else respawnRace(b);
+      }
       continue;
     }
     let cmd;
@@ -2154,11 +2521,24 @@ function updateRace(){
       checkPads(b);
       for(const c of cols) collideBean(b, c);
     }
-    // 壁
-    if(b.x < BEAN_R){ b.x = BEAN_R; if(b.vx<0) b.vx *= -0.3; }
-    if(b.x > world.w-BEAN_R){ b.x = world.w-BEAN_R; if(b.vx>0) b.vx *= -0.3; }
+    // 壁（くねくね道では道の外がスライムなので壁は無い）
+    if(!world.path){
+      if(b.x < BEAN_R){ b.x = BEAN_R; if(b.vx<0) b.vx *= -0.3; }
+      if(b.x > world.w-BEAN_R){ b.x = world.w-BEAN_R; if(b.vx>0) b.vx *= -0.3; }
+    } else if(b.z <= 2 && b.state !== 'fall' && offPath(b) && !onFloor(b)){
+      b.state = 'fall'; b.fallT = 18; sfx.fall();
+      burst(b.x, b.y, 6, 18, '#3ddc84', 3.2);
+      if(b.isPlayer){ G.flash = 10; showBanner('SLIMED!', '#3ddc84'); }
+      continue;
+    }
     if(b.y > -20){ b.y = -20; if(b.vy>0) b.vy = 0; }
     checkHoles(b);
+    if(G.stage.chase && b.y > G.slimeY && b.state !== 'fall'){   // スライムに飲まれた
+      b.state = 'fall'; b.fallT = 20; sfx.fall();
+      burst(b.x, b.y, 6, 16, '#3ddc84', 3);
+      if(b.isPlayer) G.flash = 10;
+      continue;
+    }
     if(G.stage.goal === 'crown'){
       if(!G.winner && b.state !== 'fall' && b.state !== 'tumble' && b.stun <= 0){
         const cd = Math.hypot(b.x-crown.x, b.y-crown.y);
@@ -2180,6 +2560,13 @@ function updateRace(){
   if(G.endT > 0){ if(--G.endT === 0) endRound(); }
   else if(G.stage.goal === 'crown'){
     if(G.timeLeft <= 0){ G.endT = 120; showBanner('TIME UP', '#ffd23f'); }
+  }
+  else if(G.beans.filter(b=> !b.out && !b.done).length === 0){
+    G.endT = 110;
+    const me = G.player;
+    if(me && !me.done && !G.spectate){ sfx.out(); showBanner('ELIMINATED', '#ff5f6d'); G.loseT = 70; }
+    else showBanner('RACE OVER', '#ffd23f');
+    celebrateRound();
   }
   else if(G.finishOrder.length >= R.qualify){
     G.endT = 130;
@@ -2243,11 +2630,43 @@ function camTarget(){
 }
 
 // ---------------------------------------------------------------- 描画
+// くねくね道のポリゴン（画面に映る範囲だけ）
+function pathPoly(y0, y1){
+  const step = 26, L = [], R = [];
+  for(let y = y0-60; y <= y1+60; y += step){
+    const pa = pathAt(y);
+    L.push([pa.cx - pa.w/2 - cam.x, y - cam.y]);
+    R.push([pa.cx + pa.w/2 - cam.x, y - cam.y]);
+  }
+  ctx.beginPath();
+  ctx.moveTo(L[0][0], L[0][1]);
+  for(let i=1;i<L.length;i++) ctx.lineTo(L[i][0], L[i][1]);
+  for(let i=R.length-1;i>=0;i--) ctx.lineTo(R[i][0], R[i][1]);
+  ctx.closePath();
+}
+function drawSlimeSea(){
+  const g = ctx.createLinearGradient(0,0,0,VH);
+  g.addColorStop(0,'#2fb974'); g.addColorStop(1,'#1e9c5f');
+  ctx.fillStyle = g; ctx.fillRect(0,0,VW,VH);
+  ctx.fillStyle = 'rgba(255,255,255,.14)';
+  for(let i=0;i<26;i++){
+    const bx = (i*151 + G.elapsed*0.5) % (VW+80) - 40;
+    const by = ((i*97 + G.elapsed*0.35) % (VH+80)) - 40;
+    ctx.beginPath(); ctx.arc(bx, by, 5 + (i%4)*4, 0, TAU); ctx.fill();
+  }
+}
+
 function drawRaceFloor(){
   const y0 = Math.floor(cam.y/80)*80 - 80, y1 = cam.y + VH + 80;
-  // 背景（コース外）
-  ctx.fillStyle = '#5f3fb8';
-  ctx.fillRect(0,0,VW,VH);
+  const pathMode = !!world.path;
+  if(pathMode){
+    drawSlimeSea();
+    ctx.save();
+    pathPoly(y0, y1); ctx.clip();
+  } else {
+    ctx.fillStyle = '#5f3fb8';
+    ctx.fillRect(0,0,VW,VH);
+  }
   ctx.save();
   // 床
   for(let y=y0; y<y1; y+=80){
@@ -2258,6 +2677,7 @@ function drawRaceFloor(){
     }
   }
   // サイド壁
+  if(!pathMode){
   ctx.fillStyle = '#7a4dff';
   ctx.fillRect(0-cam.x-26, y0-cam.y, 26, y1-y0);
   ctx.fillRect(world.w-cam.x, y0-cam.y, 26, y1-y0);
@@ -2265,6 +2685,7 @@ function drawRaceFloor(){
   for(let y=y0; y<y1; y+=60){
     ctx.fillRect(0-cam.x-26, y-cam.y, 26, 26);
     ctx.fillRect(world.w-cam.x, y-cam.y+30, 26, 26);
+  }
   }
   // チェックポイント
   ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 5; ctx.setLineDash([16,14]);
@@ -2274,7 +2695,7 @@ function drawRaceFloor(){
   }
   ctx.setLineDash([]);
   // スタートライン
-  if(-340 > y0 && -340 < y1){
+  if(!pathMode && -340 > y0 && -340 < y1){
     ctx.fillStyle = '#fff';
     for(let x=0;x<world.w;x+=40) ctx.fillRect(x-cam.x, -344-cam.y, 20, 10);
   }
@@ -2317,6 +2738,24 @@ function drawRaceFloor(){
         }
       }
       ctx.restore();
+    } else if(z.t === 'lowg'){
+      ctx.fillStyle = 'rgba(157,180,255,.42)';
+      ctx.fillRect(z.x-cam.x, z.y-cam.y, z.w, z.h);
+      ctx.fillStyle = 'rgba(255,255,255,.6)';
+      for(let i=0;i<16;i++){
+        const bx = z.x + ((i*173)%z.w), by = z.y + ((i*89 - G.elapsed*0.9) % z.h + z.h) % z.h;
+        ctx.beginPath(); ctx.arc(bx-cam.x, by-cam.y, 3 + (i%3)*2, 0, TAU); ctx.fill();
+      }
+      ctx.strokeStyle = 'rgba(157,180,255,.9)'; ctx.lineWidth = 5;
+      ctx.strokeRect(z.x-cam.x+2, z.y-cam.y+2, z.w-4, z.h-4);
+    } else if(z.t === 'slick'){
+      ctx.fillStyle = 'rgba(61,220,132,.55)';
+      ctx.fillRect(z.x-cam.x, z.y-cam.y, z.w, z.h);
+      ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 4;
+      for(let i=0;i<9;i++){
+        const bx = z.x + ((i*137)%z.w), by = z.y + 18 + ((i*61)%(z.h-30));
+        ctx.beginPath(); ctx.moveTo(bx-cam.x, by-cam.y); ctx.lineTo(bx+46-cam.x, by+12-cam.y); ctx.stroke();
+      }
     } else if(z.t === 'ice'){
       ctx.fillStyle = 'rgba(190,235,255,.85)'; ctx.fillRect(z.x-cam.x, z.y-cam.y, z.w, z.h);
       ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 3;
@@ -2328,9 +2767,18 @@ function drawRaceFloor(){
       ctx.strokeRect(z.x-cam.x+2, z.y-cam.y+2, z.w-4, z.h-4);
     }
   }
+  if(pathMode){
+    ctx.restore();                       // クリップ解除
+    ctx.save();
+    pathPoly(y0, y1);
+    ctx.strokeStyle = '#ffd6ef'; ctx.lineWidth = 9; ctx.stroke();
+    ctx.strokeStyle = '#ff8fd0'; ctx.lineWidth = 4; ctx.stroke();
+    ctx.restore();
+    ctx.save();
+  }
   // 穴
   for(const h of holes){
-    if(h.y+h.h < y0 || h.y > y1) continue;
+    if(h.virtual || h.y+h.h < y0 || h.y > y1) continue;
     ctx.fillStyle = 'rgba(40,15,80,.35)';
     roundRect(h.x-cam.x-4, h.y-cam.y-4, h.w+8, h.h+8, 18); ctx.fill();
     const g = ctx.createLinearGradient(0, h.y-cam.y, 0, h.y+h.h-cam.y);
@@ -2356,6 +2804,21 @@ function drawRaceFloor(){
   // 動く床
   for(const pl of plats){
     if(pl.y+pl.h < y0 || pl.y > y1) continue;
+    if(pl.log){                                        // 弁慶丸太
+      const x = pl.x-cam.x, y = pl.y-cam.y;
+      ctx.fillStyle = 'rgba(0,0,0,.35)';
+      roundRect(x, y+10, pl.w, pl.h, pl.h/2); ctx.fill();
+      ctx.fillStyle = '#a9723f';
+      roundRect(x, y, pl.w, pl.h, pl.h/2); ctx.fill();
+      ctx.fillStyle = '#c98b4e';
+      roundRect(x+6, y+8, pl.w-12, pl.h-26, (pl.h-26)/2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.28)';
+      for(let k=26;k<pl.w-20;k+=40){ roundRect(x+k, y+16, 18, 8, 4); ctx.fill(); }
+      ctx.fillStyle = '#8a5a2f';
+      ctx.beginPath(); ctx.ellipse(x+11, y+pl.h/2, 9, pl.h/2-4, 0,0,TAU); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(x+pl.w-11, y+pl.h/2, 9, pl.h/2-4, 0,0,TAU); ctx.fill();
+      continue;
+    }
     ctx.fillStyle = 'rgba(0,0,0,.30)';
     roundRect(pl.x-cam.x, pl.y-cam.y+9, pl.w, pl.h, 14); ctx.fill();
     ctx.fillStyle = '#ff9f5a';
@@ -2411,6 +2874,39 @@ function drawRaceFloor(){
     }
     ctx.lineCap='butt';
     ctx.restore();
+  }
+  // 迫るスライム
+  if(G.stage.chase){
+    const sy = G.slimeY - cam.y;
+    if(sy < VH + 40){
+      ctx.save();
+      const g2 = ctx.createLinearGradient(0, sy, 0, sy+VH);
+      g2.addColorStop(0, 'rgba(61,220,132,.92)'); g2.addColorStop(1, 'rgba(20,150,90,.98)');
+      ctx.fillStyle = g2;
+      ctx.beginPath();
+      ctx.moveTo(-40, VH+60);
+      ctx.lineTo(-40, sy);
+      for(let x=-40; x<VW+60; x+=28){
+        ctx.quadraticCurveTo(x+14, sy + Math.sin((x+G.elapsed*2.2)*0.035)*11 - 9, x+28, sy + Math.sin((x+28+G.elapsed*2.2)*0.035)*11);
+      }
+      ctx.lineTo(VW+60, VH+60);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.35)';
+      for(let i=0;i<12;i++){
+        const bx = (i*137 + G.elapsed*0.6) % (VW+80) - 40;
+        const by = sy + 26 + ((i*61 + G.elapsed*0.8) % 150);
+        if(by > VH+20) continue;
+        ctx.beginPath(); ctx.arc(bx, by, 4 + (i%3)*3, 0, TAU); ctx.fill();
+      }
+      ctx.restore();
+    } else {
+      // 画面外にいる時は下端に警告
+      ctx.save();
+      ctx.globalAlpha = 0.55 + 0.35*Math.sin(G.elapsed*0.15);
+      ctx.fillStyle = '#3ddc84';
+      ctx.fillRect(0, VH-9, VW, 9);
+      ctx.restore();
+    }
   }
   // ゴール
   const gy = world.goalY;
@@ -2645,6 +3141,11 @@ function drawProgress(){
   ctx.fillStyle = '#ffd23f';
   ctx.beginPath(); ctx.arc(x, y0-6, 5, 0, TAU); ctx.fill();   // 上＝ゴール
   const span = world.startY - world.goalY;
+  if(G.stage.chase){
+    const st = clamp((world.startY - G.slimeY)/span, 0, 1);
+    ctx.fillStyle = 'rgba(61,220,132,.85)';
+    ctx.fillRect(x-11, y1 - (y1-y0)*st, 22, (y1-y0)*st + 14);
+  }
   for(const b of G.beans){
     if(b.out) continue;
     const t = clamp((world.startY - (b.done ? world.goalY : b.y))/span, 0, 1);
@@ -2760,7 +3261,7 @@ function showTitle(){
 }
 // 好きなステージを単体で遊ぶ
 const SELECT_LIST = [
-  { k:'race' }, { k:'jump', v:'jumpclub' }, { k:'hex', v:'hexagone' }, { k:'floor', v:'floorout' }, { k:'gimmick' },
+  { k:'race', v:'gatecrash' }, { k:'slime', v:'slimeclimb' }, { k:'jump', v:'jumpclub' }, { k:'bounce', v:'bounceparty' }, { k:'hex', v:'hexagone' }, { k:'floor', v:'floorout' }, { k:'gimmick' },
   { k:'roll', v:'sprint' }, { k:'roll', v:'attrition' }, { k:'final' }
 ];
 function showStageSelect(){
