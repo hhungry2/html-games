@@ -123,6 +123,16 @@
   .btn.alt{background:linear-gradient(180deg,#7fe1ff,#35c8ff);font-size:15px;padding:8px 10px 9px;box-shadow:0 5px 0 #2b2140}
   .btn.alt:active{transform:translateY(3px);box-shadow:0 2px 0 #2b2140}
 
+  .modesel{display:flex;gap:6px;margin-top:10px;pointer-events:auto}
+  .modebtn{
+    flex:1;cursor:pointer;font-family:inherit;font-weight:800;font-size:12.5px;letter-spacing:.04em;
+    color:#8a7fa8;background:#f6f2ff;border:3px solid #2b2140;border-radius:13px;
+    padding:7px 4px 8px;box-shadow:0 4px 0 #2b2140;transition:transform .08s,box-shadow .08s;
+  }
+  .modebtn:active{transform:translateY(3px);box-shadow:0 1px 0 #2b2140}
+  .modebtn.on{color:#fff;background:linear-gradient(180deg,#c69bff,#9b5cff)}
+  .modenote{font-size:10.5px;color:#8a7fa8;margin-top:5px;letter-spacing:.04em}
+
   .bigdist{
     font-size:clamp(44px,14vw,64px);line-height:1;color:#ff4f8b;
     -webkit-text-stroke:7px #2b2140;paint-order:stroke fill;margin:6px 0 0;
@@ -199,7 +209,7 @@
 
   <div class="row bottom">
     <div class="gauges">
-      <div class="gauge"><span class="tag">エアリアル</span><span class="pips" id="pipsA"></span></div>
+      <div class="gauge"><span class="tag" id="tagAerial">エアリアル</span><span class="pips" id="pipsA"></span></div>
       <div class="gauge"><span class="tag">クラッシュ</span><span class="pips" id="pipsC"></span></div>
     </div>
     <div class="spacer"></div>
@@ -387,7 +397,14 @@ let crashes     = CRASH_MAX;
 let combo       = 0, bestCombo = 0;
 let hits        = 0;
 let distance    = 0, maxDistance = 0;
+let mode        = localStorage.getItem('nc_mode') === 'infinite' ? 'infinite' : 'normal';
 let best        = +(localStorage.getItem('nc_best') || 0);
+let bestInf     = +(localStorage.getItem('nc_best_inf') || 0);
+function getBest(){ return mode === 'infinite' ? bestInf : best; }
+function setBest(v){
+  if (mode === 'infinite'){ bestInf = v; localStorage.setItem('nc_best_inf', v); }
+  else { best = v; localStorage.setItem('nc_best', v); }
+}
 let floatTimer  = 0;
 let hitstop     = 0;
 let flashT      = 0;
@@ -482,7 +499,7 @@ function buildPips(){
 }
 buildPips();
 function syncPips(){
-  [...pipsA.children].forEach((p, i) => p.classList.toggle('on', i < aerial));
+  [...pipsA.children].forEach((p, i) => p.classList.toggle('on', mode === 'infinite' ? true : i < aerial));
   [...pipsC.children].forEach((p, i) => p.classList.toggle('on', i < crashes));
 }
 let shownDist = -1;
@@ -492,7 +509,7 @@ function syncHUD(){
     shownDist = d;
     elDist.innerHTML = fmt(d) + '<small>m</small>';
   }
-  elBest.textContent = fmt(best) + 'm';
+  elBest.textContent = fmt(getBest()) + 'm';
   syncPips();
 }
 function showCombo(){
@@ -513,6 +530,7 @@ function startRun(){
   cam.x = 0; cam.y = -H * 0.2; cam.s = 1; cam.ts = 1; cam.shake = 0;
   resetWorld();
   hideCombo();
+  document.getElementById('tagAerial').textContent = mode === 'infinite' ? 'エアリアル∞' : 'エアリアル';
   syncHUD();
   state = S.AIM; aimT = 0; aimDir = 1;
   setHint('タップして角度を決める');
@@ -555,12 +573,13 @@ function findTarget(){
 }
 
 function doAerial(){
-  if (aerial <= 0) return false;
+  if (mode !== 'infinite' && aerial <= 0) return false;
   const t = findTarget();
   if (!t) return false;
   const e = t.e, K = KINDS[e.k];
   e.hit = true; e.hitT = 1;
-  aerial--; hits++;
+  if (mode !== 'infinite') aerial--;
+  hits++;
   combo++; bestCombo = Math.max(bestCombo, combo);
 
   // 中心に近いほど強い（0.28 〜 1.85倍）— ここが上手さの差になる
@@ -628,8 +647,8 @@ function finish(){
   state = S.RESULT;
   setHint('');
   hideCombo();
-  const isBest = maxDistance > best;
-  if (isBest){ best = Math.floor(maxDistance); localStorage.setItem('nc_best', best); }
+  const isBest = maxDistance > getBest();
+  if (isBest) setBest(Math.floor(maxDistance));
   syncHUD();
   setTimeout(() => { isBest ? SFX.best() : SFX.fanfare(); }, 120);
   showResult(isBest);
@@ -790,7 +809,7 @@ function step(){
   if (props.length > 90)  props = props.filter(p => p.x > hero.x - 1400);
 
   // ヒント（エアリアル可能なとき）
-  if (aerial > 0 && findTarget()) hintTimer = 30;
+  if ((mode === 'infinite' || aerial > 0) && findTarget()) hintTimer = 30;
   if (hintTimer > 0){ hintTimer--; setHint('タップでエアリアル！'); }
   else if (state === S.FLY) setHint('');
 
@@ -1313,7 +1332,7 @@ function drawSpeedLines(){
   ctx.restore();
 }
 function drawAerialRing(){
-  if (state !== S.FLY || aerial <= 0) return;
+  if (state !== S.FLY || (mode !== 'infinite' && aerial <= 0)) return;
   const sx = toX(hero.x), sy = toY(hero.y);
   ctx.save();
   ctx.globalAlpha = .28 + Math.sin(timeSec * 5) * .07;
@@ -1388,7 +1407,7 @@ function render(){
   drawGround();
   drawClouds(0.85, 380, 0.7, .55, 3);
 
-  const tgt = (state === S.FLY && aerial > 0) ? findTarget() : null;
+  const tgt = (state === S.FLY && (mode === 'infinite' || aerial > 0)) ? findTarget() : null;
   const tgtE = tgt ? tgt.e : null;
   for (const e of ents) drawEnt(e, e === tgtE);
 
@@ -1442,7 +1461,7 @@ function rankOf(d){ for (const r of RANKS) if (d < r[0]) return r; return RANKS[
 function showTitle(){
   state = S.TITLE;
   setHint(''); hideCombo();
-  elBest.textContent = fmt(best) + 'm';
+  elBest.textContent = fmt(getBest()) + 'm';
   card.innerHTML =
     '<div class="logo">ポップ<em>†</em>クラッシュ<em>!!</em></div>' +
     '<div class="sub">P O P &nbsp; C R A S H &nbsp;— 飛距離アタック</div>' +
@@ -1461,10 +1480,25 @@ function showTitle(){
       '<div><i style="background:#9b5cff"></i>ガツン／地面に叩きつけ</div>' +
       '<div><i style="background:#ffffff"></i>ふわり／ふんわり滞空</div>' +
     '</div>' +
-    '<div class="stats" style="margin-top:8px"><div><span>YOUR BEST</span><b>' + fmt(best) + 'm</b></div></div>' +
+    '<div class="modesel" id="modesel">' +
+      '<button class="modebtn' + (mode === 'normal' ? ' on' : '') + '" data-mode="normal">ノーマル</button>' +
+      '<button class="modebtn' + (mode === 'infinite' ? ' on' : '') + '" data-mode="infinite">エアリアル無限</button>' +
+    '</div>' +
+    '<div class="modenote">' + (mode === 'infinite' ? 'エアリアルが尽きない！ コンボを繋ぎまくろう' : '通常ルール（エアリアル' + AERIAL_MAX + '回）') + '</div>' +
+    '<div class="stats" style="margin-top:8px"><div><span>YOUR BEST</span><b>' + fmt(getBest()) + 'm</b></div></div>' +
     '<button class="btn" id="btnStart">スタート！</button>';
   ov.classList.add('on');
   document.getElementById('btnStart').addEventListener('click', e => { e.stopPropagation(); SFX.ui(); ov.classList.remove('on'); startRun(); });
+  document.getElementById('modesel').addEventListener('click', e => {
+    const b = e.target.closest('.modebtn');
+    if (!b) return;
+    e.stopPropagation();
+    if (b.dataset.mode === mode) return;
+    mode = b.dataset.mode;
+    localStorage.setItem('nc_mode', mode);
+    SFX.ui();
+    showTitle();
+  });
 }
 
 function showResult(isBest){
@@ -1478,7 +1512,7 @@ function showResult(isBest){
     '<div class="stats">' +
       '<div><span>AERIAL</span><b>' + hits + '</b></div>' +
       '<div><span>MAX COMBO</span><b>' + bestCombo + '</b></div>' +
-      '<div><span>BEST</span><b>' + fmt(best) + 'm</b></div>' +
+      '<div><span>BEST</span><b>' + fmt(getBest()) + 'm</b></div>' +
     '</div>' +
     '<button class="btn" id="btnRetry">もういちど飛ぶ！</button>' +
     '<button class="btn alt" id="btnTitle">タイトルへ</button>';
@@ -1513,7 +1547,7 @@ function press(){
       break;
     case S.FLY:
       if (!doAerial()){
-        if (aerial <= 0 && findTarget()) addPop(hero.x, hero.y - 60, 'エアリアル切れ…', '#ffffff', 22);
+        if (mode !== 'infinite' && aerial <= 0 && findTarget()) addPop(hero.x, hero.y - 60, 'エアリアル切れ…', '#ffffff', 22);
       }
       break;
   }
