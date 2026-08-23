@@ -1964,18 +1964,21 @@ function drawFloorArena(){
 
 // ---------------------------------------------------------------- ROUND4 ロール・アウト
 // 円筒の表面を展開したトップビュー。縦5本の帯＝リングで、各帯の床が上下にスクロールする。
+// 切れ目（穴）も壁も1本のロールの端から端まで。よけられないのでジャンプか隣のロールへ。
+const ROLL_HOLE_H = 70;      // 切れ目の幅（回転方向）
+const ROLL_WALL_H = 26;      // 壁の厚み
+const ROLL_WALL_Z = 16;      // 壁の高さ（これ以上跳べば越えられる）
 function buildRoll(){
   obstacles = []; zones = []; holes = []; parts = []; pads = []; tiles = []; plats = [];
   roll.x = 64; roll.y = 66; roll.w = 832; roll.h = 512; roll.n = 5;
   roll.cw = roll.w/roll.n; roll.per = roll.h + 240; roll.cols = [];
   for(let i=0;i<roll.n;i++){
     const dir = (i%2===0) ? 1 : -1;
-    const c = { x: roll.x + i*roll.cw, w: roll.cw, dir, spd: rnd(0.50,0.78), off: rnd(0,roll.per), holes:[] };
-    const nh = 3;
-    for(let k=0;k<nh;k++){
-      c.holes.push({ s: roll.per*(k/nh) + rnd(0, roll.per/nh*0.5),
-                     ox: rnd(0.04,0.44), w: c.w*rnd(0.44,0.60), h: 104 });
-    }
+    const c = { x: roll.x + i*roll.cw, w: roll.cw, dir, spd: rnd(0.40,0.62), off: rnd(0,roll.per), holes:[], walls:[] };
+    // 切れ目（穴）と壁はロールの端から端まで。1周に切れ目1つと壁1つ
+    const slot = roll.per/4;
+    c.holes.push({ s: slot*0.5 + rnd(-slot*0.2, slot*0.2), h: ROLL_HOLE_H });
+    c.walls.push({ s: slot*2.5 + rnd(-slot*0.2, slot*0.2), h: ROLL_WALL_H });
     roll.cols.push(c);
   }
   // 穴の上に湧かないように配置する
@@ -1992,7 +1995,7 @@ function buildRoll(){
     if(!ok){ const sp = bestRollSpot(placed); px = sp.x; py = sp.y; }
     b.x = px; b.y = py; placed.push({x:px, y:py});
     b.z = 0; b.vx = b.vy = b.vz = 0; b.face = -Math.PI/2;
-    b.state='run'; b.stun=0; b.inv=0; b.out=false; b.done=false; b.fallT=0; b.spin=0; b.cheer=0;
+    b.state='run'; b.stun=0; b.inv=0; b.out=false; b.done=false; b.fallT=0; b.spin=0; b.cheer=0; b.bumpT=0;
   });
   cam.x = 0; cam.y = 0;
 }
@@ -2003,14 +2006,14 @@ function colAt(x){
 // 穴からも他のビーンからも最も離れた場所を探す（最後の砦）
 function bestRollSpot(placed){
   let best = null, bs = -1;
-  for(let x = roll.x+34; x < roll.x+roll.w-34; x += 26){
+  for(let x = roll.x+50; x < roll.x+roll.w-50; x += 26){
     const c = colAt(x); if(!c) continue;
-    const hr = holeRects(c);
+    const hr = holeRects(c).concat(wallRects(c));
     for(let y = roll.y+44; y < roll.y+roll.h-44; y += 26){
-      let sc = Math.min((y-roll.y)*0.8, (roll.y+roll.h-y)*0.8);
+      let sc = Math.min((y-roll.y)*0.8, (roll.y+roll.h-y)*0.8, (x-roll.x)*0.8, (roll.x+roll.w-x)*0.8);
       for(const h of hr){
-        const dx = Math.max(h.x-x, 0, x-(h.x+h.w)), dy = Math.max(h.y-y, 0, y-(h.y+h.h));
-        sc = Math.min(sc, Math.hypot(dx,dy));
+        const dy = Math.max(h.y-y, 0, y-(h.y+h.h));
+        sc = Math.min(sc, dy);
       }
       for(const q of placed) sc = Math.min(sc, Math.hypot(q.x-x, q.y-y)*0.8);
       if(sc > bs){ bs = sc; best = {x, y}; }
@@ -2021,14 +2024,21 @@ function bestRollSpot(placed){
 function rollSpotBad(x, y, placed){
   for(const q of placed) if(Math.hypot(q.x-x, q.y-y) < BEAN_R*2+8) return true;
   const c = colAt(x); if(!c) return true;
-  for(const h of holeRects(c)){
-    if(x > h.x-BEAN_R-12 && x < h.x+h.w+BEAN_R+12 && y > h.y-BEAN_R-12 && y < h.y+h.h+BEAN_R+12) return true;
+  if(x < roll.x+BEAN_R+24 || x > roll.x+roll.w-BEAN_R-24) return true;
+  for(const h of holeRects(c).concat(wallRects(c))){
+    if(y > h.y-BEAN_R-16 && y < h.y+h.h+BEAN_R+16) return true;
   }
   return false;
 }
+function rollY(c, s){ return roll.y - 120 + fmod(s + c.off, roll.per); }
 function holeRects(c){
   const out = [];
-  for(const h of c.holes) out.push({ x: c.x + h.ox*c.w, y: roll.y - 120 + fmod(h.s + c.off, roll.per), w: h.w, h: h.h });
+  for(const h of c.holes) out.push({ x: c.x, y: rollY(c, h.s), w: c.w, h: h.h });
+  return out;
+}
+function wallRects(c){
+  const out = [];
+  for(const w of c.walls) out.push({ x: c.x, y: rollY(c, w.s), w: c.w, h: w.h });
   return out;
 }
 function inRollHole(b){
@@ -2039,41 +2049,68 @@ function inRollHole(b){
 }
 function rollBlocked(x, y, range){
   const c = colAt(x); if(!c) return true;
-  for(const h of holeRects(c)){
-    if(x > h.x-BEAN_R-8 && x < h.x+h.w+BEAN_R+8){
-      if(Math.abs((h.y+h.h/2) - y) < range) return true;
-    }
-  }
+  for(const h of holeRects(c)) if(Math.abs((h.y+h.h/2) - y) < range) return true;
   return false;
 }
 function aiRoll(b){
-  // 流される向きの上流側をキープ
   const c = colAt(b.x);
-  const ty = c ? (c.dir > 0 ? roll.y + roll.h*0.30 : roll.y + roll.h*0.70) : roll.y + roll.h*0.5;
-  let my = clamp((ty - b.y)/110, -1, 1);
-  // 穴のない x へ寄る
-  let tx = b.x, bd = 1e9;
-  for(let x = roll.x+22; x < roll.x+roll.w-22; x += 22){
-    if(rollBlocked(x, b.y, 150)) continue;
-    const d = Math.abs(x-b.x); if(d < bd){ bd = d; tx = x; }
-  }
-  let mx = clamp((tx - b.x)/70, -1, 1);
-  // 目の前に穴が迫っていたら飛び越える
-  let jump = false;
-  if(c){
-    for(const h of holeRects(c)){
-      if(b.x > h.x-BEAN_R && b.x < h.x+h.w+BEAN_R){
-        const dy = (h.y + h.h/2) - b.y;
-        if(Math.abs(dy) < 92 && b.z <= 0 && bd > 60) jump = true;
-      }
+  if(!c) return { mx:(b.x < roll.x+roll.w/2)?1:-1, my:0, jump:false, dive:false };
+  const i = Math.round((c.x - roll.x)/roll.cw);
+  const up = -c.dir;                                                       // 上流＝流れの逆
+  const margin = (c.dir>0) ? (roll.y+roll.h-b.y) : (b.y-roll.y);           // 流されて落ちるまでの余裕
+  // 上流側から迫ってくる切れ目・壁までの距離
+  const dOf = rects=>{
+    let d = 1e9;
+    for(const r of rects){
+      const v = (c.dir>0) ? (b.y-(r.y+r.h)) : (r.y-b.y);
+      if(v > -r.h && v < d) d = v;
     }
+    return d;
+  };
+  const dHole = dOf(holeRects(c)), dWall = dOf(wallRects(c));
+  const colSafe = j=>{
+    if(j < 0 || j >= roll.cols.length) return false;
+    for(const h of holeRects(roll.cols[j])) if(Math.abs((h.y+h.h/2) - b.y) < 120) return false;
+    return true;
+  };
+  // 横：切れ目が迫ったら隣の安全なロールへ逃げる（余裕があるうちだけ）
+  let mx = 0, escaping = false;
+  if(dHole < 150 && margin > 170){
+    const cand = [];
+    if(colSafe(i-1)) cand.push(i-1);
+    if(colSafe(i+1)) cand.push(i+1);
+    if(cand.length){
+      const cx = j=> roll.x + (j+0.5)*roll.cw;
+      cand.sort((p,q)=> Math.abs(cx(p)-b.x) - Math.abs(cx(q)-b.x));
+      mx = clamp((cx(cand[0]) - b.x)/60, -1, 1); escaping = true;
+    }
+  }
+  // 端は落ちるので近づかない
+  if(b.x < roll.x+70){ mx = 1; escaping = false; }
+  else if(b.x > roll.x+roll.w-70){ mx = -1; escaping = false; }
+  // 縦：上流寄りをキープ。切れ目・壁が来ているときは助走をつけて全力で登る
+  let my = 0;
+  if(!escaping){
+    const ty = (c.dir > 0) ? roll.y + roll.h*0.34 : roll.y + roll.h*0.66;
+    my = clamp((ty - b.y)/90, -1, 1);
+    const needClimb = (b.y - ty) * (-up) > 20;      // 流されて目標より下流にいる
+    if(dHole < 170){
+      if(!needClimb) my = 0;                        // 急がないなら切れ目に近づかない（床に乗って流れる）
+      else if(dHole < 60 && margin > 120) my = -up; // 助走距離が足りない：いったん下がる
+      else my = up;                                 // 助走をつけて突っ込む
+    } else if(needClimb && dWall < 120) my = up;
+  }
+  // 十分な助走があるときだけ飛び越える
+  let jump = false;
+  if(b.z <= 0 && Math.sign(my) === up){
+    const sp = Math.abs(b.vy);
+    if(sp > 2.3 && dHole > 6 && dHole < 14 + sp*6) jump = true;
+    if(dWall > -20 && dWall < 30) jump = true;      // 壁は薄いので接触中でも跳べば越えられる
   }
   return { mx, my, jump, dive:false };
 }
 function addRollHole(){
-  for(const c of roll.cols){
-    c.holes.push({ s: rnd(0, roll.per), ox: rnd(0.04,0.44), w: c.w*rnd(0.44,0.60), h: 104 });
-  }
+  for(const c of roll.cols) c.holes.push({ s: rnd(0, roll.per), h: ROLL_HOLE_H });
   showBanner('HOLE +1', '#ff5f6d');
 }
 function updateRoll(){
@@ -2100,11 +2137,20 @@ function updateRoll(){
     // 回転している床に運ばれる（空中なら流されない）
     const c = colAt(b.x);
     if(b.z <= 0.02 && c) b.y += c.dir*c.spd*boost;
-    // 円筒の端は壁
-    if(b.x < roll.x+BEAN_R){ b.x = roll.x+BEAN_R; if(b.vx<0) b.vx *= -0.3; }
-    if(b.x > roll.x+roll.w-BEAN_R){ b.x = roll.x+roll.w-BEAN_R; if(b.vx>0) b.vx *= -0.3; }
-    // 穴・端から落下
-    if(b.z <= 2 && (b.y < roll.y+2 || b.y > roll.y+roll.h-2 || inRollHole(b))){
+    // 壁：ジャンプで越えられなければ回転方向へ押し出される
+    if(c && b.z < ROLL_WALL_Z && b.state !== 'fall'){
+      const r = BEAN_R*0.8;
+      for(const w of wallRects(c)){
+        if(b.y + r <= w.y || b.y - r >= w.y + w.h) continue;
+        if((b.y + r) - w.y < (w.y + w.h) - (b.y - r)){ b.y = w.y - r; if(b.vy > 0) b.vy = 0; }
+        else { b.y = w.y + w.h + r; if(b.vy < 0) b.vy = 0; }
+        if(!(b.bumpT > 0)){ b.bumpT = 26; if(b.isPlayer) sfx.bump(); }
+      }
+    }
+    if(b.bumpT > 0) b.bumpT--;
+    // 切れ目・端（上下左右）から落下
+    if(b.z <= 2 && (b.y < roll.y+2 || b.y > roll.y+roll.h-2 ||
+                    b.x < roll.x+2 || b.x > roll.x+roll.w-2 || inRollHole(b))){
       b.state = 'fall'; b.fallT = 0; sfx.fall();
       if(b.isPlayer) G.flash = 8;
     }
@@ -2125,17 +2171,26 @@ function updateRoll(){
 }
 function drawRollFloor(){
   fillView('#241246');
-  // 落下ゾーンのハザード帯
+  // 落下ゾーンのハザード帯（ロールの外側は四方すべて奈落）
   ctx.save();
   ctx.fillStyle = '#1a0c36';
   ctx.fillRect(VL-2, VT-2, (VR-VL)+4, roll.y-VT+2);
   ctx.fillRect(VL-2, roll.y+roll.h, (VR-VL)+4, VB-(roll.y+roll.h)+2);
+  ctx.fillRect(VL-2, roll.y, roll.x-VL+2, roll.h);
+  ctx.fillRect(roll.x+roll.w, roll.y, VR-(roll.x+roll.w)+2, roll.h);
   ctx.fillStyle = 'rgba(255,210,63,.85)';
   for(let x=VL-40; x<VR; x+=44){
     ctx.beginPath(); ctx.moveTo(x, roll.y-14); ctx.lineTo(x+20, roll.y-14); ctx.lineTo(x+8, roll.y); ctx.lineTo(x-12, roll.y);
     ctx.closePath(); ctx.fill();
     const yb = roll.y+roll.h;
     ctx.beginPath(); ctx.moveTo(x, yb+14); ctx.lineTo(x+20, yb+14); ctx.lineTo(x+8, yb); ctx.lineTo(x-12, yb);
+    ctx.closePath(); ctx.fill();
+  }
+  for(let y=roll.y+8; y<roll.y+roll.h; y+=44){
+    const xl = roll.x, xr = roll.x+roll.w;
+    ctx.beginPath(); ctx.moveTo(xl-14, y); ctx.lineTo(xl-14, y+20); ctx.lineTo(xl, y+8); ctx.lineTo(xl, y-12);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(xr+14, y); ctx.lineTo(xr+14, y+20); ctx.lineTo(xr, y+8); ctx.lineTo(xr, y-12);
     ctx.closePath(); ctx.fill();
   }
   ctx.restore();
@@ -2158,16 +2213,26 @@ function drawRollFloor(){
       if(y < roll.y-10 || y > roll.y+roll.h+10) continue;
       ctx.beginPath(); ctx.moveTo(c.x+2, y); ctx.lineTo(c.x+c.w-2, y); ctx.stroke();
     }
-    // 穴
+    // 切れ目（ロールの端から端まで）
     for(const h of holeRects(c)){
       if(h.y > roll.y+roll.h || h.y+h.h < roll.y) continue;
-      ctx.fillStyle = 'rgba(20,8,44,.45)';
-      roundRect(h.x-5, h.y-5, h.w+10, h.h+10, 20); ctx.fill();
       const hg = ctx.createLinearGradient(0, h.y, 0, h.y+h.h);
       hg.addColorStop(0,'#160a34'); hg.addColorStop(0.5,'#0d0520'); hg.addColorStop(1,'#160a34');
-      ctx.fillStyle = hg; roundRect(h.x, h.y, h.w, h.h, 16); ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.lineWidth = 3;
-      roundRect(h.x+3, h.y+3, h.w-6, h.h-6, 14); ctx.stroke();
+      ctx.fillStyle = hg; ctx.fillRect(h.x, h.y, h.w, h.h);
+      ctx.fillStyle = 'rgba(255,255,255,.16)';
+      ctx.fillRect(h.x, h.y, h.w, 4); ctx.fillRect(h.x, h.y+h.h-4, h.w, 4);
+    }
+    // 壁（ロールの端から端まで／ジャンプで越える）
+    for(const w of wallRects(c)){
+      if(w.y > roll.y+roll.h+30 || w.y+w.h < roll.y-30) continue;
+      ctx.fillStyle = 'rgba(20,8,44,.30)';
+      roundRect(w.x+3, w.y+7, w.w-6, w.h, 9); ctx.fill();
+      ctx.fillStyle = '#b13c86';
+      roundRect(w.x+3, w.y-5, w.w-6, w.h+9, 9); ctx.fill();
+      ctx.fillStyle = '#ff5fa2';
+      roundRect(w.x+3, w.y-10, w.w-6, w.h, 9); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.4)';
+      ctx.fillRect(w.x+14, w.y-6, w.w-28, 4);
     }
     ctx.restore();
     // リングの継ぎ目
@@ -2184,8 +2249,6 @@ function drawRollFloor(){
     }
     ctx.restore();
   }
-  ctx.fillStyle = '#4b2f96';
-  ctx.fillRect(roll.x-8, roll.y, 8, roll.h); ctx.fillRect(roll.x+roll.w, roll.y, 8, roll.h);
 }
 
 // ---------------------------------------------------------------- AI
@@ -3595,31 +3658,12 @@ function step1(){
   updateHUD();
 }
 // ---------------------------------------------------------------- タイトル演出
-// 本家と同じように、タイトル画面にプレイヤー（と仲間のビーン）を立たせる。
-let titleBeans = null;
-function makeTitleBeans(){
-  // 奥列4人・手前列3人＋中央手前がプレイヤー
-  const spot = [
-    { fx:0.14, row:2 }, { fx:0.37, row:2 }, { fx:0.63, row:2 }, { fx:0.86, row:2 },
-    { fx:0.23, row:1 }, { fx:0.77, row:1 }, { fx:0.50, row:0, me:true }
-  ];
-  const list = [];
-  spot.forEach((s,i)=>{
-    const b = makeBean(i, !!s.me);
-    if(!s.me){ b.color = COLORS[(i*5+2) % COLORS.length]; b.name = NAMES[(i*5+2) % NAMES.length]; }
-    b.state = 'run'; b.z = 0; b.vy = 0;
-    b.fx = s.fx; b.row = s.row; b.me = !!s.me;
-    b.phase = i*0.9;
-    b.sc = s.row === 0 ? 1.26 : (s.row === 1 ? 1.02 : 0.84);
-    b.hopEvery = 150 + i*37; b.hopOff = i*53;
-    list.push(b);
-  });
-  return list;
-}
+// 本家と同じように、タイトル画面は台座の上に立つプレイヤーだけを見せる。
+let titleBean = null;
 function drawTitleScene(){
   VS = 1; VCX = VW/2; VCY = VH/2; VL = 0; VT = 0; VR = VW; VB = VH;
-  if(!titleBeans) titleBeans = makeTitleBeans();
-  const T = G.elapsed;
+  if(!titleBean){ titleBean = makeBean(0, true); titleBean.state = 'run'; }
+  const b = titleBean, T = G.elapsed;
 
   // 空
   const sky = ctx.createLinearGradient(0,0,0,VH);
@@ -3636,18 +3680,6 @@ function drawTitleScene(){
   }
   ctx.restore();
 
-  // 舞台
-  const fy = PORTRAIT ? VH*0.805 : VH*0.90;     // 足元のライン
-  const sc0 = PORTRAIT ? VW/245 : 1.7;          // ビーンの大きさ
-  ctx.fillStyle = '#5a2f9e';
-  ctx.fillRect(0, fy+34, VW, VH-(fy+34));
-  ctx.fillStyle = '#7a4dff';
-  ctx.beginPath(); ctx.ellipse(VW/2, fy+34, VW*0.62, 92*sc0*0.5+40, 0, 0, TAU); ctx.fill();
-  ctx.fillStyle = '#ff5fa2';
-  ctx.beginPath(); ctx.ellipse(VW/2, fy+22, VW*0.56, 78*sc0*0.5+30, 0, 0, TAU); ctx.fill();
-  ctx.fillStyle = 'rgba(255,255,255,.22)';
-  ctx.beginPath(); ctx.ellipse(VW/2, fy+10, VW*0.50, 62*sc0*0.5+22, 0, 0, TAU); ctx.fill();
-
   // 降ってくる紙吹雪
   ctx.save();
   for(let i=0;i<26;i++){
@@ -3659,46 +3691,62 @@ function drawTitleScene(){
   }
   ctx.restore();
 
-  // ビーンたち（奥→手前）
-  for(const b of titleBeans){
-    const t = T*0.045 + b.phase;
-    const hp = (T + b.hopOff) % b.hopEvery;
-    const hop = hp < 26 ? Math.sin(hp/26*Math.PI) : 0;
-    const lift = hop*34 + Math.abs(Math.sin(t))*4;
-    const sc = b.sc * sc0;
-    const x = VW*b.fx;
-    const y = fy - b.row*26*sc0*0.62;           // row0＝手前（プレイヤー）
-    b.vx = Math.sin(t*0.8)*2.0;
-    b.anim = t*2.4;
-    b.z = lift;
-    // 影
-    ctx.save();
-    ctx.globalAlpha = clamp(0.28 - lift*0.004, 0.08, 0.28);
-    ctx.fillStyle = '#000';
-    ctx.beginPath(); ctx.ellipse(x, y+4*sc, 16*sc, 7*sc, 0, 0, TAU); ctx.fill();
-    ctx.restore();
-    // 本体
-    ctx.save();
-    ctx.translate(x, y - lift*sc - 17*sc);
-    ctx.scale(sc, sc);
-    ctx.rotate(Math.sin(t*0.9)*0.05);
-    beanBody(b);
-    ctx.restore();
-    // プレイヤーの目印
-    if(b.me){
-      const by = y - lift*sc - (40 + Math.abs(Math.sin(T*0.08))*5)*sc;
-      ctx.save();
-      ctx.translate(x, by); ctx.scale(sc, sc);
-      ctx.fillStyle = '#ffd23f'; ctx.strokeStyle='#8a5a00'; ctx.lineWidth=2.5;
-      ctx.beginPath(); ctx.moveTo(-11,-12); ctx.lineTo(11,-12); ctx.lineTo(0,0); ctx.closePath();
-      ctx.fill(); ctx.stroke();
-      ctx.font = '900 15px sans-serif'; ctx.textAlign='center';
-      ctx.lineWidth = 4; ctx.strokeStyle='rgba(0,0,0,.55)';
-      ctx.strokeText('YOU', 0, -17); ctx.fillStyle='#fff'; ctx.fillText('YOU', 0, -17);
-      ctx.textAlign='left';
-      ctx.restore();
-    }
-  }
+  // 台座とプレイヤー
+  const sc = PORTRAIT ? VW/150 : 2.5;             // ビーンの大きさ
+  const fy = PORTRAIT ? VH*0.755 : VH*0.80;       // 足元のライン
+  const t  = T*0.045;
+  const hp = T % 190;
+  const hop = hp < 26 ? Math.sin(hp/26*Math.PI) : 0;
+  const lift = hop*30 + Math.abs(Math.sin(t))*3;
+
+  drawPedestal(VW/2, fy + 3*sc, 30*sc, 46*sc);
+  b.vx = Math.sin(t*0.8)*1.8;
+  b.anim = t*2.4;
+  b.z = lift;
+  // 影
+  ctx.save();
+  ctx.globalAlpha = clamp(0.20 - lift*0.004, 0.06, 0.20);
+  ctx.fillStyle = '#7a4a10';
+  ctx.beginPath(); ctx.ellipse(VW/2, fy + 3*sc, 14*sc, 4.4*sc, 0, 0, TAU); ctx.fill();
+  ctx.restore();
+  // 本体
+  ctx.save();
+  ctx.translate(VW/2, fy - lift*sc - 23*sc);
+  ctx.scale(sc, sc);
+  ctx.rotate(Math.sin(t*0.9)*0.05);
+  beanBody(b);
+  ctx.restore();
+}
+// タイトルの台座（円柱）
+function drawPedestal(cx, ty, rx, h){
+  const ry = rx*0.34;
+  ctx.save();
+  // 落ちる影
+  ctx.globalAlpha = .22; ctx.fillStyle = '#2a1550';
+  ctx.beginPath(); ctx.ellipse(cx, ty+h+ry*0.5, rx*1.16, ry*1.1, 0, 0, TAU); ctx.fill();
+  ctx.globalAlpha = 1;
+  // 側面
+  const g = ctx.createLinearGradient(cx-rx, 0, cx+rx, 0);
+  g.addColorStop(0,   '#c9762e');
+  g.addColorStop(0.35,'#f0a24b');
+  g.addColorStop(0.72,'#e08c3a');
+  g.addColorStop(1,   '#b96522');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(cx-rx, ty);
+  ctx.lineTo(cx-rx, ty+h);
+  ctx.ellipse(cx, ty+h, rx, ry, 0, Math.PI, 0, true);
+  ctx.lineTo(cx+rx, ty);
+  ctx.closePath(); ctx.fill();
+  // 天面
+  ctx.fillStyle = '#e39a4e';
+  ctx.beginPath(); ctx.ellipse(cx, ty, rx, ry, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#f7bd77';
+  ctx.beginPath(); ctx.ellipse(cx, ty, rx*0.86, ry*0.80, 0, 0, TAU); ctx.fill();
+  // ふち
+  ctx.strokeStyle = 'rgba(120,60,10,.28)'; ctx.lineWidth = Math.max(2, rx*0.05);
+  ctx.beginPath(); ctx.ellipse(cx, ty, rx, ry, 0, 0, TAU); ctx.stroke();
+  ctx.restore();
 }
 
 function render(){
