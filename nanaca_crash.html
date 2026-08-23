@@ -123,9 +123,10 @@
   .btn.alt{background:linear-gradient(180deg,#7fe1ff,#35c8ff);font-size:15px;padding:8px 10px 9px;box-shadow:0 5px 0 #2b2140}
   .btn.alt:active{transform:translateY(3px);box-shadow:0 2px 0 #2b2140}
 
-  .modesel{display:flex;gap:6px;margin-top:10px;pointer-events:auto}
+  .modesel{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;pointer-events:auto}
   .modebtn{
-    flex:1;cursor:pointer;font-family:inherit;font-weight:800;font-size:12.5px;letter-spacing:.04em;
+    flex:1 1 28%;min-width:84px;cursor:pointer;font-family:inherit;font-weight:800;
+    font-size:11.5px;letter-spacing:.02em;
     color:#8a7fa8;background:#f6f2ff;border:3px solid #2b2140;border-radius:13px;
     padding:7px 4px 8px;box-shadow:0 4px 0 #2b2140;transition:transform .08s,box-shadow .08s;
   }
@@ -397,14 +398,17 @@ let crashes     = CRASH_MAX;
 let combo       = 0, bestCombo = 0;
 let hits        = 0;
 let distance    = 0, maxDistance = 0;
-let mode        = localStorage.getItem('nc_mode') === 'infinite' ? 'infinite' : 'normal';
-let best        = +(localStorage.getItem('nc_best') || 0);
-let bestInf     = +(localStorage.getItem('nc_best_inf') || 0);
-function getBest(){ return mode === 'infinite' ? bestInf : best; }
-function setBest(v){
-  if (mode === 'infinite'){ bestInf = v; localStorage.setItem('nc_best_inf', v); }
-  else { best = v; localStorage.setItem('nc_best', v); }
-}
+// モード定義（label=ボタン名 / note=説明 / key=ベスト保存キー）
+const MODES = {
+  normal:   { label:'ノーマル',       key:'nc_best',        note:'通常ルール（エアリアル' + AERIAL_MAX + '回）' },
+  infinite: { label:'エアリアル無限', key:'nc_best_inf',    note:'エアリアルが尽きない！ コンボを繋ぎまくろう' },
+  ground:   { label:'地上ラッシュ',   key:'nc_best_ground', note:'キャラは全員地上に整列！ 落下ラインを読んで跳ね続けろ' }
+};
+let mode = MODES[localStorage.getItem('nc_mode')] ? localStorage.getItem('nc_mode') : 'normal';
+const bests = {};
+for (const k in MODES) bests[k] = +(localStorage.getItem(MODES[k].key) || 0);
+function getBest(){ return bests[mode]; }
+function setBest(v){ bests[mode] = v; localStorage.setItem(MODES[mode].key, v); }
 let floatTimer  = 0;
 let hitstop     = 0;
 let flashT      = 0;
@@ -418,6 +422,14 @@ let bikeX       = 0;
 let timeSec     = 0;
 
 // ---------------------------------------------------------------- ワールド生成
+// 地上モード用の抽選：跳ね上げ(pop)を厚めに、叩きつけ(smash)は罠として少なめ
+function pickKindGround(){
+  const w = [['pop', 38], ['boost', 22], ['float', 18], ['star', 12], ['smash', 10]];
+  let tot = 0; for (const [, v] of w) tot += v;
+  let r = Math.random() * tot;
+  for (const [k, v] of w){ r -= v; if (r <= 0) return k; }
+  return 'pop';
+}
 function pickKind(y){
   const alt = -y;                                  // 高いほど星が出やすい
   const w = [
@@ -433,27 +445,35 @@ function pickKind(y){
   return 'pop';
 }
 function ensureWorld(untilX){
+  const g = (mode === 'ground');
   while (genX < untilX){
-    genX += rnd(150, 330);
-    const n = 1 + (Math.random() < .55 ? 1 : 0) + (Math.random() < .16 ? 1 : 0);
+    genX += g ? rnd(155, 300) : rnd(150, 330);
+    const n = g ? (1 + (Math.random() < .18 ? 1 : 0))
+                : (1 + (Math.random() < .55 ? 1 : 0) + (Math.random() < .16 ? 1 : 0));
     for (let i = 0; i < n; i++){
-      const b = Math.random();
-      let y;
-      if (b < .40)      y = -rnd(70, 560);
-      else if (b < .78) y = -rnd(560, 1450);
-      else              y = -rnd(1450, 3100);
-      const k = pickKind(y);
+      let y, k;
+      if (g){
+        // 地上モード：全員が地面の上に立つ（円の底が y=0 に接する）
+        k = pickKindGround();
+        y = -(KINDS[k].r * 0.62 + 23);   // 足元ラベルの下端が地面線に接する高さ
+      } else {
+        const b = Math.random();
+        if (b < .40)      y = -rnd(70, 560);
+        else if (b < .78) y = -rnd(560, 1450);
+        else              y = -rnd(1450, 3100);
+        k = pickKind(y);
+      }
       ents.push({
-        k, x: genX + rnd(-60, 60), y,
+        k, x: genX + (g ? (i ? rnd(105, 150) : 0) : rnd(-60, 60)), y, gnd: g,
         r: KINDS[k].r, ph: Math.random() * 6.28, hit:false, hitT:0,
-        bobA: rnd(6, 16), bobS: rnd(.8, 1.6), face: rint(0, 2)
+        bobA: g ? 0 : rnd(6, 16), bobS: rnd(.8, 1.6), face: rint(0, 2)
       });
     }
-    if (Math.random() < .26){
+    if (Math.random() < (g ? .12 : .26)){
       const t = Math.random() < .58 ? 'tramp' : 'mud';
       props.push({ t, x: genX + rnd(-80, 120), used:0, w: t === 'tramp' ? 74 : 96 });
     }
-    if (Math.random() < .10) props.push({ t:'sign', x: genX + rnd(-40, 40) });
+    if (Math.random() < (g ? .05 : .10)) props.push({ t:'sign', x: genX + rnd(-40, 40) });
   }
 }
 function resetWorld(){
@@ -527,6 +547,7 @@ function startRun(){
   combo = 0; bestCombo = 0; hits = 0;
   distance = 0; maxDistance = 0; shownDist = -1;
   floatTimer = 0; hitstop = 0; stopT = 0; seqT = 0; timeSec = 0;
+  predict = null; predictAge = 99;
   cam.x = 0; cam.y = -H * 0.2; cam.s = 1; cam.ts = 1; cam.shake = 0;
   resetWorld();
   hideCombo();
@@ -558,6 +579,26 @@ function doLaunch(angleDeg, power){
 // 速いほど加速しにくくする（無限インフレ防止）
 function addVx(a){
   hero.vx = Math.min(VX_CAP, hero.vx + a * clamp(1 - Math.max(0, hero.vx) / 78, 0.30, 1));
+}
+
+// 着地点を先読みする（地上モード：落下ラインを読ませるため）
+let predict = null, predictAge = 99;
+function computePredict(){
+  let x = hero.x, y = hero.y, vx = hero.vx, vy = hero.vy, ft = floatTimer;
+  const pts = [];
+  for (let i = 0; i < 1400; i++){
+    const gm = ft > 0 ? 0.34 : 1;
+    if (ft > 0) ft--;
+    vy += G * gm; vx *= AIR_DRAG;
+    x += vx; y += vy;
+    if ((i & 3) === 0) pts.push(x, y);
+    if (y >= 0){ pts.push(x, 0); return { x, pts, frames: i }; }
+  }
+  return null;
+}
+function updatePredict(){
+  if (mode !== 'ground' || state !== S.FLY || hero.onGround){ predict = null; return; }
+  if (++predictAge >= 2){ predictAge = 0; predict = computePredict(); }
 }
 
 // 空中キャラを探す（エアリアルの対象）
@@ -1044,7 +1085,20 @@ function drawEnt(e, isTarget){
   if (sx < -160 || sx > W + 160 || sy < -160 || sy > H + 160) return;
   const r = e.r;
 
+  // 地上キャラは接地しているので、影を落として待機モーションで揺らす
+  if (e.gnd && !e.hit){
+    const gy = toY(0);
+    ctx.save(); ctx.globalAlpha = .20;
+    ctx.beginPath(); ctx.ellipse(sx, gy, r * .85 * s, r * .24 * s, 0, 0, 6.283);
+    ctx.fillStyle = '#000'; ctx.fill(); ctx.restore();
+  }
+
   ctx.save(); ctx.translate(sx, sy); ctx.scale(s, s);
+  if (e.gnd && !e.hit){
+    const br = 1 + Math.sin(timeSec * 2.2 + e.ph) * 0.035;   // 呼吸
+    ctx.translate(0, r * (br - 1));
+    ctx.scale(2 - br, br);
+  }
 
   if (e.hit){
     // 当たった直後：ふっとぶ
@@ -1331,6 +1385,56 @@ function drawSpeedLines(){
   }
   ctx.restore();
 }
+// 落下予測ライン＋着地マーカー＋着地点に一番近い地上キャラの強調
+function drawLandingGuide(){
+  if (!predict) return;
+  const p = predict;
+
+  // 予測アーク
+  ctx.save();
+  ctx.globalAlpha = .55; ctx.lineWidth = 3.5; ctx.strokeStyle = '#fff';
+  ctx.setLineDash([9, 10]); ctx.lineDashOffset = -timeSec * 40;
+  ctx.lineCap = 'round'; ctx.beginPath();
+  for (let i = 0; i < p.pts.length; i += 2){
+    const sx = toX(p.pts[i]), sy = toY(p.pts[i + 1]);
+    i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy);
+  }
+  ctx.stroke(); ctx.setLineDash([]);
+  ctx.restore();
+
+  // 着地マーカー
+  const mx = toX(p.x), my = toY(0), sc = cam.s;
+  const pulse = 1 + Math.sin(timeSec * 7) * .1;
+  ctx.save(); ctx.translate(mx, my); ctx.scale(sc * pulse, sc * pulse);
+  ctx.beginPath(); ctx.ellipse(0, 0, 44, 13, 0, 0, 6.283);
+  ctx.lineWidth = 5; ctx.strokeStyle = COL.yellow; ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(0, 0, 22, 6.5, 0, 0, 6.283);
+  ctx.lineWidth = 4; ctx.strokeStyle = '#fff'; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, -20); ctx.lineTo(0, -54);
+  ctx.lineWidth = 4; ctx.strokeStyle = COL.yellow; ctx.stroke();
+  ctx.restore();
+
+  // 着地点の近くに立っているキャラを教える
+  let near = null, nd = 1e9;
+  for (const e of ents){
+    if (e.hit || !e.gnd) continue;
+    const d = Math.abs(e.x - p.x);
+    if (d < 260 && d < nd){ nd = d; near = e; }
+  }
+  if (near){
+    const ex = toX(near.x), ey = toY(near.y);
+    ctx.save(); ctx.globalAlpha = .8;
+    ctx.beginPath(); ctx.moveTo(mx, my - 54 * cam.s); ctx.lineTo(ex, ey);
+    ctx.lineWidth = 3; ctx.strokeStyle = KINDS[near.k].c;
+    ctx.setLineDash([6, 7]); ctx.stroke(); ctx.setLineDash([]);
+    ctx.restore();
+  } else {
+    ctx.save();
+    outlinedText('だれもいない！', mx, my - 74 * cam.s, 16 * Math.max(.6, cam.s), '#ff7b7b', 5);
+    ctx.restore();
+  }
+}
+
 function drawAerialRing(){
   if (state !== S.FLY || (mode !== 'infinite' && aerial <= 0)) return;
   const sx = toX(hero.x), sy = toY(hero.y);
@@ -1406,6 +1510,7 @@ function render(){
   drawHills(0.62, 4, '#4fb86e', 30, 4.4, '#2b8c4c');
   drawGround();
   drawClouds(0.85, 380, 0.7, .55, 3);
+  drawLandingGuide();
 
   const tgt = (state === S.FLY && (mode === 'infinite' || aerial > 0)) ? findTarget() : null;
   const tgtE = tgt ? tgt.e : null;
@@ -1468,8 +1573,11 @@ function showTitle(){
     '<div class="rules">' +
       '① <span class="k">タップ</span> で<b>角度</b>を決める<br>' +
       '② <span class="k">タップ</span> で<b>パワー</b>を決める → 発射！<br>' +
-      '③ 飛行中、キャラの近くで <span class="k">タップ</span> ＝ <b>エアリアル</b><br>' +
-      '　（<b>中心に近いほど強い</b>／連続で当てるとコンボ）<br>' +
+      (mode === 'ground'
+        ? '③ キャラは<b>全員地上</b>！ 落ち際に <span class="k">タップ</span> ＝ <b>エアリアル</b><br>' +
+          '　（<b>着地する前に</b>当てればコンボ継続／黄色い輪が落下地点）<br>'
+        : '③ 飛行中、キャラの近くで <span class="k">タップ</span> ＝ <b>エアリアル</b><br>' +
+          '　（<b>中心に近いほど強い</b>／連続で当てるとコンボ）<br>') +
       '④ 止まっても<b>クラッシュ</b>が残れば再発射！<br>' +
       '<span style="color:#8a7fa8;font-size:11.5px">キー操作：スペース／クリックでもOK</span>' +
     '</div>' +
@@ -1481,10 +1589,11 @@ function showTitle(){
       '<div><i style="background:#ffffff"></i>ふわり／ふんわり滞空</div>' +
     '</div>' +
     '<div class="modesel" id="modesel">' +
-      '<button class="modebtn' + (mode === 'normal' ? ' on' : '') + '" data-mode="normal">ノーマル</button>' +
-      '<button class="modebtn' + (mode === 'infinite' ? ' on' : '') + '" data-mode="infinite">エアリアル無限</button>' +
+      Object.keys(MODES).map(k =>
+        '<button class="modebtn' + (mode === k ? ' on' : '') + '" data-mode="' + k + '">' + MODES[k].label + '</button>'
+      ).join('') +
     '</div>' +
-    '<div class="modenote">' + (mode === 'infinite' ? 'エアリアルが尽きない！ コンボを繋ぎまくろう' : '通常ルール（エアリアル' + AERIAL_MAX + '回）') + '</div>' +
+    '<div class="modenote">' + MODES[mode].note + '</div>' +
     '<div class="stats" style="margin-top:8px"><div><span>YOUR BEST</span><b>' + fmt(getBest()) + 'm</b></div></div>' +
     '<button class="btn" id="btnStart">スタート！</button>';
   ov.classList.add('on');
@@ -1496,6 +1605,7 @@ function showTitle(){
     if (b.dataset.mode === mode) return;
     mode = b.dataset.mode;
     localStorage.setItem('nc_mode', mode);
+    resetWorld();          // 選んだモードの配置をタイトル背景に反映
     SFX.ui();
     showTitle();
   });
@@ -1577,6 +1687,7 @@ function loop(now){
   acc += dt;
   let n = 0;
   while (acc >= 1000 / 60 && n < 6){ step(); acc -= 1000 / 60; n++; }
+  updatePredict();
   updateCam();
   render();
   requestAnimationFrame(loop);
