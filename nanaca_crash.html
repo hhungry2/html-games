@@ -271,6 +271,60 @@ const KINDS = {
   float: {nm:'ふわり',   c:'#ffffff', c2:'#dff3ff', tag:'FLOAT', r:50, cry:'ふわぁ〜', lc:'#4aa8d8'}
 };
 
+// ================================================================ 地上ラッシュ（本家準拠）
+// tools/nanaka_decompiled の GameControll / GameCharacter から起こした本家ルール。
+// 数値は「本家の 1m/s → このゲームの px/frame」を GV で換算して持ち込んでいる。
+// （本家の最大発射 30m/s ＝ このゲームの最大パワー 36.5px/frame になる比率）
+const GV    = 1.22;   // 速度換算  本家 m/s → px/frame
+const GU    = 80;     // 本家の 1 ユニット相当（見た目と当たり判定の基準）
+const GSTEP = 280;    // 本家の「10m ごとに 1 人」に相当する間隔
+const GEX   = 0.8;    // GameControll.ex  水平反発
+const GEY   = 0.8;    // GameControll.ey  垂直反発
+// 本家に空気抵抗は無いが、このゲームは 1m が本家の 1/7 ほどの世界なので、
+// そのまま持ち込むと 1 回の発射で数万 m 飛んでしまう。減衰だけ入れて尺を合わせる
+const GDRAG = 0.995;
+const GDASH = 2.3 * GU;   // アタック C の巡航高度（全員の頭上を抜ける）
+
+// power/angle = 通常クラッシュ, s_power/s_angle = SPECIAL, hitx/hity = 当たり判定
+const GCHARA = {
+  youko:   {jp:'曜子',   col:'#8fd05a', hair:'#3d6b23', hitx:-0.166667,  hity:0.833333},
+  miki:    {jp:'美希',   col:'#f7b13c', hair:'#a35c11', hitx: 0,         hity:0.833333, power:11, angle:70, s_power:24, s_angle:45},
+  kiri:    {jp:'霧',     col:'#63c6e8', hair:'#1f6f8f', hitx: 0.166667,  hity:0.833333, power:10, angle:45, s_power:25, s_angle:60},
+  touko:   {jp:'冬子',   col:'#9b8ce0', hair:'#3b3170', hitx: 0.166667,  hity:0.833333, power:11, angle:20, s_power:25, s_angle:30},
+  tomoki:  {jp:'友貴',   col:'#6fa8d6', hair:'#274a68', hitx:-0.166667,  hity:1,        e:0.7},
+  misato:  {jp:'みさと', col:'#f2789f', hair:'#7b3f56', hitx:-0.0833333, hity:0.666667, s_power:35, s_angle:45},
+  sakuraba:{jp:'桜庭',   col:'#e2604f', hair:'#6b241c', hitx:-0.166667,  hity:1}
+};
+// Sprite_392 の initchara 呼び出し順 ＝ 出現プール（1 周するまで重複なし）
+const GPOOL = ['youko','miki','kiri','touko','tomoki','misato','sakuraba'];
+// ナナカ乱入で手に入るアタック（GameControll.color_a..d）
+const GCFF = [
+  {key:'A', nm:'アタック A', col:'#3ddc7f', desc:'ブースト威力 2 倍'},
+  {key:'B', nm:'アタック B', col:'#ff5b5b', desc:'着地寸前に溜めが爆発'},
+  {key:'C', nm:'アタック C', col:'#4aa8ff', desc:'超高速の水平ダッシュ'},
+  {key:'D', nm:'アタック D', col:'#ffd23f', desc:'バウンドの度に加速'}
+];
+const GCFF_OF = { misato:0, touko:1, kiri:2, miki:3 };   // Sprite_283 の switch
+
+// 本家 GameControll のフラグ群
+const GS = {
+  pool:[], last:null, pos:0,
+  youko:false, nanaka:false, misato:false, touko:false, kiri:false, miki:false, combo:false,
+  cffs:null, cffcount:0, nogravity:false, nolimit:false, hitenabled:true,
+  tmpx:0, tmpy:0,
+  gauge:0,          // エアリアルゲージ（Sprite_402）
+  anim:null,        // {t,dur,ch,end} 演出中は物理を止める
+  prompt:null,      // {t,ok,ng}  SPECIAL 受付（本家は 700ms）
+  msg:null          // {text,col,t}
+};
+function gsReset(){
+  GS.pool = []; GS.last = null; GS.pos = 0;
+  GS.youko = GS.nanaka = GS.misato = GS.touko = GS.kiri = GS.miki = GS.combo = false;
+  GS.cffs = null; GS.cffcount = 0;
+  GS.nogravity = false; GS.nolimit = false; GS.hitenabled = true;
+  GS.gauge = 0; GS.anim = null; GS.prompt = null; GS.msg = null;
+}
+
 // ---------------------------------------------------------------- Audio
 let actx = null;
 let muted = localStorage.getItem('nc_mute') === '1';
@@ -402,7 +456,7 @@ let distance    = 0, maxDistance = 0;
 const MODES = {
   normal:   { label:'ノーマル',       key:'nc_best',        note:'通常ルール（エアリアル' + AERIAL_MAX + '回）' },
   infinite: { label:'エアリアル無限', key:'nc_best_inf',    note:'エアリアルが尽きない！ コンボを繋ぎまくろう' },
-  ground:   { label:'地上ラッシュ',   key:'nc_best_ground', note:'キャラは全員地上に整列！ 落下ラインを読んで跳ね続けろ' }
+  ground:   { label:'地上ラッシュ',   key:'nc_best_ground', note:'本家ルール：7人が地上に並ぶ。触れれば自動クラッシュ、SPECIAL とナナカ乱入あり' }
 };
 let mode = MODES[localStorage.getItem('nc_mode')] ? localStorage.getItem('nc_mode') : 'normal';
 const bests = {};
@@ -422,13 +476,34 @@ let bikeX       = 0;
 let timeSec     = 0;
 
 // ---------------------------------------------------------------- ワールド生成
-// 地上モード用の抽選：跳ね上げ(pop)を厚めに、叩きつけ(smash)は罠として少なめ
-function pickKindGround(){
-  const w = [['pop', 38], ['boost', 22], ['float', 18], ['star', 12], ['smash', 10]];
-  let tot = 0; for (const [, v] of w) tot += v;
-  let r = Math.random() * tot;
-  for (const [k, v] of w){ r -= v; if (r <= 0) return k; }
-  return 'pop';
+// 地上ラッシュ：本家の chara_array（7 人を 1 周するまで重複させない）
+function drawGroundType(){
+  if (!GS.pool.length){
+    GS.pool = GPOOL.slice();
+    for (let i = GS.pool.length - 1; i > 0; i--){
+      const j = rint(0, i);
+      const t = GS.pool[i]; GS.pool[i] = GS.pool[j]; GS.pool[j] = t;
+    }
+  }
+  const k = GS.pool.pop();
+  // 霧と美希が隣り合うと SPECIAL 条件が立つ（本家 stand()）
+  if (k === 'kiri' && GS.last === 'miki') GS.miki = true;
+  if (k === 'miki' && GS.last === 'kiri') GS.kiri = true;
+  GS.last = k;
+  return k;
+}
+function makeGroundChara(x){
+  GS.pos += 10;                                   // 本家 charapos += 10
+  const k = drawGroundType(), d = GCHARA[k];
+  return {
+    k, gnd:true, chara:true, x, y:0, pos: GS.pos, r: GU * 0.5,
+    hitminx: x + (d.hitx - 0.5) * GU,
+    hitmaxx: x + (d.hitx + 0.5) * GU,
+    hitmaxy: (d.hity + 0.5) * GU,               // この高さより下にいると当たる
+    nanaka: GS.pos % 100 === 90,                // ナナカが現れる 90m 地点
+    pass:false, hit:false, hitT:0, st:'stand',
+    ph: Math.random() * 6.28, bobA:0, bobS:1, face:0
+  };
 }
 function pickKind(y){
   const alt = -y;                                  // 高いほど星が出やすい
@@ -445,39 +520,40 @@ function pickKind(y){
   return 'pop';
 }
 function ensureWorld(untilX){
-  const g = (mode === 'ground');
+  // 地上ラッシュは本家どおり「一定間隔に 1 人ずつ」。ギミックは置かない
+  if (mode === 'ground'){
+    while (genX < untilX){
+      genX += GSTEP;
+      ents.push(makeGroundChara(genX));
+    }
+    return;
+  }
   while (genX < untilX){
-    genX += g ? rnd(155, 300) : rnd(150, 330);
-    const n = g ? (1 + (Math.random() < .18 ? 1 : 0))
-                : (1 + (Math.random() < .55 ? 1 : 0) + (Math.random() < .16 ? 1 : 0));
+    genX += rnd(150, 330);
+    const n = 1 + (Math.random() < .55 ? 1 : 0) + (Math.random() < .16 ? 1 : 0);
     for (let i = 0; i < n; i++){
-      let y, k;
-      if (g){
-        // 地上モード：全員が地面の上に立つ（円の底が y=0 に接する）
-        k = pickKindGround();
-        y = -(KINDS[k].r * 0.62 + 23);   // 足元ラベルの下端が地面線に接する高さ
-      } else {
-        const b = Math.random();
-        if (b < .40)      y = -rnd(70, 560);
-        else if (b < .78) y = -rnd(560, 1450);
-        else              y = -rnd(1450, 3100);
-        k = pickKind(y);
-      }
+      const b = Math.random();
+      let y;
+      if (b < .40)      y = -rnd(70, 560);
+      else if (b < .78) y = -rnd(560, 1450);
+      else              y = -rnd(1450, 3100);
+      const k = pickKind(y);
       ents.push({
-        k, x: genX + (g ? (i ? rnd(105, 150) : 0) : rnd(-60, 60)), y, gnd: g,
+        k, x: genX + rnd(-60, 60), y, gnd:false,
         r: KINDS[k].r, ph: Math.random() * 6.28, hit:false, hitT:0,
-        bobA: g ? 0 : rnd(6, 16), bobS: rnd(.8, 1.6), face: rint(0, 2)
+        bobA: rnd(6, 16), bobS: rnd(.8, 1.6), face: rint(0, 2)
       });
     }
-    if (Math.random() < (g ? .12 : .26)){
+    if (Math.random() < .26){
       const t = Math.random() < .58 ? 'tramp' : 'mud';
       props.push({ t, x: genX + rnd(-80, 120), used:0, w: t === 'tramp' ? 74 : 96 });
     }
-    if (Math.random() < (g ? .05 : .10)) props.push({ t:'sign', x: genX + rnd(-40, 40) });
+    if (Math.random() < .10) props.push({ t:'sign', x: genX + rnd(-40, 40) });
   }
 }
 function resetWorld(){
   ents = []; props = []; parts = []; pops = []; bursts = []; trail = [];
+  gsReset();
   genX = 260;
   ensureWorld(4200);
 }
@@ -585,11 +661,12 @@ function addVx(a){
 let predict = null, predictAge = 99;
 function computePredict(){
   let x = hero.x, y = hero.y, vx = hero.vx, vy = hero.vy, ft = floatTimer;
+  const drag = (mode === 'ground') ? GDRAG : AIR_DRAG;
   const pts = [];
   for (let i = 0; i < 1400; i++){
     const gm = ft > 0 ? 0.34 : 1;
     if (ft > 0) ft--;
-    vy += G * gm; vx *= AIR_DRAG;
+    vy += G * gm; vx *= drag;
     x += vx; y += vy;
     if ((i & 3) === 0) pts.push(x, y);
     if (y >= 0){ pts.push(x, 0); return { x, pts, frames: i }; }
@@ -597,12 +674,14 @@ function computePredict(){
   return null;
 }
 function updatePredict(){
-  if (mode !== 'ground' || state !== S.FLY || hero.onGround){ predict = null; return; }
+  if (mode !== 'ground' || state !== S.FLY || hero.onGround ||
+      GS.anim || GS.prompt || GS.nogravity){ predict = null; return; }
   if (++predictAge >= 2){ predictAge = 0; predict = computePredict(); }
 }
 
 // 空中キャラを探す（エアリアルの対象）
 function findTarget(){
+  if (mode === 'ground') return null;          // 地上ラッシュは本家どおり接触で自動クラッシュ
   let bestE = null, bestD = 1e9;
   for (const e of ents){
     if (e.hit) continue;
@@ -672,6 +751,334 @@ function doAerial(){
   return true;
 }
 
+// ================================================================ 地上ラッシュの処理
+// 本家 GameControll / GameCharacter の移植。演出中（GS.anim / GS.prompt）は
+// 本家の slow(0,1000) と同じく物理を完全に止める。
+const D2R = Math.PI / 180;
+const GVX_CAP = 92;
+
+function gsay(text, col){ GS.msg = { text, col: col || '#fff', t: 0 }; }
+function gAnim(dur, e, st, end){ if (e) e.st = st; GS.anim = { t:0, dur, e, end }; }
+function gAsk(ok, ng){ GS.prompt = { t:0, ok, ng }; }
+
+// docffboost : アタックによる威力補正
+function gBoostPow(power){
+  if (GS.cffs === 0){                       // A：2 倍、使うたびに減る
+    GS.cffcount -= 10;
+    if (GS.cffcount <= 0){ GS.cffcount = 0; GS.cffs = null; }
+    return power * 2;
+  }
+  if (GS.cffs === 1){                       // B：0.9 倍にして溜める
+    GS.cffcount = Math.min(60, GS.cffcount + power * 0.2);
+    return power * 0.9;
+  }
+  return power;
+}
+// boost(angle, power) : vy は必ず上向きに揃えてから足す（本家どおり）
+function gBoost(angleDeg, power){
+  const p = gBoostPow(power) * GV, a = angleDeg * D2R;
+  hero.vx = Math.min(GVX_CAP, hero.vx + p * Math.cos(a));
+  hero.vy = -(Math.abs(hero.vy) + p * Math.sin(a));
+  hero.onGround = false; hero.rolling = false;
+  hero.spin = rnd(.25, .5);
+}
+function gSetCff(type){
+  if (type === 0){ GS.cffs = 0; GS.cffcount += 30; }
+  else if (type === 1){ GS.cffs = 1; GS.cffcount += 20; }
+  else if (type === 2){                     // C：水平超加速へ移行（速度は退避）
+    GS.cffs = 2; GS.tmpx = hero.vx; GS.tmpy = hero.vy;
+    hero.vx = 10 * GV; hero.vy = -20 * GV; GS.nogravity = true; GS.cffcount += 30;
+  }
+  else { GS.cffs = 3; GS.cffcount += 30; }
+  const c = GCFF[type];
+  gsay(c.nm + '！ ' + c.desc, c.col);
+  addBurst(hero.x, hero.y - 40, c.col, c.key, 1.5);
+  addParts(hero.x, hero.y, 30, c.col, { spd:9, life:38, size:7 });
+  shake(16); flashT = .7;
+}
+// docffb : 着地寸前に溜めを 45 度で解放
+function gCffB(){
+  if (hero.vy > 0 && hero.vx < 2 * GV && -hero.y < 5 * GU &&
+      -hero.y <= (hero.vy * hero.vy) / G && GS.hitenabled && !GS.nogravity){
+    GS.cffs = null;
+    const c = GS.cffcount; GS.cffcount = 0;
+    gBoost(45, c);
+    gsay('アタック B 爆発！', '#ff5b5b');
+    addBurst(hero.x, hero.y - 30, '#ff5b5b', 'ドカン!!', 1.4);
+    addParts(hero.x, hero.y, 30, '#ff5b5b', { spd:10, life:36, size:7 });
+    shake(20);
+  }
+}
+// docffc : 全員の頭上を一定高度で突っ走る
+function gCffC(){
+  if (-hero.y < GDASH){
+    hero.y = -GDASH; hero.vx = 55 * GV; hero.vy = 0; GS.nolimit = true;
+  } else {
+    // 減り方は本家の「進んだ距離に比例」。距離スケールに合わせて係数だけ調整
+    GS.cffcount -= hero.vx / GU * 0.5;
+    if (GS.cffcount <= 0){
+      hero.vx = GS.tmpx; hero.vy = GS.tmpy;
+      GS.nogravity = false; GS.nolimit = false; GS.cffcount = 0; GS.cffs = null;
+      gsay('アタック C 終了', '#4aa8ff');
+    } else if (Math.random() < .6){
+      addParts(hero.x - 20, hero.y, 2, '#4aa8ff', { spd:5, life:20, size:5, grav:0 });
+    }
+  }
+}
+// docffd : 着地のたび 1.1 倍で跳ね上がる（5 回）
+function gCffD(){
+  GS.cffcount -= 6;
+  if (GS.cffcount <= 0){ GS.cffcount = 0; GS.cffs = null; }
+  hero.vy = -Math.abs(hero.vy) * 1.1;
+  hero.vx = Math.min(GVX_CAP, hero.vx * 1.1);
+  hero.onGround = false; hero.rolling = false;
+  addBurst(hero.x, -50, '#ffd23f', 'ボヨン!', 1.1);
+  addParts(hero.x, 0, 16, '#ffd23f', { spd:8, life:30, size:6, dir:-1.57, spread:1.1 });
+  shake(12); SFX.bounce(1);
+}
+
+// ---- クラッシュ -------------------------------------------------
+function gHitFx(e, big){
+  const d = GCHARA[e.k];
+  hits++;
+  combo++; bestCombo = Math.max(bestCombo, combo);
+  if (combo >= 2) showCombo();
+  hitstop = big ? 7 : 5;
+  shake(big ? 20 : 13);
+  SFX.hit(big ? 'smash' : 'pop');
+  addParts(e.x, -GU * 0.5, big ? 24 : 14, d.col, { spd:8, life:30, size:6 });
+}
+function groundHit(e){
+  e.hit = true; e.hitT = 1;
+  if (GS.combo){ GS.combo = false; gComboCrash(e); }
+  else if (GS.youko) gBlock(e);
+  else gStartCrash(e);
+}
+function gBlock(e){
+  gHitFx(e, false);
+  gsay('曜子のバリアに阻まれた！', '#8fd05a');
+  addBurst(e.x, -GU, '#8fd05a', 'ガード!', 1.2);
+  gAnim(30, e, 'block', () => { GS.youko = false; });   // バリアは 1 回で消える
+}
+function gComboCrash(e){
+  gHitFx(e, true);
+  gsay('COMBO!! 霧＆美希の連携', '#63c6e8');
+  addBurst(e.x, -GU, '#ffffff', 'コンボ!!', 1.5);
+  gAnim(62, e, 'combo', () => {
+    GS.nogravity = false;
+    hero.vx = 30 * GV; hero.vy = -1 * GV; hero.y = -2 * GU;
+    hero.onGround = false;
+    GS.misato = true;
+  });
+}
+function gStartCrash(e){
+  const t = e.k;
+  // ナナカ乱入：直前に 90m 地点を通過していて、アタックを持つキャラに当たった
+  if (GS.nanaka && GCFF_OF[t] !== undefined){
+    gHitFx(e, true);
+    gsay('ナナカ乱入！ タイミングよくタップ！', '#ffe66d');
+    gAsk(() => { GS.nanaka = false; gNanakaCff(e, GCFF_OF[t]); },
+         () => { GS.nanaka = false; gNormalCrash(e); });
+    return;
+  }
+  // 各キャラ固有の SPECIAL 条件
+  const spec =
+    (t === 'kiri'   && GS.kiri)   ? kiriSpecial :
+    (t === 'miki'   && GS.miki)   ? mikiSpecial :
+    (t === 'misato' && GS.misato) ? misatoSpecial :
+    (t === 'touko'  && GS.touko)  ? toukoSpecial : null;
+  if (spec){
+    if (t !== 'touko') GS.touko = false;
+    GS.misato = true;
+    gHitFx(e, true);
+    gsay('SPECIAL チャンス！ タップ！', GCHARA[t].col);
+    gAsk(() => spec(e), () => gNormalCrash(e));
+    return;
+  }
+  gHitFx(e, t === 'misato');
+  gNormalCrash(e);
+}
+function gNormalCrash(e){
+  const t = e.k, d = GCHARA[t];
+  addBurst(e.x, -GU, d.col, d.jp + '!', 1.15);
+  if (t === 'kiri' || t === 'miki'){
+    GS.misato = true; GS.touko = false;
+    gAnim(30, e, 'crash', () => gBoost(d.angle, d.power));
+  } else if (t === 'touko'){
+    GS.misato = true;
+    gAnim(30, e, 'crash', () => { gBoost(d.angle, d.power); GS.touko = true; });
+  } else if (t === 'misato'){
+    GS.touko = false;
+    if (GS.cffs === 1){                       // アタック B 中は掴みを振り切る
+      gsay('アタック B で振り切った！', '#ff5b5b');
+      gAnim(28, e, 'crash', () => {
+        GS.cffs = null;
+        const c = GS.cffcount; GS.cffcount = 0;
+        gBoost(45, c);
+      });
+    } else {
+      gsay('みさとに捕獲された…', '#f2789f');
+      gAnim(44, e, 'grab', () => {
+        hero.vx = 0; hero.vy = 0; hero.y = 0;
+        hero.onGround = true; hero.rolling = false;
+        GS.youko = false;
+      });
+    }
+  } else if (t === 'sakuraba'){
+    gAnim(30, e, 'crash', () => {
+      // 速さは保ったまま 10〜80 度へ強制的に方向転換
+      const deg = Math.abs(Math.atan2(hero.vx, -hero.vy)) / D2R;
+      const ang = ((deg + 45) % 90) * 70 / 90 + 10;
+      const v = Math.hypot(hero.vx, hero.vy);
+      hero.vx = v * Math.cos(ang * D2R);
+      hero.vy = -v * Math.sin(ang * D2R);
+      hero.onGround = false;
+      GS.youko = false;
+      gsay('桜庭に弾かれた！ ' + Math.round(ang) + '°', d.col);
+    });
+  } else if (t === 'tomoki'){
+    gAnim(30, e, 'crash', () => {
+      hero.vx *= d.e; hero.vy = -Math.abs(hero.vy) * d.e;
+      hero.onGround = false;
+      GS.youko = false;
+      gsay('友貴に受け止められた…', d.col);
+    });
+  } else {                                     // 曜子：バリア展開
+    gsay('曜子のバリア展開', '#8fd05a');
+    gAnim(30, e, 'crash', () => { GS.youko = true; GS.nanaka = false; GS.touko = false; });
+  }
+}
+function gSpecialFx(e){
+  const d = GCHARA[e.k];
+  e.st = 'special';
+  addBurst(e.x, -GU, d.col, 'SPECIAL!!', 1.6);
+  addParts(e.x, -GU * 0.5, 34, d.col, { spd:11, life:40, size:7 });
+  shake(22); flashT = .8;
+  gsay(d.jp + ' SPECIAL！', d.col);
+}
+function misatoSpecial(e){
+  const d = GCHARA.misato; gSpecialFx(e);
+  gAnim(48, e, 'special', () => { gBoost(d.s_angle, d.s_power); GS.misato = true; });
+}
+function toukoSpecial(e){
+  const d = GCHARA.touko; gSpecialFx(e);
+  gAnim(48, e, 'special', () => { gBoost(d.s_angle, d.s_power); GS.touko = true; });
+}
+function mikiSpecial(e){
+  const d = GCHARA.miki; gSpecialFx(e);
+  gAnim(56, e, 'special', () => gBoost(d.s_angle, d.s_power));
+}
+// 霧 SPECIAL : 掴んで前へ運び、元の速度に戻して 60 度ブースト → COMBO 予約
+function kiriSpecial(e){
+  const d = GCHARA.kiri; gSpecialFx(e);
+  GS.tmpx = hero.vx; GS.tmpy = hero.vy;
+  GS.combo = true;
+  GS.nogravity = true;
+  hero.vy = 0; hero.vx = 26 * GV;
+  gsay('霧 SPECIAL！ 連携へ', d.col);
+  gAnim(62, e, 'dash', () => {
+    hero.y = -2.33 * GU; hero.vy = 0; hero.vx = 30 * GV;
+    gAnim(40, e, 'dash', () => {
+      hero.vx = GS.tmpx; hero.vy = GS.tmpy;
+      gBoost(d.s_angle, d.s_power);
+      GS.nogravity = false;
+    });
+  });
+}
+function gNanakaCff(e, type){
+  addBurst(e.x, -GU, '#ffe66d', 'ナナカ!!', 1.7);
+  addParts(e.x, -GU * 0.5, 34, '#ffe66d', { spd:11, life:42, size:7 });
+  shake(24); flashT = 1;
+  gAnim(54, e, 'cff', () => {
+    gBoost(45, 15);            // Sprite_283 : power=15 / angle=45
+    gSetCff(type);
+  });
+}
+
+// ---- エアリアルアタック（本家 aerialboost）----------------------
+function gAerial(){
+  if (GS.anim || GS.prompt) return false;
+  if (Math.floor(GS.gauge) < 100) return false;
+  const upper = hero.vy > 0;                   // 落下中なら UPPER（回数制）
+  if (upper){
+    if (aerial <= 0) return false;
+    aerial--;
+  }
+  GS.gauge = 0;
+  GS.hitenabled = false;
+  const col = upper ? '#ff7070' : '#6bb8ff';
+  gsay(upper ? 'エアリアル (UPPER)' : 'エアリアル (DOWNER)', col);
+  addBurst(hero.x, hero.y - 30, col, upper ? 'UPPER!' : 'DOWNER!', 1.3);
+  addParts(hero.x, hero.y, 22, col, { spd:9, life:32, size:6 });
+  shake(14); SFX.hit('star');
+  gAnim(24, null, null, () => {
+    const uy = -hero.vy;
+    const a = Math.atan2(hero.vx, uy) * 0.9, p = 10 * GV;
+    hero.vx = Math.min(GVX_CAP, hero.vx + p * Math.cos(a));
+    hero.vy = -(uy + p * Math.sin(a));
+    hero.onGround = false; hero.rolling = false;
+    hero.spin = rnd(.25, .5) * (upper ? -1 : 1);
+    GS.hitenabled = true;
+  });
+  syncPips();
+  return true;
+}
+
+// ---- 毎フレーム -------------------------------------------------
+// 演出中は true を返す（＝物理を進めない）
+function gStepAnim(){
+  if (GS.msg && ++GS.msg.t > 110) GS.msg = null;
+  if (GS.prompt){
+    if (++GS.prompt.t > 42){ const f = GS.prompt.ng; GS.prompt = null; f(); }
+    return true;
+  }
+  if (GS.anim){
+    if (++GS.anim.t >= GS.anim.dur){ const f = GS.anim.end; GS.anim = null; f(); }
+    return true;
+  }
+  return false;
+}
+// 本家の反発係数（ex/ey = 0.8）で跳ね続ける
+function groundBounce(impact){
+  GS.misato = false;                            // 着地で misato 条件は消える
+  if (GS.cffs === 3){ gCffD(); return; }
+  if (impact > 1.6){
+    hero.vy = -impact * GEY;
+    hero.vx *= GEX;
+    hero.spin = rnd(.1, .28);
+    hero.onGround = false;
+    shake(clamp(impact * 0.8, 4, 18));
+    SFX.bounce(clamp(impact / 26, 0, 1));
+    addParts(hero.x, 0, clamp(Math.floor(impact), 6, 20), '#e8d8b0',
+             { spd: clamp(impact * .5, 4, 9), life:30, size:6, dir:-1.57, spread:1.15 });
+    if (impact > 14) addBurst(hero.x, -46, COL.orange, 'バウンド!', 1.05);
+  } else {
+    if (!hero.onGround){ SFX.land(); addParts(hero.x, 0, 10, '#e8d8b0', { spd:4, life:26, size:5, dir:-1.57, spread:1.2 }); }
+    hero.vy = 0;
+    hero.onGround = true;
+    hero.rolling = Math.abs(hero.vx) > STOP_VX;
+    hero.vx *= 0.968;
+    hero.rot += hero.vx * 0.045;
+  }
+}
+// 通過・当たり判定（GameCharacter.moveobj）
+function groundCollide(){
+  for (const e of ents){
+    if (!e.pass && (e.x - hero.x) < -GU * 0.5){
+      e.pass = true;
+      GS.nanaka = e.nanaka;                     // 90m 地点を過ぎるとナナカが現れる
+      if (e.k === 'kiri') GS.kiri = false;
+      if (e.k === 'miki') GS.miki = false;
+      if (GS.nanaka) gsay('ナナカ接近中…', '#ffe66d');
+    }
+    if (!e.hit && !e.pass && GS.hitenabled &&
+        e.hitminx < hero.x && e.hitmaxx > hero.x && e.hitmaxy > -hero.y){
+      groundHit(e);
+      return;
+    }
+  }
+}
+
 function tryStop(){
   if (crashes > 0){
     crashes--; syncPips();
@@ -714,7 +1121,9 @@ function step(){
   for (let i = bursts.length - 1; i >= 0; i--){
     if (--bursts[i].life <= 0) bursts.splice(i, 1);
   }
-  for (const e of ents) if (e.hitT > 0) e.hitT = Math.max(0, e.hitT - 0.045);
+  // 演出中のキャラはリアクションを取り続けるので、ふっとび開始を待たせる
+  for (const e of ents)
+    if (e.hitT > 0 && !(GS.anim && GS.anim.e === e)) e.hitT = Math.max(0, e.hitT - 0.045);
 
   if (hitstop > 0){ hitstop--; return; }
 
@@ -743,6 +1152,12 @@ function step(){
         doLaunch(launchAngle, launchPow);
       } else {
         aerial = AERIAL_MAX; syncPips();
+        if (mode === 'ground'){
+          GS.youko = GS.nanaka = GS.misato = GS.touko = GS.kiri = GS.miki = GS.combo = false;
+          GS.cffs = null; GS.cffcount = 0;
+          GS.nogravity = false; GS.nolimit = false; GS.hitenabled = true;
+          GS.gauge = 0; GS.anim = null; GS.prompt = null; GS.msg = null;
+        }
         const ang = rnd(26, 56), pw = rnd(25.5, 33);
         addPop(hero.x, hero.y - 120, 'ふたたびクラッシュ！', COL.pink, 30);
         doLaunch(ang, pw);
@@ -755,18 +1170,34 @@ function step(){
   }
   if (state !== S.FLY) return;
 
+  const gnd = (mode === 'ground');
+
+  // --- 地上ラッシュ：演出中は本家どおり物理を止める
+  if (gnd){
+    if (gStepAnim()){ syncHUD(); return; }
+    if (GS.cffs === 1) gCffB();
+    if (GS.cffs === 2) gCffC();
+  }
+
   // --- 飛行 / 転がり
   const gm = floatTimer > 0 ? 0.34 : 1;
   if (floatTimer > 0) floatTimer--;
 
   if (!hero.onGround){
-    hero.vy += G * gm;
-    hero.vx *= AIR_DRAG;
+    // アタック C 中は重力が効かない
+    if (!(gnd && GS.nogravity)) hero.vy += G * gm;
+    if (!(gnd && GS.nogravity)) hero.vx *= gnd ? GDRAG : AIR_DRAG;
     hero.rot += hero.spin;
     hero.spin *= 0.995;
   }
   hero.x += hero.vx;
   hero.y += hero.vy;
+
+  if (gnd){
+    groundCollide();
+    // エアリアルゲージ（Sprite_402）：約 3 秒で満タン
+    if (GS.hitenabled) GS.gauge = Math.min(100, GS.gauge + 100 / 180);
+  }
 
   // 軌跡
   if (Math.hypot(hero.vx, hero.vy) > 4){
@@ -804,11 +1235,13 @@ function step(){
   }
 
   // 地面判定
-  if (hero.y >= 0){
+  if (hero.y >= 0 && !(gnd && GS.nogravity)){
     hero.y = 0;
     const impact = hero.vy;
     if (combo > 0){ combo = 0; hideCombo(); }
-    if (impact > 2.4){
+    if (gnd){
+      groundBounce(impact);
+    } else if (impact > 2.4){
       const rest = clamp(0.30 + impact * 0.010, 0.30, 0.58);
       hero.vy = -impact * rest;
       hero.vx *= 0.825;
@@ -1077,7 +1510,95 @@ function drawFace(type, r, blink){
   ctx.stroke();
 }
 
+// 地上ラッシュのキャラ（本家の立ち絵に寄せた棒人間）
+function drawGroundChara(e){
+  const d = GCHARA[e.k];
+  const sx = toX(e.x), gy = toY(0), s = cam.s;
+  if (sx < -220 || sx > W + 220) return;
+  const H = GU * 0.88, bw = H * 0.26;
+  const busy = GS.anim && GS.anim.e === e;
+
+  ctx.save();
+  ctx.translate(sx, gy); ctx.scale(s, s);
+
+  ctx.save(); ctx.globalAlpha = .22;
+  ctx.beginPath(); ctx.ellipse(0, 0, H * .24, H * .06, 0, 0, 6.283);
+  ctx.fillStyle = '#000'; ctx.fill(); ctx.restore();
+
+  if (e.hit && !busy){
+    const t = e.hitT;
+    if (t <= 0){ ctx.restore(); return; }
+    ctx.globalAlpha = t;
+    ctx.translate((1 - t) * 76, -(1 - t) * 86);
+    ctx.rotate((1 - t) * 2.6);
+  } else if (busy && e.st !== 'block' && e.st !== 'grab'){
+    const p = GS.anim.t / GS.anim.dur, k = Math.sin(p * Math.PI);
+    ctx.translate(-28 * k, 0);
+    ctx.rotate(-0.55 * k * (e.st === 'special' || e.st === 'cff' ? 1.6 : 1));
+  } else if (!e.hit){
+    const br = 1 + Math.sin(timeSec * 2.2 + e.ph) * 0.03;   // 呼吸
+    ctx.scale(2 - br, br);
+  }
+
+  // 脚
+  roundRect(-bw * .46, -H * .44, bw * .38, H * .46, 4); inked('#3a4460', 3.5);
+  roundRect( bw * .08, -H * .44, bw * .38, H * .46, 4); inked('#3a4460', 3.5);
+  // 胴（制服）
+  roundRect(-bw * .62, -H * .80, bw * 1.24, H * .42, 6); inked(d.col, 4);
+  roundRect(-bw * .56, -H * .82, bw * 1.12, H * .24, 6); inked('#fbfbfb', 3.5);
+  // 腕
+  ctx.lineCap = 'round'; ctx.beginPath();
+  if (e.k === 'misato'){        // 両手を広げて捕まえにくる
+    ctx.moveTo(-bw * .6, -H * .74); ctx.lineTo(-bw * 1.25, -H * .88);
+    ctx.moveTo( bw * .6, -H * .74); ctx.lineTo( bw * 1.25, -H * .88);
+  } else if (e.k === 'tomoki'){  // 受け止める構え
+    ctx.moveTo(-bw * .6, -H * .72); ctx.lineTo(-bw * .95, -H * .46);
+    ctx.moveTo( bw * .6, -H * .74); ctx.lineTo( bw * .72, -H * 1.06);
+  } else {
+    ctx.moveTo(-bw * .6, -H * .72); ctx.lineTo(-bw * .98, -H * .46);
+    ctx.moveTo( bw * .6, -H * .72); ctx.lineTo( bw * .98, -H * .46);
+  }
+  ctx.lineWidth = 7; ctx.strokeStyle = COL.ink; ctx.stroke();
+  ctx.lineWidth = 4; ctx.strokeStyle = '#ffd9b8'; ctx.stroke();
+  // 頭
+  ctx.beginPath(); ctx.arc(0, -H * .90, H * .135, 0, 6.283); inked('#ffe3c4', 3.5);
+  ctx.beginPath();
+  ctx.arc(0, -H * .92, H * .158, Math.PI, 0);
+  ctx.lineTo(H * .158, -H * .87); ctx.lineTo(-H * .158, -H * .87);
+  ctx.closePath(); inked(d.hair, 3.5);
+  if (e.k === 'miki'){          // ツインテール
+    ctx.beginPath(); ctx.arc(-H * .17, -H * .84, H * .062, 0, 6.283); inked(d.hair, 3);
+    ctx.beginPath(); ctx.arc( H * .17, -H * .84, H * .062, 0, 6.283); inked(d.hair, 3);
+  }
+  ctx.fillStyle = COL.ink;
+  ctx.beginPath(); ctx.ellipse(-H * .052, -H * .888, H * .018, H * .026, 0, 0, 6.283); ctx.fill();
+  ctx.beginPath(); ctx.ellipse( H * .052, -H * .888, H * .018, H * .026, 0, 0, 6.283); ctx.fill();
+  // 小物
+  if (e.k === 'kiri'){          // 木刀
+    ctx.beginPath(); ctx.moveTo(bw * .8, -H * .44); ctx.lineTo(bw * 1.7, -H * 1.08);
+    ctx.lineWidth = 6; ctx.strokeStyle = COL.ink; ctx.stroke();
+    ctx.lineWidth = 3.5; ctx.strokeStyle = '#c08a45'; ctx.stroke();
+  } else if (e.k === 'sakuraba'){ // カレー鍋
+    roundRect(bw * .55, -H * .76, bw * .8, bw * .56, 4); inked('#8a8a98', 3.5);
+    ctx.beginPath(); ctx.ellipse(bw * .95, -H * .76, bw * .4, bw * .1, 0, 0, 6.283); inked('#d1811f', 0);
+  } else if (e.k === 'youko'){  // バリア
+    ctx.beginPath(); ctx.arc(0, -H * .52, H * .58, 0, 6.283);
+    ctx.fillStyle = 'rgba(143,208,90,.16)'; ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(143,208,90,.9)'; ctx.stroke();
+  }
+
+  // 名前 ＆ ナナカ出現地点の目印
+  const ty = -H - 16;
+  roundRect(-29, ty - 12, 58, 22, 9); inked('#fff', 3.5);
+  outlinedText(d.jp, 0, ty - 1, 14, d.col, 0);
+  if (e.nanaka && !e.pass){
+    outlinedText('ナナカ地点', 0, ty - 26, 13, '#ffe66d', 4.5);
+  }
+  ctx.restore();
+}
+
 function drawEnt(e, isTarget){
+  if (e.chara){ drawGroundChara(e); return; }
   const K = KINDS[e.k];
   const bob = Math.sin(timeSec * e.bobS + e.ph) * e.bobA;
   const sx = toX(e.x), sy = toY(e.y + bob);
@@ -1422,10 +1943,10 @@ function drawLandingGuide(){
     if (d < 260 && d < nd){ nd = d; near = e; }
   }
   if (near){
-    const ex = toX(near.x), ey = toY(near.y);
+    const ex = toX(near.x), ey = toY(near.y - (near.chara ? GU * .45 : 0));
     ctx.save(); ctx.globalAlpha = .8;
     ctx.beginPath(); ctx.moveTo(mx, my - 54 * cam.s); ctx.lineTo(ex, ey);
-    ctx.lineWidth = 3; ctx.strokeStyle = KINDS[near.k].c;
+    ctx.lineWidth = 3; ctx.strokeStyle = near.chara ? GCHARA[near.k].col : KINDS[near.k].c;
     ctx.setLineDash([6, 7]); ctx.stroke(); ctx.setLineDash([]);
     ctx.restore();
   } else {
@@ -1436,7 +1957,7 @@ function drawLandingGuide(){
 }
 
 function drawAerialRing(){
-  if (state !== S.FLY || (mode !== 'infinite' && aerial <= 0)) return;
+  if (state !== S.FLY || mode === 'ground' || (mode !== 'infinite' && aerial <= 0)) return;
   const sx = toX(hero.x), sy = toY(hero.y);
   ctx.save();
   ctx.globalAlpha = .28 + Math.sin(timeSec * 5) * .07;
@@ -1494,6 +2015,79 @@ function drawPowerGauge(){
   ctx.restore();
 }
 
+// ---------------------------------------------------------------- 地上ラッシュの表示
+// 曜子のバリアとアタックのオーラ（ワールド座標）
+function drawGroundAura(){
+  const sx = toX(hero.x), sy = toY(hero.y), s = cam.s;
+  if (GS.youko){
+    ctx.save(); ctx.translate(sx, sy); ctx.scale(s, s);
+    const p = 1 + Math.sin(timeSec * 6) * .05;
+    ctx.beginPath(); ctx.arc(0, -20, 54 * p, 0, 6.283);
+    ctx.fillStyle = 'rgba(143,208,90,.15)'; ctx.fill();
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(143,208,90,.85)'; ctx.stroke();
+    ctx.restore();
+  }
+  if (GS.cffs !== null){
+    const c = GCFF[GS.cffs].col;
+    ctx.save(); ctx.translate(sx, sy); ctx.scale(s, s);
+    ctx.globalAlpha = .45 + Math.sin(timeSec * 9) * .12;
+    ctx.beginPath(); ctx.arc(0, -20, 46, 0, 6.283);
+    ctx.lineWidth = 5; ctx.strokeStyle = c;
+    ctx.setLineDash([10, 9]); ctx.lineDashOffset = -timeSec * 40; ctx.stroke();
+    ctx.setLineDash([]); ctx.restore();
+  }
+}
+// メッセージ・ゲージ・アタック表示・SPECIAL 受付（スクリーン座標）
+function drawGroundHud(){
+  if (GS.msg && GS.msg.text){
+    const a = clamp((110 - GS.msg.t) / 22, 0, 1);
+    ctx.save(); ctx.globalAlpha = a;
+    outlinedText(GS.msg.text, W / 2, H * 0.17, 21, GS.msg.col, 6);
+    ctx.restore();
+  }
+
+  if (state === S.FLY){
+    // エアリアルゲージ（満タンでタップ可）
+    const bw = 200, bh = 13, bx = W / 2 - bw / 2, by = H - 78;
+    const full = Math.floor(GS.gauge) >= 100;
+    ctx.save(); ctx.globalAlpha = .9;
+    roundRect(bx, by, bw, bh, 6); inked('rgba(20,14,34,.55)', 3, '#fff');
+    roundRect(bx + 2, by + 2, (bw - 4) * (GS.gauge / 100), bh - 4, 4);
+    ctx.fillStyle = full ? (hero.vy > 0 ? '#ff7070' : '#6bb8ff') : '#ffd93d'; ctx.fill();
+    outlinedText(full ? (hero.vy > 0 ? 'エアリアル UPPER 可' : 'エアリアル DOWNER 可') : 'エアリアル ゲージ',
+                 W / 2, by - 12, 13, full ? '#fff' : '#cfc6e0', 4);
+    ctx.restore();
+
+    // 発動中のアタック
+    if (GS.cffs !== null){
+      const c = GCFF[GS.cffs];
+      ctx.save();
+      roundRect(W - 88, H - 132, 76, 40, 12); inked('#fff', 4);
+      outlinedText(c.key, W - 68, H - 112, 22, c.col, 0);
+      outlinedText(Math.ceil(GS.cffcount) + '', W - 34, H - 112, 15, '#8a7fa8', 0);
+      ctx.restore();
+    }
+  }
+
+  // SPECIAL / ナナカ乱入の受付
+  if (GS.prompt){
+    const p = GS.prompt.t / 42;
+    ctx.save();
+    ctx.translate(W / 2, H * 0.42);
+    const r = 74;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.283);
+    ctx.fillStyle = 'rgba(20,14,34,.55)'; ctx.fill();
+    ctx.lineWidth = 8; ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, r, -Math.PI / 2, -Math.PI / 2 + (1 - p) * 6.283);
+    ctx.lineWidth = 8; ctx.strokeStyle = COL.yellow; ctx.lineCap = 'round'; ctx.stroke();
+    const pl = 1 + Math.sin(timeSec * 22) * .07;
+    ctx.scale(pl, pl);
+    outlinedText('TAP!', 0, -8, 30, COL.yellow, 6);
+    outlinedText('SPECIAL', 0, 22, 15, '#fff', 5);
+    ctx.restore();
+  }
+}
+
 // ---------------------------------------------------------------- 描画メイン
 function render(){
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -1522,6 +2116,7 @@ function render(){
 
   if (state === S.LAUNCH || state === S.RECRASH) drawBike();
   if (state !== S.TITLE) drawHero();
+  if (mode === 'ground' && state === S.FLY) drawGroundAura();
 
   drawParts();
   drawBursts();
@@ -1531,6 +2126,8 @@ function render(){
   if (state === S.POWER) drawPowerGauge();
 
   ctx.restore();
+
+  if (mode === 'ground' && state !== S.TITLE) drawGroundHud();
 
   // 画面フラッシュ
   if (flashT > 0){
@@ -1574,19 +2171,28 @@ function showTitle(){
       '① <span class="k">タップ</span> で<b>角度</b>を決める<br>' +
       '② <span class="k">タップ</span> で<b>パワー</b>を決める → 発射！<br>' +
       (mode === 'ground'
-        ? '③ キャラは<b>全員地上</b>！ 落ち際に <span class="k">タップ</span> ＝ <b>エアリアル</b><br>' +
-          '　（<b>着地する前に</b>当てればコンボ継続／黄色い輪が落下地点）<br>'
+        ? '③ 地上の<b>キャラに触れる</b>と自動でクラッシュ（本家ルール）<br>' +
+          '　ゲージ満タンで <span class="k">タップ</span> ＝ <b>エアリアル</b>（落下中は回数を消費）<br>' +
+          '　<b>TAP!</b> が出たら押す ＝ <b>SPECIAL</b>／<b>ナナカ乱入</b>でアタック獲得<br>'
         : '③ 飛行中、キャラの近くで <span class="k">タップ</span> ＝ <b>エアリアル</b><br>' +
           '　（<b>中心に近いほど強い</b>／連続で当てるとコンボ）<br>') +
       '④ 止まっても<b>クラッシュ</b>が残れば再発射！<br>' +
       '<span style="color:#8a7fa8;font-size:11.5px">キー操作：スペース／クリックでもOK</span>' +
     '</div>' +
     '<div class="legend">' +
-      '<div><i style="background:#ff4f8b"></i>ポップ／高く跳ねる</div>' +
-      '<div><i style="background:#35d6ff"></i>ロケッタ／前に加速</div>' +
-      '<div><i style="background:#ffd93d"></i>キラリ／大ジャンプ＋補充</div>' +
-      '<div><i style="background:#9b5cff"></i>ガツン／地面に叩きつけ</div>' +
-      '<div><i style="background:#ffffff"></i>ふわり／ふんわり滞空</div>' +
+      (mode === 'ground'
+        ? '<div><i style="background:#63c6e8"></i>霧／45°に打ち上げ</div>' +
+          '<div><i style="background:#f7b13c"></i>美希／70°に高く</div>' +
+          '<div><i style="background:#9b8ce0"></i>冬子／20°に前へ</div>' +
+          '<div><i style="background:#8fd05a"></i>曜子／次の1回を無効化</div>' +
+          '<div><i style="background:#6fa8d6"></i>友貴／勢いを殺す</div>' +
+          '<div><i style="background:#e2604f"></i>桜庭／角度を変える</div>' +
+          '<div><i style="background:#f2789f"></i>みさと／捕まると終了</div>'
+        : '<div><i style="background:#ff4f8b"></i>ポップ／高く跳ねる</div>' +
+          '<div><i style="background:#35d6ff"></i>ロケッタ／前に加速</div>' +
+          '<div><i style="background:#ffd93d"></i>キラリ／大ジャンプ＋補充</div>' +
+          '<div><i style="background:#9b5cff"></i>ガツン／地面に叩きつけ</div>' +
+          '<div><i style="background:#ffffff"></i>ふわり／ふんわり滞空</div>') +
     '</div>' +
     '<div class="modesel" id="modesel">' +
       Object.keys(MODES).map(k =>
@@ -1656,6 +2262,13 @@ function press(){
       setHint('');
       break;
     case S.FLY:
+      if (mode === 'ground'){
+        // SPECIAL / ナナカ乱入の受付が最優先（本家の SPECIAL ボタン）
+        if (GS.prompt){ const f = GS.prompt.ok; GS.prompt = null; SFX.ui(); f(); break; }
+        if (!gAerial() && Math.floor(GS.gauge) >= 100 && hero.vy > 0 && aerial <= 0)
+          addPop(hero.x, hero.y - 60, 'エアリアル切れ…', '#ffffff', 22);
+        break;
+      }
       if (!doAerial()){
         if (mode !== 'infinite' && aerial <= 0 && findTarget()) addPop(hero.x, hero.y - 60, 'エアリアル切れ…', '#ffffff', 22);
       }
