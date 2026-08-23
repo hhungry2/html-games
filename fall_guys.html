@@ -20,7 +20,8 @@
     font-family:'Yu Gothic UI','Hiragino Kaku Gothic ProN',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
     user-select:none; -webkit-user-select:none; touch-action:none;
   }
-  #wrap{ position:relative; width:100vw; height:100vh; display:flex; align-items:center; justify-content:center; }
+  #wrap{ position:relative; width:100vw; height:100vh; height:100dvh;
+         display:flex; align-items:center; justify-content:center; }
   canvas{ display:block; width:100%; height:100%; object-fit:contain; }
 
   /* ===== HUD ===== */
@@ -58,6 +59,13 @@
   #ov{ position:absolute; inset:0; z-index:20; display:flex; align-items:center; justify-content:center;
        background:rgba(38,20,70,.55); backdrop-filter:blur(3px); }
   #ov.hide{ display:none; }
+  /* タイトルはビーンが見えるようにカードを上へ寄せ、背景も薄く */
+  #ov.tt{ align-items:flex-start; background:rgba(38,20,70,.28); backdrop-filter:none; padding-top:2vh; }
+  #ov.tt .card{ max-height:70vh; }
+  @media (max-aspect-ratio:1/1){
+    #ov.tt{ padding-top:3vh; }
+    #ov.tt .card{ max-height:52vh; padding:18px 20px 16px; }
+  }
   .card{
     width:min(680px,92vw); max-height:92vh; overflow:auto;
     background:linear-gradient(180deg,#fff 0%, #ffeef7 100%);
@@ -200,7 +208,7 @@
 
 const cv = document.getElementById('cv');
 const ctx = cv.getContext('2d');
-const VW = 960, VH = 640;
+let VW = 960, VH = 640;                  // 論理画面サイズ（端末の縦横比で変わる）
 const TAU = Math.PI * 2;
 
 const clamp = (v,a,b)=> v<a?a:(v>b?b:v);
@@ -208,6 +216,90 @@ const rnd   = (a,b)=> a + Math.random()*(b-a);
 const irnd  = (a,b)=> Math.floor(rnd(a,b+1));
 const pick  = a => a[Math.floor(Math.random()*a.length)];
 const lerp  = (a,b,t)=> a+(b-a)*t;
+
+// ---------------------------------------------------------------- 画面フィット
+//  端末の画面比に合わせて論理サイズを決め、ステージごとに「映す範囲」を拡大縮小する。
+//  ・縦長（スマホ）… 画面いっぱいに縦へ伸ばし、ステージが画面幅いっぱいになるまで寄る
+//  ・横長（PC）  … 従来どおり等倍（960x640相当）
+//  VL/VT/VR/VB … カメラ空間で画面に映る矩形。背景など「画面の端まで塗る」描画はこれを使う。
+let PORTRAIT = false;
+let VS = 1, VCX = 480, VCY = 320;
+let VL = 0, VT = 0, VR = 960, VB = 640;
+let viewX = 480;                         // レース時：横方向の追従位置（カメラ空間）
+let fitW = 0, fitH = 0;                  // 直近に合わせた表示サイズ
+
+// アドレスバーの開閉など resize が来ない変化にも追従する
+function checkFit(){
+  const wr = cv.parentElement; if(!wr) return;
+  const r = wr.getBoundingClientRect();
+  if(Math.round(r.width) !== fitW || Math.round(r.height) !== fitH) fitCanvas();
+}
+
+function fitCanvas(){
+  const wr = cv.parentElement, r = wr ? wr.getBoundingClientRect() : null;
+  const w = Math.max(240, Math.round((r && r.width) || window.innerWidth));
+  const h = Math.max(240, Math.round((r && r.height) || window.innerHeight));
+  fitW = w; fitH = h;
+  const ar = w / h;
+  PORTRAIT = ar < 1.05;
+  if(ar >= 1.5){ VH = 640; VW = Math.round(640*ar); }
+  else { VH = Math.min(Math.round(960/ar), 2000); VW = Math.round(VH*ar); }
+  cv.width = VW; cv.height = VH;
+  updateView('snap');
+}
+// 固定画面ステージの「中身が入っている範囲」
+function stageViewBox(){
+  if(!G || !G.stage) return null;
+  switch(G.stage.kind){
+    case 'arena': return { cx:arena.cx, cy:arena.cy, w:arena.r*2+130, h:arena.r*2+130 };
+    case 'bounce': {
+      let x0=1e9, x1=-1e9, y0=1e9, y1=-1e9;
+      for(const p of bounce.pads){
+        x0=Math.min(x0,p.x-p.r); x1=Math.max(x1,p.x+p.r);
+        y0=Math.min(y0,p.y-p.r); y1=Math.max(y1,p.y+p.r);
+      }
+      if(x0 > x1) return null;
+      return { cx:(x0+x1)/2, cy:(y0+y1)/2, w:(x1-x0)+80, h:(y1-y0)+80 };
+    }
+    case 'hex':   return { cx:480, cy:320, w:hex.cols*hex.w+90, h:hex.rows*hex.vs+100 };
+    case 'floor': return { cx:480, cy:320, w:farena.cols*farena.pw+80, h:farena.rows*farena.ph+80 };
+    case 'roll':  return { cx:roll.x+roll.w/2, cy:roll.y+roll.h/2, w:roll.w+90, h:roll.h+120 };
+    default: return null;
+  }
+}
+function updateView(mode){
+  const box = stageViewBox();
+  if(box){
+    VS = PORTRAIT ? Math.min(VW/box.w, VH/box.h) : 1;   // 横長は等倍＝従来の見え方
+    VCX = box.cx; VCY = box.cy;
+  } else if(G && G.stage && G.stage.kind === 'race'){
+    const ww = world.w || 800;
+    VS = PORTRAIT ? clamp(VW/680, 1, 1.7) : 1;     // 縦長では少し寄る
+    const half = VW/(2*VS);
+    const mid = ww/2 - cam.x;
+    const lo = -cam.x - 30 + half, hi = -cam.x + ww + 30 - half;
+    const p = G.player;
+    let wx = (p && !p.out && !G.spectate) ? p.x : ww/2;
+    if(world.path) wx = wx*0.5 + pathAt(cam.y + VH/(2*VS)).cx*0.5;   // くねくね道は道の中心も見る
+    let want = wx - cam.x;
+    want = (lo > hi) ? mid : clamp(want, lo, hi);
+    if(mode === 'snap') viewX = want;
+    else if(mode === 'step') viewX += (want - viewX) * 0.10;
+    else viewX = (lo > hi) ? mid : clamp(viewX, lo, hi);
+    VCX = viewX; VCY = VH/(2*VS);
+  } else {
+    VS = 1; VCX = VW/2; VCY = VH/2;
+  }
+  const hw = VW/(2*VS), hh = VH/(2*VS);
+  VL = VCX-hw; VR = VCX+hw; VT = VCY-hh; VB = VCY+hh;
+}
+// 画面に映る範囲を丸ごと塗る（背景用）
+function fillView(color){
+  ctx.fillStyle = color;
+  ctx.fillRect(VL-2, VT-2, (VR-VL)+4, (VB-VT)+4);
+}
+addEventListener('resize', fitCanvas);
+addEventListener('orientationchange', ()=> setTimeout(fitCanvas, 120));
 
 // ---------------------------------------------------------------- 効果音
 let actx = null, muted = false;
@@ -470,7 +562,7 @@ function confetti(x,y,n){
 }
 function rainConfetti(n){
   for(let i=0;i<n;i++){
-    parts.push({ x: cam.x + rnd(-30, VW+30), y: cam.y + rnd(-30, VH+30), z: rnd(260,460),
+    parts.push({ x: cam.x + rnd(VL-30, VR+30), y: cam.y + rnd(VT-30, VB+30), z: rnd(260,460),
                  vx: rnd(-.7,.7), vy: rnd(-.25,.25), vz: rnd(-1.0,-2.6), life: rnd(110,170),
                  c: pick(['#ffd23f','#ff5fa2','#5fc9ff','#7ee08a','#c08bff','#ffffff','#ff9f5a']),
                  r: rnd(3,7), rot: Math.random()*TAU, om: rnd(-.4,.4) });
@@ -1436,10 +1528,10 @@ function aiBounce(b){
   return { mx:dx/d, my:dy/d, jump: (d > 130 && !hiNear), dive:false };
 }
 function drawBounceFloor(){
-  ctx.fillStyle = '#3a1f6e'; ctx.fillRect(0,0,VW,VH);
+  fillView('#3a1f6e');
   ctx.fillStyle = 'rgba(255,255,255,.08)';
   for(let i=0;i<7;i++){
-    const x = (i*167 + G.elapsed*0.35) % (VW+200) - 100, y = 50 + (i*131)%540;
+    const x = VL + (i*167 + G.elapsed*0.35) % ((VR-VL)+200) - 100, y = VT + 40 + (i*131)%Math.max(120, VB-VT-80);
     ctx.beginPath(); ctx.ellipse(x, y, 84, 30, 0, 0, TAU); ctx.fill();
   }
   for(const p of bounce.pads){
@@ -1690,7 +1782,7 @@ function drawHexGhost(b, alpha, scale){
   ctx.restore();
 }
 function drawHexFloor(){
-  ctx.fillStyle = '#0d0520'; ctx.fillRect(0,0,VW,VH);
+  fillView('#0d0520');
   const vl = viewLayer();
   for(let L = 2; L > vl; L--) drawHexLayer(L, L === vl+1 ? 0.75 : 0.34, true);
   for(const b of G.beans){ if(b.out || b.layer <= vl) continue; drawHexGhost(b, 0.45, 0.85); }
@@ -1836,10 +1928,10 @@ function aiFloor(b){
   return { mx:mx/m, my:my/m, jump, dive:false };
 }
 function drawFloorArena(){
-  ctx.fillStyle = '#2a1550'; ctx.fillRect(0,0,VW,VH);
+  fillView('#2a1550');
   ctx.fillStyle = 'rgba(255,255,255,.07)';
   for(let i=0;i<8;i++){
-    const x = (i*191 + G.elapsed*0.3) % (VW+220) - 110, y = 40 + (i*113)%560;
+    const x = VL + (i*191 + G.elapsed*0.3) % ((VR-VL)+220) - 110, y = VT + 30 + (i*113)%Math.max(120, VB-VT-60);
     ctx.beginPath(); ctx.ellipse(x, y, 78, 28, 0, 0, TAU); ctx.fill();
   }
   for(const c of farena.cells){
@@ -2032,13 +2124,14 @@ function updateRoll(){
   else if(G.timeLeft <= 0) clear();                       // 時間切れ：残っている人は全員クリア
 }
 function drawRollFloor(){
-  ctx.fillStyle = '#241246'; ctx.fillRect(0,0,VW,VH);
+  fillView('#241246');
   // 落下ゾーンのハザード帯
   ctx.save();
   ctx.fillStyle = '#1a0c36';
-  ctx.fillRect(0,0,VW,roll.y); ctx.fillRect(0,roll.y+roll.h,VW,VH-(roll.y+roll.h));
+  ctx.fillRect(VL-2, VT-2, (VR-VL)+4, roll.y-VT+2);
+  ctx.fillRect(VL-2, roll.y+roll.h, (VR-VL)+4, VB-(roll.y+roll.h)+2);
   ctx.fillStyle = 'rgba(255,210,63,.85)';
-  for(let x=-40; x<VW; x+=44){
+  for(let x=VL-40; x<VR; x+=44){
     ctx.beginPath(); ctx.moveTo(x, roll.y-14); ctx.lineTo(x+20, roll.y-14); ctx.lineTo(x+8, roll.y); ctx.lineTo(x-12, roll.y);
     ctx.closePath(); ctx.fill();
     const yb = roll.y+roll.h;
@@ -2429,6 +2522,11 @@ function startRound(idx){
   for(const b of G.beans) b.cheer = 0;
   for(const b of G.beans){ b.out = false; b.done = false; b.place = 0; b.alive = true; b.slimed = 0; }
   G.stage.build();
+  updateView('snap');
+  if(G.stage.kind === 'race'){                 // 画面の高さに合わせてカメラを合わせ直す
+    cam.y = clamp(camTarget().y - (VH/VS)*0.66, world.camMin, world.camMax);
+    updateView('snap');
+  }
   G.phase = 'intro';
   showIntro(G.round);
 }
@@ -2552,7 +2650,8 @@ function updateRace(){
 
   // カメラ（プレイヤーを画面下寄りに置き、進行方向＝上を広く見せる）
   const tgt = camTarget();
-  const want = clamp(tgt.y - 420, world.camMin, world.camMax);
+  const vh = VH/VS;                                    // 画面に映る縦の長さ
+  const want = clamp(tgt.y - vh*0.66, world.camMin, world.camMax);
   cam.y += (want - cam.y) * 0.12;
 
   // 終了判定
@@ -2645,27 +2744,27 @@ function pathPoly(y0, y1){
   ctx.closePath();
 }
 function drawSlimeSea(){
-  const g = ctx.createLinearGradient(0,0,0,VH);
+  const vw = VR-VL, vh = VB-VT;
+  const g = ctx.createLinearGradient(0,VT,0,VB);
   g.addColorStop(0,'#2fb974'); g.addColorStop(1,'#1e9c5f');
-  ctx.fillStyle = g; ctx.fillRect(0,0,VW,VH);
+  ctx.fillStyle = g; ctx.fillRect(VL-2, VT-2, vw+4, vh+4);
   ctx.fillStyle = 'rgba(255,255,255,.14)';
   for(let i=0;i<26;i++){
-    const bx = (i*151 + G.elapsed*0.5) % (VW+80) - 40;
-    const by = ((i*97 + G.elapsed*0.35) % (VH+80)) - 40;
+    const bx = VL + (i*151 + G.elapsed*0.5) % (vw+80) - 40;
+    const by = VT + ((i*97 + G.elapsed*0.35) % (vh+80)) - 40;
     ctx.beginPath(); ctx.arc(bx, by, 5 + (i%4)*4, 0, TAU); ctx.fill();
   }
 }
 
 function drawRaceFloor(){
-  const y0 = Math.floor(cam.y/80)*80 - 80, y1 = cam.y + VH + 80;
+  const y0 = Math.floor((cam.y+VT)/80)*80 - 80, y1 = cam.y + VB + 80;
   const pathMode = !!world.path;
   if(pathMode){
     drawSlimeSea();
     ctx.save();
     pathPoly(y0, y1); ctx.clip();
   } else {
-    ctx.fillStyle = '#5f3fb8';
-    ctx.fillRect(0,0,VW,VH);
+    fillView('#5f3fb8');
   }
   ctx.save();
   // 床
@@ -2881,24 +2980,24 @@ function drawRaceFloor(){
   // 迫るスライム
   if(G.stage.chase){
     const sy = G.slimeY - cam.y;
-    if(sy < VH + 40){
+    if(sy < VB + 40){
       ctx.save();
-      const g2 = ctx.createLinearGradient(0, sy, 0, sy+VH);
+      const g2 = ctx.createLinearGradient(0, sy, 0, sy+(VB-VT));
       g2.addColorStop(0, 'rgba(61,220,132,.92)'); g2.addColorStop(1, 'rgba(20,150,90,.98)');
       ctx.fillStyle = g2;
       ctx.beginPath();
-      ctx.moveTo(-40, VH+60);
-      ctx.lineTo(-40, sy);
-      for(let x=-40; x<VW+60; x+=28){
+      ctx.moveTo(VL-40, VB+60);
+      ctx.lineTo(VL-40, sy);
+      for(let x=VL-40; x<VR+60; x+=28){
         ctx.quadraticCurveTo(x+14, sy + Math.sin((x+G.elapsed*2.2)*0.035)*11 - 9, x+28, sy + Math.sin((x+28+G.elapsed*2.2)*0.035)*11);
       }
-      ctx.lineTo(VW+60, VH+60);
+      ctx.lineTo(VR+60, VB+60);
       ctx.closePath(); ctx.fill();
       ctx.fillStyle = 'rgba(255,255,255,.35)';
       for(let i=0;i<12;i++){
-        const bx = (i*137 + G.elapsed*0.6) % (VW+80) - 40;
+        const bx = VL + (i*137 + G.elapsed*0.6) % ((VR-VL)+80) - 40;
         const by = sy + 26 + ((i*61 + G.elapsed*0.8) % 150);
-        if(by > VH+20) continue;
+        if(by > VB+20) continue;
         ctx.beginPath(); ctx.arc(bx, by, 4 + (i%3)*3, 0, TAU); ctx.fill();
       }
       ctx.restore();
@@ -2907,7 +3006,7 @@ function drawRaceFloor(){
       ctx.save();
       ctx.globalAlpha = 0.55 + 0.35*Math.sin(G.elapsed*0.15);
       ctx.fillStyle = '#3ddc84';
-      ctx.fillRect(0, VH-9, VW, 9);
+      ctx.fillRect(VL, VB-9, VR-VL, 9);
       ctx.restore();
     }
   }
@@ -2931,12 +3030,11 @@ function drawRaceFloor(){
 }
 
 function drawArenaFloor(){
-  ctx.fillStyle = '#4a2a9e';
-  ctx.fillRect(0,0,VW,VH);
+  fillView('#4a2a9e');
   // 奥の雲
   ctx.fillStyle = 'rgba(255,255,255,.10)';
   for(let i=0;i<7;i++){
-    const x = (i*173 + G.elapsed*0.25) % (VW+200) - 100, y = 60 + (i*97)%520;
+    const x = VL + (i*173 + G.elapsed*0.25) % ((VR-VL)+200) - 100, y = VT + 40 + (i*97)%Math.max(120, VB-VT-80);
     ctx.beginPath(); ctx.ellipse(x, y, 70, 26, 0, 0, TAU); ctx.fill();
   }
   const a = arena;
@@ -3107,7 +3205,7 @@ function drawBean(b){
     if(b.layer !== viewLayer()) return;
   }
   const sx = b.x - cam.x, sy = b.y - cam.y;
-  if(sx < -70 || sx > VW+70 || sy < -110 || sy > VH+110) return;
+  if(sx < VL-70 || sx > VR+70 || sy < VT-110 || sy > VB+110) return;
   const z = Math.max(b.z, 0);
   const falling = b.state === 'fall';
   const k = falling ? Math.max(0, 1 - b.fallT/38) : 1;
@@ -3181,7 +3279,7 @@ function drawParts(){
 }
 
 function drawProgress(){
-  const x = VW-30, y0 = 96, y1 = 556;
+  const x = VW-30, y0 = 96, y1 = Math.max(240, VH-84);
   ctx.save();
   ctx.fillStyle = 'rgba(40,20,80,.55)';
   roundRect(x-11, y0-14, 22, y1-y0+28, 11); ctx.fill();
@@ -3231,6 +3329,8 @@ function drawCountdown(){
 function draw(){
   ctx.save();
   if(G.shake > 0){ ctx.translate(rnd(-G.shake,G.shake)*0.6, rnd(-G.shake,G.shake)*0.6); }
+  // 画面フィット（縦長端末では拡大＆センタリング）
+  ctx.translate(VW/2, VH/2); ctx.scale(VS, VS); ctx.translate(-VCX, -VCY);
 
   // 低い障害物＝ビーンより先に描く（ジャンプで飛び越えたら上に見える）
   // 高い障害物＝ビーンより後に描く（下をくぐったら手前に見える）
@@ -3281,11 +3381,12 @@ function updateHUD(){
   document.getElementById('rqual').textContent = G.stage.hud(alive, R);
 }
 const ov = document.getElementById('ov'), card = document.getElementById('card');
-function openOv(html){
+function openOv(html, title){
   card.innerHTML = html; ov.classList.remove('hide');
+  ov.classList.toggle('tt', !!title);
   card.classList.remove('in'); void card.offsetWidth; card.classList.add('in');
 }
-function closeOv(){ ov.classList.add('hide'); }
+function closeOv(){ ov.classList.add('hide'); ov.classList.remove('tt'); }
 
 function showTitle(){
   G.phase = 'title';
@@ -3302,7 +3403,7 @@ function showTitle(){
     '<p style="font-size:13px">ROUND1 レース → ROUND2 ジャンプ・クラブ → ROUND3 ギミック → ROUND4 ロール・アウト → FINAL 王冠争奪</p>'+
     '<button class="btn" id="bStart">トーナメント開始！</button>'+
     '<button class="btn sub" id="bSelect">ステージ選択</button>'
-  );
+  , true);
   document.getElementById('bStart').onclick = ()=>{ ac(); closeOv(); startGame(); };
   document.getElementById('bSelect').onclick = ()=>{ ac(); showStageSelect(); };
 }
@@ -3331,7 +3432,7 @@ function showStageSelect(){
     '<p>好きなステージだけを単体でプレイできます。<br>トーナメントとは別扱いなので、何度でも練習できます。</p>'+
     '<div class="slist">'+rows+'</div>'+
     '<button class="btn sub" id="sBack">タイトルへ戻る</button>'
-  );
+  , true);
   card.querySelectorAll('.srow').forEach(el=>{
     el.onclick = ()=>{ ac(); closeOv(); startStage(el.dataset.k, el.dataset.v || null); };
   });
@@ -3458,6 +3559,7 @@ function showResult(qualified, eliminated){
 let acc = 0, last = performance.now();
 function tick(now){
   requestAnimationFrame(tick);
+  if((G.elapsed & 31) === 0) checkFit();
   let dt = now - last; last = now;
   if(dt > 200) dt = 200;
   acc += dt;
@@ -3479,7 +3581,8 @@ function step1(){
   if(G.cheer && G.endT > 0 && G.elapsed % 3 === 0) rainConfetti(7);
   updateParts(); updateRings();
 
-  if(G.phase !== 'play') return;
+  if(G.phase !== 'play'){ updateView(); return; }
+  updateView('step');
 
   if(G.freeze > 0){
     if(G.freeze > CD_GO && (G.freeze - CD_GO) % CD_NUM === 0) sfx.count();
@@ -3491,24 +3594,119 @@ function step1(){
   G.stage.update();
   updateHUD();
 }
+// ---------------------------------------------------------------- タイトル演出
+// 本家と同じように、タイトル画面にプレイヤー（と仲間のビーン）を立たせる。
+let titleBeans = null;
+function makeTitleBeans(){
+  // 奥列4人・手前列3人＋中央手前がプレイヤー
+  const spot = [
+    { fx:0.14, row:2 }, { fx:0.37, row:2 }, { fx:0.63, row:2 }, { fx:0.86, row:2 },
+    { fx:0.23, row:1 }, { fx:0.77, row:1 }, { fx:0.50, row:0, me:true }
+  ];
+  const list = [];
+  spot.forEach((s,i)=>{
+    const b = makeBean(i, !!s.me);
+    if(!s.me){ b.color = COLORS[(i*5+2) % COLORS.length]; b.name = NAMES[(i*5+2) % NAMES.length]; }
+    b.state = 'run'; b.z = 0; b.vy = 0;
+    b.fx = s.fx; b.row = s.row; b.me = !!s.me;
+    b.phase = i*0.9;
+    b.sc = s.row === 0 ? 1.26 : (s.row === 1 ? 1.02 : 0.84);
+    b.hopEvery = 150 + i*37; b.hopOff = i*53;
+    list.push(b);
+  });
+  return list;
+}
+function drawTitleScene(){
+  VS = 1; VCX = VW/2; VCY = VH/2; VL = 0; VT = 0; VR = VW; VB = VH;
+  if(!titleBeans) titleBeans = makeTitleBeans();
+  const T = G.elapsed;
+
+  // 空
+  const sky = ctx.createLinearGradient(0,0,0,VH);
+  sky.addColorStop(0,'#6a3fd0'); sky.addColorStop(0.55,'#8b5cff'); sky.addColorStop(1,'#ff7ab8');
+  ctx.fillStyle = sky; ctx.fillRect(0,0,VW,VH);
+  // 奥を流れるビーン風の影
+  ctx.save();
+  for(let i=0;i<20;i++){
+    const x = (i*137 + T*0.5) % (VW+140) - 70;
+    const y = VH*0.08 + ((i*211) % Math.max(120, Math.floor(VH*0.55))) + Math.sin(T*0.02+i)*16;
+    ctx.globalAlpha = .28;
+    ctx.fillStyle = COLORS[i%COLORS.length];
+    ctx.beginPath(); ctx.ellipse(x, y, 17, 20, Math.sin(T*0.03+i)*0.2, 0, TAU); ctx.fill();
+  }
+  ctx.restore();
+
+  // 舞台
+  const fy = PORTRAIT ? VH*0.805 : VH*0.90;     // 足元のライン
+  const sc0 = PORTRAIT ? VW/245 : 1.7;          // ビーンの大きさ
+  ctx.fillStyle = '#5a2f9e';
+  ctx.fillRect(0, fy+34, VW, VH-(fy+34));
+  ctx.fillStyle = '#7a4dff';
+  ctx.beginPath(); ctx.ellipse(VW/2, fy+34, VW*0.62, 92*sc0*0.5+40, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#ff5fa2';
+  ctx.beginPath(); ctx.ellipse(VW/2, fy+22, VW*0.56, 78*sc0*0.5+30, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.22)';
+  ctx.beginPath(); ctx.ellipse(VW/2, fy+10, VW*0.50, 62*sc0*0.5+22, 0, 0, TAU); ctx.fill();
+
+  // 降ってくる紙吹雪
+  ctx.save();
+  for(let i=0;i<26;i++){
+    const x = (i*211 + Math.sin(T*0.02+i)*40) % (VW+40) - 20;
+    const y = ((i*173 + T*1.6) % (VH+80)) - 40;
+    ctx.globalAlpha = .75;
+    ctx.fillStyle = COLORS[(i*3)%COLORS.length];
+    ctx.save(); ctx.translate(x,y); ctx.rotate(T*0.05+i); ctx.fillRect(-3,-4,6,9); ctx.restore();
+  }
+  ctx.restore();
+
+  // ビーンたち（奥→手前）
+  for(const b of titleBeans){
+    const t = T*0.045 + b.phase;
+    const hp = (T + b.hopOff) % b.hopEvery;
+    const hop = hp < 26 ? Math.sin(hp/26*Math.PI) : 0;
+    const lift = hop*34 + Math.abs(Math.sin(t))*4;
+    const sc = b.sc * sc0;
+    const x = VW*b.fx;
+    const y = fy - b.row*26*sc0*0.62;           // row0＝手前（プレイヤー）
+    b.vx = Math.sin(t*0.8)*2.0;
+    b.anim = t*2.4;
+    b.z = lift;
+    // 影
+    ctx.save();
+    ctx.globalAlpha = clamp(0.28 - lift*0.004, 0.08, 0.28);
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.ellipse(x, y+4*sc, 16*sc, 7*sc, 0, 0, TAU); ctx.fill();
+    ctx.restore();
+    // 本体
+    ctx.save();
+    ctx.translate(x, y - lift*sc - 17*sc);
+    ctx.scale(sc, sc);
+    ctx.rotate(Math.sin(t*0.9)*0.05);
+    beanBody(b);
+    ctx.restore();
+    // プレイヤーの目印
+    if(b.me){
+      const by = y - lift*sc - (40 + Math.abs(Math.sin(T*0.08))*5)*sc;
+      ctx.save();
+      ctx.translate(x, by); ctx.scale(sc, sc);
+      ctx.fillStyle = '#ffd23f'; ctx.strokeStyle='#8a5a00'; ctx.lineWidth=2.5;
+      ctx.beginPath(); ctx.moveTo(-11,-12); ctx.lineTo(11,-12); ctx.lineTo(0,0); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.font = '900 15px sans-serif'; ctx.textAlign='center';
+      ctx.lineWidth = 4; ctx.strokeStyle='rgba(0,0,0,.55)';
+      ctx.strokeText('YOU', 0, -17); ctx.fillStyle='#fff'; ctx.fillText('YOU', 0, -17);
+      ctx.textAlign='left';
+      ctx.restore();
+    }
+  }
+}
+
 function render(){
   ctx.clearRect(0,0,VW,VH);
-  if(G.phase === 'title'){
-    // タイトル背景
-    ctx.fillStyle = '#5f3fb8'; ctx.fillRect(0,0,VW,VH);
-    ctx.save();
-    for(let i=0;i<26;i++){
-      const x = (i*137 + G.elapsed*0.6) % (VW+120) - 60;
-      const y = 90 + ((i*211)%460) + Math.sin(G.elapsed*0.02+i)*16;
-      ctx.globalAlpha = .5;
-      ctx.fillStyle = COLORS[i%COLORS.length];
-      ctx.beginPath(); ctx.ellipse(x, y, 16, 19, Math.sin(G.elapsed*0.03+i)*0.2, 0, TAU); ctx.fill();
-    }
-    ctx.restore();
-    return;
-  }
+  if(G.phase === 'title'){ drawTitleScene(); return; }
   draw();
 }
+fitCanvas();
 requestAnimationFrame(tick);
 showTitle();
 </script>
