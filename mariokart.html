@@ -799,9 +799,28 @@
       }
 
       init() {
-        if (this.ctx) return;
+        if (this.ctx) {
+          if (this.ctx.state === 'suspended') {
+            this.ctx.resume().catch(() => {});
+          }
+          return;
+        }
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        this.ctx = new AudioCtx();
+        if (!AudioCtx) {
+          this.isMuted = true;
+          return;
+        }
+
+        try {
+          this.ctx = new AudioCtx();
+        } catch (error) {
+          this.isMuted = true;
+          return;
+        }
+
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume().catch(() => {});
+        }
 
         // Continuous Engine Sound
         this.engineOsc = this.ctx.createOscillator();
@@ -822,7 +841,7 @@
       }
 
       updateEngine(speedRatio) {
-        if (!this.ctx || this.isMuted) return;
+        if (!this.ctx || this.isMuted || this.ctx.state === 'suspended') return;
         const freq = 50 + speedRatio * 180;
         const gain = 0.03 + speedRatio * 0.05;
         this.engineOsc.frequency.setTargetAtTime(freq, this.ctx.currentTime, 0.05);
@@ -837,7 +856,7 @@
 
       playBeep(freq, duration, type = 'sine') {
         if (!this.ctx) this.init();
-        if (this.isMuted) return;
+        if (this.isMuted || !this.ctx || this.ctx.state === 'suspended') return;
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
         osc.type = type;
@@ -859,7 +878,7 @@
       }
 
       playDrift() {
-        if (!this.ctx || this.isMuted) return;
+        if (!this.ctx || this.isMuted || this.ctx.state === 'suspended') return;
         // White noise screech
         const bufferSize = this.ctx.sampleRate * 0.1;
         const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
@@ -879,7 +898,7 @@
 
       playBoost() {
         if (!this.ctx) this.init();
-        if (this.isMuted) return;
+        if (this.isMuted || !this.ctx || this.ctx.state === 'suspended') return;
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
         osc.type = 'sawtooth';
@@ -894,8 +913,8 @@
       }
 
       playCoin() {
-        if (!this.ctx) this.init();
-        if (this.isMuted) return;
+        this.init();
+        if (this.isMuted || !this.ctx || this.ctx.state === 'suspended') return;
         this.playBeep(987.77, 0.08, 'sine'); // B5
         setTimeout(() => this.playBeep(1318.51, 0.25, 'sine'), 80); // E6
       }
@@ -907,7 +926,7 @@
 
       playHit() {
         if (!this.ctx) this.init();
-        if (this.isMuted) return;
+        if (this.isMuted || !this.ctx || this.ctx.state === 'suspended') return;
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
         osc.type = 'sawtooth';
@@ -980,10 +999,12 @@
       selectedChar: CHARACTERS[0],
       selectedTrack: TRACKS[0],
       speedClass: 100, // 50, 100, 150
+      speedScale: 0.7, // Overall speed tuning
       playerKart: null,
       karts: [],
       itemsOnTrack: [],
       itemBoxes: [],
+      trackCoins: [],
       trackCurve: null,
       trackPoints: [],
       trackWidth: 16,
@@ -1002,6 +1023,7 @@
     let scene, camera, renderer;
     let mainGroup, trackMesh, skyMesh;
     let minimapCtx;
+    let rouletteTimer = null;
 
     function initThree() {
       const canvas = document.getElementById('webgl-canvas');
@@ -1264,8 +1286,8 @@
 
         // Stats scaled by speed class
         const classScale = GAME.speedClass / 100;
-        this.maxSpeed = (0.7 + (charData.speed / 10) * 0.4) * classScale;
-        this.accel = (0.012 + (charData.accel / 10) * 0.01) * classScale;
+        this.maxSpeed = (0.7 + (charData.speed / 10) * 0.4) * classScale * GAME.speedScale;
+        this.accel = (0.012 + (charData.accel / 10) * 0.01) * classScale * GAME.speedScale;
         this.handling = 0.035 + (charData.handle / 10) * 0.015;
         this.weight = charData.weight;
 
@@ -1275,6 +1297,8 @@
         this.progress = 0; // 0.0 to 1.0 along track curve
         this.lap = 1;
         this.checkpoint = 0;
+        this.hasStarted = isPlayer;
+        this.heading = 0;
         this.rank = 1;
         this.coins = 0;
         this.activeItem = null;
@@ -1291,6 +1315,7 @@
 
         // Position on spline
         this.offset = (Math.random() - 0.5) * (GAME.trackWidth - 4); // Lateral offset on track
+        this.syncToTrack();
       }
 
       createKartMesh(colorHex) {
@@ -1364,6 +1389,24 @@
         return group;
       }
 
+      syncToTrack() {
+        const progress = ((this.progress % 1.0) + 1.0) % 1.0;
+        const pt = GAME.trackCurve.getPointAt(progress);
+        const tangent = GAME.trackCurve.getTangentAt(progress);
+        const horizontalTangent = new THREE.Vector3(tangent.x, 0, tangent.z);
+        if (horizontalTangent.lengthSq() > 1e-8) {
+          horizontalTangent.normalize();
+          this.heading = Math.atan2(horizontalTangent.x, horizontalTangent.z);
+        }
+        const normal = new THREE.Vector3(-horizontalTangent.z, 0, horizontalTangent.x).normalize();
+        const finalPos = pt.clone().add(normal.clone().multiplyScalar(this.offset));
+        finalPos.y += GAME.roadLift + this.hopY;
+
+        this.mesh.position.copy(finalPos);
+        // Keep the kart upright and point its +Z direction along the track.
+        this.mesh.rotation.set(0, this.heading, -this.steering * 0.5);
+      }
+
       update() {
         // Timers update
         if (this.boostTimer > 0) this.boostTimer -= GAME.dt;
@@ -1409,7 +1452,7 @@
 
         // Move kart along track spline safely
         const totalDist = GAME.trackCurve.getLength();
-        const distStep = (this.speed * 40 * GAME.dt * 60) / totalDist;
+        const distStep = (this.speed * 40 * GAME.dt) / totalDist;
         this.progress = ((this.progress + distStep) % 1.0 + 1.0) % 1.0;
 
         // Rainbow Invincibility Effect
@@ -1422,9 +1465,14 @@
         // Lap counter & checkpoint logic
         const currentCheck = Math.floor(this.progress * 4);
         if (currentCheck === 0 && this.checkpoint === 3) {
-          this.lap++;
+          if (this.hasStarted) {
+            this.lap++;
+          } else {
+            // AI karts start just before the line; crossing it starts lap 1.
+            this.hasStarted = true;
+          }
           this.checkpoint = 0;
-          if (this.isPlayer) {
+          if (this.isPlayer && this.hasStarted) {
             sound.playCoin();
             if (this.lap > GAME.totalLaps) {
               triggerFinish();
@@ -1435,23 +1483,10 @@
         }
 
         // Position on 3D Track Spline
-        const pt = GAME.trackCurve.getPointAt(this.progress);
-        const tangent = GAME.trackCurve.getTangentAt(this.progress);
-        const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
-
         // Apply lateral steering offset
         this.offset += this.steering * (this.speed * 0.8 * GAME.dt * 60);
         this.offset = Math.max(-GAME.trackWidth / 2 + 1, Math.min(GAME.trackWidth / 2 - 1, this.offset));
-
-        const finalPos = pt.clone().add(normal.clone().multiplyScalar(this.offset));
-        finalPos.y += GAME.roadLift + this.hopY;
-
-        this.mesh.position.copy(finalPos);
-
-        // Rotation & Steering Lean
-        const targetLook = finalPos.clone().add(tangent);
-        this.mesh.lookAt(targetLook);
-        this.mesh.rotation.z = -this.steering * 0.5; // Lean on turn
+        this.syncToTrack();
 
         // Wheel Rotation Animation
         this.wheels.forEach(w => {
@@ -1495,12 +1530,12 @@
           GAME.cameraMode = (GAME.cameraMode + 1) % 3;
         }
 
-        if ((e.code === 'KeyE' || e.code === 'KeyK') && GAME.playerKart) {
+        if ((e.code === 'KeyE' || e.code === 'KeyK') && GAME.state === 'RACING' && GAME.playerKart) {
           usePlayerItem();
         }
 
         if (e.code === 'Space' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
-          if (GAME.playerKart) GAME.playerKart.triggerHop();
+          if (GAME.state === 'RACING' && GAME.playerKart) GAME.playerKart.triggerHop();
         }
       });
 
@@ -1523,7 +1558,9 @@
         const el = document.getElementById(id);
         if (!el) return;
         el.addEventListener('touchstart', (e) => { e.preventDefault(); GAME.keys[keyName] = true; });
-        el.addEventListener('touchend', (e) => { e.preventDefault(); GAME.keys[keyName] = false; });
+        const releaseTouch = (e) => { e.preventDefault(); GAME.keys[keyName] = false; };
+        el.addEventListener('touchend', releaseTouch);
+        el.addEventListener('touchcancel', releaseTouch);
       };
 
       bindTouch('t-left', 'ArrowLeft');
@@ -1535,15 +1572,17 @@
 
       const tDrift = document.getElementById('t-drift');
       if (tDrift) {
-        tDrift.addEventListener('touchstart', (e) => { e.preventDefault(); if (GAME.playerKart) GAME.playerKart.triggerHop(); GAME.keys['Space'] = true; });
-        tDrift.addEventListener('touchend', (e) => { 
+        tDrift.addEventListener('touchstart', (e) => { e.preventDefault(); if (GAME.state === 'RACING' && GAME.playerKart) GAME.playerKart.triggerHop(); GAME.keys['Space'] = true; });
+        const releaseDrift = (e) => {
           e.preventDefault(); 
           GAME.keys['Space'] = false;
-          if (GAME.playerKart && GAME.playerKart.driftState > 0) {
+          if (GAME.state === 'RACING' && GAME.playerKart && GAME.playerKart.driftState > 0) {
             GAME.playerKart.triggerBoost(1.0);
             GAME.playerKart.driftState = 0;
           }
-        });
+        };
+        tDrift.addEventListener('touchend', releaseDrift);
+        tDrift.addEventListener('touchcancel', releaseDrift);
       }
     }
 
@@ -1658,30 +1697,45 @@
     }
 
     function triggerItemRoulette() {
+      if (GAME.state !== 'RACING' || !GAME.playerKart || rouletteTimer) return;
+
       const box = document.getElementById('hud-item-box');
       const icon = document.getElementById('hud-item-icon');
       box.classList.add('spinning');
 
       let spinCount = 0;
-      const interval = setInterval(() => {
+      rouletteTimer = setInterval(() => {
         const randItem = ITEMS[Math.floor(Math.random() * ITEMS.length)];
         icon.textContent = randItem.emoji;
         spinCount++;
         sound.playBeep(600, 0.05);
 
         if (spinCount > 15) {
-          clearInterval(interval);
+          clearInterval(rouletteTimer);
+          rouletteTimer = null;
           box.classList.remove('spinning');
-          GAME.playerKart.rouletteActive = false;
-          const finalItem = getItemForRank(GAME.playerKart.rank);
-          GAME.playerKart.activeItem = finalItem;
-          icon.textContent = finalItem.emoji;
+          if (GAME.state === 'RACING' && GAME.playerKart) {
+            GAME.playerKart.rouletteActive = false;
+            const finalItem = getItemForRank(GAME.playerKart.rank);
+            GAME.playerKart.activeItem = finalItem;
+            icon.textContent = finalItem.emoji;
+          }
         }
       }, 80);
     }
 
+    function cancelItemRoulette() {
+      if (rouletteTimer) {
+        clearInterval(rouletteTimer);
+        rouletteTimer = null;
+      }
+      if (GAME.playerKart) GAME.playerKart.rouletteActive = false;
+      document.getElementById('hud-item-box').classList.remove('spinning');
+      document.getElementById('hud-item-icon').textContent = '';
+    }
+
     function usePlayerItem() {
-      if (!GAME.playerKart || !GAME.playerKart.activeItem) return;
+      if (GAME.state !== 'RACING' || !GAME.playerKart || !GAME.playerKart.activeItem) return;
       triggerItemEffect(GAME.playerKart, GAME.playerKart.activeItem);
       GAME.playerKart.activeItem = null;
       document.getElementById('hud-item-icon').textContent = '';
@@ -1717,19 +1771,24 @@
           progress: kart.progress,
           speed: kart.speed + 0.5
         });
-      } else if (item.id === 'banana') {
-        const banGeo = new THREE.CylinderGeometry(0.1, 0.6, 1.2, 8);
-        const banMat = new THREE.MeshStandardMaterial({ color: 0xfde047 });
-        const banana = new THREE.Mesh(banGeo, banMat);
-        banana.position.copy(kart.mesh.position);
-        banana.position.y += 0.6;
-        mainGroup.add(banana);
+      } else if (item.id === 'banana' || item.id === 'bobomb') {
+        const isBomb = item.id === 'bobomb';
+        const dropGeo = isBomb
+          ? new THREE.SphereGeometry(0.75, 16, 16)
+          : new THREE.CylinderGeometry(0.1, 0.6, 1.2, 8);
+        const dropMat = new THREE.MeshStandardMaterial({ color: isBomb ? 0x111827 : 0xfde047 });
+        const droppedItem = new THREE.Mesh(dropGeo, dropMat);
+        const tangent = GAME.trackCurve.getTangentAt(kart.progress).normalize();
+        droppedItem.position.copy(kart.mesh.position).sub(tangent.multiplyScalar(2.5));
+        droppedItem.position.y += isBomb ? 0.7 : 0.6;
+        mainGroup.add(droppedItem);
 
         GAME.itemsOnTrack.push({
-          mesh: banana,
-          type: 'banana',
+          mesh: droppedItem,
+          type: isBomb ? 'bobomb' : 'banana',
           owner: kart,
-          pos: banana.position.clone()
+          pos: droppedItem.position.clone(),
+          timer: isBomb ? 2.5 : 0
         });
       }
     }
@@ -1760,13 +1819,24 @@
         } else if (item.type === 'banana') {
           let hit = false;
           GAME.karts.forEach(k => {
-            if (hit) return;
+            if (hit || k === item.owner) return;
             if (k.mesh.position.distanceTo(item.mesh.position) < 2.0) {
               hit = true;
               k.spinOut();
             }
           });
           if (hit) {
+            mainGroup.remove(item.mesh);
+            GAME.itemsOnTrack.splice(i, 1);
+          }
+        } else if (item.type === 'bobomb') {
+          item.timer -= GAME.dt;
+          if (item.timer <= 0) {
+            GAME.karts.forEach(k => {
+              if (k !== item.owner && k.mesh.position.distanceTo(item.mesh.position) < 6.0) {
+                k.spinOut();
+              }
+            });
             mainGroup.remove(item.mesh);
             GAME.itemsOnTrack.splice(i, 1);
           }
@@ -1785,6 +1855,7 @@
         } else {
           box.rotation.y += 0.03;
           GAME.karts.forEach(k => {
+            if (!box.userData.active) return;
             if (k.mesh.position.distanceTo(box.position) < 2.2) {
               box.userData.active = false;
               box.visible = false;
@@ -1813,6 +1884,7 @@
           } else {
             coin.rotation.z += 0.05; // Spin coin
             GAME.karts.forEach(k => {
+              if (!coin.userData.active) return;
               if (k.mesh.position.distanceTo(coin.position) < 2.0) {
                 coin.userData.active = false;
                 coin.visible = false;
@@ -1868,7 +1940,11 @@
       if (GAME.state !== 'RACING' || !GAME.playerKart) return;
 
       // Update Standings / Rank
-      GAME.karts.sort((a, b) => (b.lap * 10 + b.progress) - (a.lap * 10 + a.progress));
+      GAME.karts.sort((a, b) => {
+        const aProgress = a.lap * 10 + a.progress - (a.hasStarted ? 0 : 1);
+        const bProgress = b.lap * 10 + b.progress - (b.hasStarted ? 0 : 1);
+        return bProgress - aProgress;
+      });
       GAME.karts.forEach((k, idx) => k.rank = idx + 1);
 
       const pk = GAME.playerKart;
@@ -2002,6 +2078,10 @@
     }
 
     function startRaceSequence() {
+      cancelItemRoulette();
+      GAME.keys = {};
+      GAME.cameraMode = 0;
+      GAME.elapsedTime = 0;
       sound.init();
       sound.playCoin();
 
@@ -2023,7 +2103,8 @@
       for (let i = 0; i < 7; i++) {
         const aiChar = charPool[i % charPool.length];
         const aiKart = new Kart(aiChar, false);
-        aiKart.progress = -0.01 * (i + 1); // Staggered grid placement
+        aiKart.progress = 1 - 0.01 * (i + 1); // Staggered grid placement
+        aiKart.syncToTrack();
         GAME.karts.push(aiKart);
       }
 
@@ -2056,6 +2137,7 @@
 
     function triggerFinish() {
       GAME.state = 'FINISH';
+      cancelItemRoulette();
       sound.stopEngine();
       sound.stopBGM();
       sound.playCoin();
@@ -2082,7 +2164,22 @@
     }
 
     function returnToTitle() {
+      cancelItemRoulette();
+      sound.stopEngine();
+      sound.stopBGM();
+      GAME.keys = {};
+      GAME.karts.forEach(k => mainGroup.remove(k.mesh));
+      GAME.itemsOnTrack.forEach(item => mainGroup.remove(item.mesh));
+      GAME.itemBoxes.forEach(box => mainGroup.remove(box));
+      GAME.trackCoins.forEach(coin => mainGroup.remove(coin));
+      GAME.karts = [];
+      GAME.itemsOnTrack = [];
+      GAME.itemBoxes = [];
+      GAME.trackCoins = [];
+      GAME.playerKart = null;
       document.getElementById('screen-finish').style.display = 'none';
+      document.getElementById('screen-hud').style.display = 'none';
+      document.getElementById('countdown-overlay').style.display = 'none';
       document.getElementById('screen-title').style.display = 'flex';
       GAME.state = 'TITLE';
     }

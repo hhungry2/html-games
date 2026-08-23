@@ -128,7 +128,7 @@
   </div>
   <div id="snd">🔊</div>
   <div class="botbar">
-    <div id="hpwrap"><div id="hpbar"></div><div id="hptxt">120 / 120</div></div>
+    <div id="hpwrap"><div id="hpbar"></div><div id="hptxt">100 / 100</div></div>
     <div id="slots"></div>
   </div>
   <div id="pausetag">PAUSE</div>
@@ -142,6 +142,7 @@
     <kbd>WASD</kbd> / <kbd>←↑↓→</kbd> で移動（スマホは画面ドラッグ）<br>
     こうげきは<b>ぜんぶ自動</b>！ レベルアップで武器をえらぼう<br>
     🍬キャンディブロックは壊せる ／ 🧊アメ岩は通れない ／ 🫧シロップ沼はみんな遅くなる<br>
+    👑<b>1分ごとにボス</b>が出現！ 倒しきれないと次のボスが重なってくるぞ<br>
     <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> でカード選択 ／ <kbd>P</kbd> でポーズ ／ <kbd>M</kbd> で音
   </div>
 </div>
@@ -224,7 +225,12 @@ const SFX = {
   pickup(){ [784, 1046].forEach((f, i) => setTimeout(() => beep(f, 0.1, 'square', 0.05), i * 70)); },
   boss(){ [220, 196, 175, 147].forEach((f, i) => setTimeout(() => beep(f, 0.3, 'sawtooth', 0.05), i * 130)); },
   die(){ [523, 392, 330, 196].forEach((f, i) => setTimeout(() => beep(f, 0.32, 'triangle', 0.07), i * 180)); },
-  win(){ [523, 659, 784, 1046, 1318].forEach((f, i) => setTimeout(() => beep(f, 0.28, 'triangle', 0.07), i * 140)); }
+  win(){ [523, 659, 784, 1046, 1318].forEach((f, i) => setTimeout(() => beep(f, 0.28, 'triangle', 0.07), i * 140)); },
+  bossDown(){
+    noise(0.4, 0.22); beep(70, 0.45, 'sine', 0.09, -30);
+    [392, 523, 659, 784, 1046].forEach((f, i) =>
+      setTimeout(() => { beep(f, 0.3, 'triangle', 0.075); beep(f * 2, 0.3, 'square', 0.025); }, 260 + i * 110));
+  }
 };
 
 /* ------------------------- input ------------------------- */
@@ -269,7 +275,7 @@ const MAXW = 6, MAXP = 6, GOAL = 600; // 10分
 const WDEF = {
   bolt: { name: 'ポップボルト', icon: '💫', col: '#ff5fa2', max: 8, kind: 'w',
     desc: l => l === 0 ? 'いちばん近い敵に星をうちだす' : (l >= 4 ? '弾数＋・貫通アップ' : 'ダメージ＆連射アップ'),
-    st: l => ({ cd: Math.max(0.16, 0.62 - l * 0.052), dmg: 14 + l * 8, n: 1 + Math.floor(l / 3),
+    st: l => ({ cd: Math.max(0.16, 0.62 - l * 0.052), dmg: 16 + l * 8, n: 1 + Math.floor(l / 3),
                 sp: 430 + l * 14, pierce: Math.floor(l / 4), r: 9 + l * 0.6 }) },
   orbit: { name: 'ぐるぐるスター', icon: '🌟', col: '#ffd93d', max: 8, kind: 'w',
     desc: l => l === 0 ? 'まわりを星がグルグル回る' : (l % 2 === 0 ? '星が１コふえる！' : 'ダメージ＆回転アップ'),
@@ -308,31 +314,39 @@ const PDEF = {
 };
 
 const ETYPE = {
-  slime:  { r: 15, hp: 11, sp: 56,  dmg: 6,  xp: 1, c1: '#9ff58f', c2: '#4fc95a' },
-  bat:    { r: 12, hp: 8,  sp: 104, dmg: 5,  xp: 1, c1: '#d3b0ff', c2: '#8b5cf6', wave: true },
-  runner: { r: 11, hp: 14, sp: 158, dmg: 7,  xp: 2, c1: '#ffe786', c2: '#f0a500' },
-  ghost:  { r: 17, hp: 26, sp: 64,  dmg: 9,  xp: 3, c1: '#ffffff', c2: '#cfe0ff', pass: true },
-  spiky:  { r: 19, hp: 46, sp: 74,  dmg: 11, xp: 5, c1: '#ffb3cb', c2: '#ff3d86' },
-  blob:   { r: 27, hp: 80, sp: 44,  dmg: 14, xp: 8, c1: '#9beaff', c2: '#1f9fd6' }
+  slime:  { r: 16, hp: 12, sp: 52,  dmg: 6,  xp: 1, c1: '#9ff58f', c2: '#4fc95a' },
+  bat:    { r: 13, hp: 9,  sp: 96,  dmg: 5,  xp: 1, c1: '#d3b0ff', c2: '#8b5cf6', wave: true },
+  runner: { r: 12, hp: 15, sp: 140, dmg: 6,  xp: 2, c1: '#ffe786', c2: '#f0a500' },
+  ghost:  { r: 18, hp: 29, sp: 60,  dmg: 8,  xp: 3, c1: '#ffffff', c2: '#cfe0ff', pass: true },
+  spiky:  { r: 20, hp: 50, sp: 68,  dmg: 10, xp: 5, c1: '#ffb3cb', c2: '#ff3d86' },
+  blob:   { r: 29, hp: 88, sp: 42,  dmg: 13, xp: 8, c1: '#9beaff', c2: '#1f9fd6' }
 };
+// ボスは1分ごと。10体目がラストで、倒せばクリア
 const BOSSES = [
-  { at: 120, name: 'キングスライム',   r: 46, hp: 900,   sp: 52, dmg: 20, xp: 60,  c1: '#a8f79c', c2: '#31a84a' },
-  { at: 240, name: 'こうもりレディ',   r: 50, hp: 2100,  sp: 74, dmg: 24, xp: 90,  c1: '#d9b6ff', c2: '#7c3aed' },
-  { at: 360, name: 'ゴーストマスター', r: 54, hp: 4200,  sp: 66, dmg: 28, xp: 130, c1: '#ffffff', c2: '#9fb6ff' },
-  { at: 480, name: 'メガブロブ',       r: 62, hp: 7800,  sp: 56, dmg: 32, xp: 180, c1: '#9beaff', c2: '#1273a8' },
-  { at: 600, name: 'だいまおうポップ', r: 74, hp: 16000, sp: 62, dmg: 40, xp: 300, c1: '#ffd2e8', c2: '#e01a6f', last: true }
+  { at:  60, name: 'キングスライム',     r: 44, hp: 130,   sp: 46, dmg: 10, xp: 30,  c1: '#a8f79c', c2: '#31a84a' },
+  { at: 120, name: 'こうもりレディ',     r: 47, hp: 420,   sp: 56, dmg: 14, xp: 45,  c1: '#d9b6ff', c2: '#7c3aed' },
+  { at: 180, name: 'ゴーストマスター',   r: 50, hp: 800,  sp: 58, dmg: 17, xp: 60,  c1: '#ffffff', c2: '#9fb6ff' },
+  { at: 240, name: 'とげとげプリンス',   r: 53, hp: 1350,  sp: 62, dmg: 19, xp: 80,  c1: '#ffb3cb', c2: '#e01060' },
+  { at: 300, name: 'メガブロブ',         r: 56, hp: 2100,  sp: 56, dmg: 21, xp: 100, c1: '#9beaff', c2: '#1273a8' },
+  { at: 360, name: 'あわあわクイーン',   r: 59, hp: 3100,  sp: 60, dmg: 23, xp: 125, c1: '#c6fbff', c2: '#19b6c9' },
+  { at: 420, name: 'いなずまバット',     r: 62, hp: 4300,  sp: 72, dmg: 25, xp: 150, c1: '#fff0a8', c2: '#e0a000' },
+  { at: 480, name: 'どろどろキング',     r: 66, hp: 5800,  sp: 58, dmg: 28, xp: 180, c1: '#d3b0ff', c2: '#5b21b6' },
+  { at: 540, name: 'きらめきウィッチ',   r: 70, hp: 7600, sp: 66, dmg: 31, xp: 220, c1: '#ffe27a', c2: '#f0700a' },
+  { at: 600, name: 'だいまおうポップ',   r: 74, hp: 10000, sp: 70, dmg: 35, xp: 300, c1: '#ffd2e8', c2: '#e01a6f', last: true }
 ];
 
 /* ------------------------- state ------------------------- */
 let state = 'title';
 let time = 0, kills = 0, dmgDealt = 0;
 let enemies = [], shots = [], gems = [], drops = [], fx = [], texts = [], parts = [], confetti = [];
-let p, cam, spawnT = 0, bossIdx = 0, activeBoss = null, pendingLv = 0, frame = 0, flash = 0;
+let p, cam, spawnT = 0, bossIdx = 0, pendingLv = 0, frame = 0, flash = 0;
+let activeBosses = [];   // 1分ごとに湧くので、前のボスが残ったまま次が来ることがある
+let hitstop = 0, banner = null;   // ボス撃破のスローモーションと横断幕
 let eid = 0;
 
 function freshPlayer(){
   return {
-    x: 0, y: 0, r: 14, hp: 120, maxHp: 120, base: 200,
+    x: 0, y: 0, r: 14, hp: 100, maxHp: 100, base: 170,
     lv: 1, xp: 0, xpNext: 5, face: 1, dirx: 1, diry: 0, moving: false,
     inv: 0, bob: 0, weapons: {}, passives: {},
     spdMul: 1, dmgMul: 1, cdMul: 1, areaMul: 1, magnet: 130, xpMul: 1, armor: 0, regen: 0
@@ -350,8 +364,9 @@ function newGame(){
   enemies = []; shots = []; gems = []; drops = []; fx = []; texts = []; parts = [];
   p = freshPlayer();
   cam = { x: 0, y: 0, sh: 0 };
-  spawnT = 0; bossIdx = 0; activeBoss = null; pendingLv = 0; eid = 0;
+  spawnT = 0; bossIdx = 0; activeBosses = []; pendingLv = 0; eid = 0;
   chunks.clear(); worldSeed = (Math.random() * 4294967295) >>> 0;   // 地形は毎回変わる
+  hitstop = 0; banner = null;
   addWeapon('bolt');
   recompute(); p.hp = p.maxHp;
   makeConfetti();
@@ -362,7 +377,7 @@ const PL = id => p.passives[id] ? p.passives[id].lv : 0;
 
 function recompute(){
   const prevMax = p.maxHp;
-  p.maxHp   = 120 + PL('hp') * 30;
+  p.maxHp   = 100 + PL('hp') * 30;
   p.spdMul  = 1 + PL('speed') * 0.10;
   p.dmgMul  = 1 + PL('power') * 0.14;
   p.cdMul   = Math.max(0.35, 1 - PL('haste') * 0.08);
@@ -420,11 +435,11 @@ function nearestEnemy(x, y, maxD){
 /* ------------------------- obstacles -------------------------
    フィールドは無限に続くので、チャンク単位で決定論的に生成する。
    同じシードなら同じ地形になるため、遠いチャンクは捨てて後で作り直してよい。 */
-const CHUNK = 420, OMAX = 56;   // OMAX = 障害物の最大半径
+const CHUNK = 420, OMAX = 112;   // OMAX = 障害物の最大半径
 const ODEF = {
-  candy: { block: true,  hp: 60, r: 25, c1: '#ffd7e8', c2: '#ff7ab0' }, // 壊せる
-  rock:  { block: true,  hp: 0,  r: 30, c1: '#bff3ff', c2: '#3fb6df' }, // 壊せない
-  syrup: { block: false, hp: 0,  r: 50, slow: 0.42, c1: '#c8a6ff', c2: '#8a5cf0' }
+  candy: { block: true,  hp: 130, r: 42, c1: '#ffd7e8', c2: '#ff7ab0' }, // 壊せる
+  rock:  { block: true,  hp: 0,   r: 52, c1: '#bff3ff', c2: '#3fb6df' }, // 壊せない
+  syrup: { block: false, hp: 0,   r: 86, slow: 0.42, c1: '#c8a6ff', c2: '#8a5cf0' }
 };
 const chunks = new Map();
 let worldSeed = 1;
@@ -438,14 +453,15 @@ function chunkAt(cx, cy){
   let s = (cx * 374761393 ^ cy * 668265263 ^ worldSeed * 2246822519) >>> 0;
   const rr = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
   rr(); rr();
-  const n = rr() < 0.12 ? 0 : 1 + Math.floor(rr() * 3.4);
+  // 1個ずつが大きいので数は控えめ。「まばらな大きなランドマーク」にする
+  const n = rr() < 0.22 ? 0 : 1 + Math.floor(rr() * 2.6);
   for(let i = 0; i < n; i++){
     const x = cx * CHUNK + rr() * CHUNK, y = cy * CHUNK + rr() * CHUNK;
     const t = rr();
     // 通れない岩は増やしすぎない。沼はぶつからないので多めでよい
     const type = t < 0.40 ? 'candy' : t < 0.64 ? 'rock' : 'syrup';
     const D = ODEF[type];
-    if(x * x + y * y < 260 * 260) continue;   // スタート地点は必ず空ける
+    if(x * x + y * y < 360 * 360) continue;   // スタート地点は必ず空ける
     list.push({ type, x, y, r: D.r * (0.82 + rr() * 0.4), block: D.block,
       hp: D.hp, maxHp: D.hp, slow: D.slow || 0, c1: D.c1, c2: D.c2,
       rot: rr() * TAU, bob: rr() * TAU, flash: 0, dead: false,
@@ -500,10 +516,11 @@ function hurtObstacle(o, dmg){
   o.hp -= dmg; o.flash = 0.12;
   if(o.hp > 0) return;
   o.dead = true;
-  burst(o.x, o.y, 16, o.c2, 220, 6);
-  burst(o.x, o.y, 8, '#ffffff', 160, 4);
-  gems.push(mkGem(o.x, o.y, 3));
-  if(Math.random() < 0.14) drops.push({ x: o.x, y: o.y, kind: 'heart', t: 0 });
+  burst(o.x, o.y, 26, o.c2, 280, 8);
+  burst(o.x, o.y, 12, '#ffffff', 200, 5);
+  shake(5);
+  for(let i = 0; i < 3; i++) gems.push(mkGem(o.x + rnd(-22, 22), o.y + rnd(-22, 22), 2));
+  if(Math.random() < 0.2) drops.push({ x: o.x, y: o.y, kind: 'heart', t: 0 });
   SFX.gem();
 }
 
@@ -543,12 +560,10 @@ function killEnemy(e){
   if(e.boss || (Math.abs(e.x - cam.x) < W / 2 + 60 && Math.abs(e.y - cam.y) < H / 2 + 60))
     burst(e.x, e.y, e.boss ? 46 : 9, e.c2, e.boss ? 320 : 170, e.boss ? 9 : 5);
   if(e.boss){
-    shake(20); flash = 0.5; SFX.boom();
+    bossDownFX(e);
     for(let i = 0; i < 14; i++) gems.push(mkGem(e.x + rnd(-60, 60), e.y + rnd(-60, 60), Math.round(e.xp / 14)));
     drops.push({ x: e.x, y: e.y, kind: 'heart', t: 0 });
     drops.push({ x: e.x + 34, y: e.y, kind: 'nuke', t: 0 });
-    activeBoss = null;
-    text(e.x, e.y - e.r, e.name + ' げきは！', '#ffd93d', 26);
     if(e.last) endGame(true);
   } else {
     gems.push(mkGem(e.x, e.y, e.xp));
@@ -558,6 +573,36 @@ function killEnemy(e){
     else if(r < 0.024) drops.push({ x: e.x, y: e.y, kind: 'nuke', t: 0 });
   }
 }
+// ボス撃破演出：時間が止まり、衝撃波と紙吹雪が広がって横断幕が出る
+const PARTY = ['#ff5fa2', '#ffd93d', '#6ce5e8', '#a06cff', '#7ee081', '#ffffff'];
+function bossDownFX(e){
+  hitstop = 0.6;
+  shake(26);
+  flash = 0.85;
+  SFX.bossDown();
+  banner = { name: e.name, last: !!e.last, t: 0, life: e.last ? 3.4 : 2.6 };
+
+  // 時間差で広がる衝撃波
+  for(let i = 0; i < 4; i++)
+    fx.push({ kind: 'shock', x: e.x, y: e.y, r0: e.r, r: e.r + 280 + i * 90,
+      life: 0.75, max: 0.75, wait: i * 0.11, c: PARTY[i % PARTY.length] });
+
+  // 放射状の紙吹雪
+  for(let i = 0; i < 90; i++){
+    if(parts.length > 700) break;
+    const a = rnd(0, TAU), s = rnd(160, 620);
+    parts.push({ x: e.x, y: e.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+      life: rnd(0.9, 1.8), max: 1.8, r: rnd(3, 9), c: pick(PARTY), sq: true });
+  }
+  // 中心から吹き上がる光
+  for(let i = 0; i < 22; i++){
+    if(parts.length > 700) break;
+    parts.push({ x: e.x + rnd(-30, 30), y: e.y + rnd(-20, 20),
+      vx: rnd(-60, 60), vy: rnd(-460, -220),
+      life: rnd(0.7, 1.3), max: 1.3, r: rnd(3, 7), c: '#fff', sq: false });
+  }
+}
+
 function mkGem(x, y, v){
   v = Math.max(1, v);
   const c = v >= 8 ? '#ff5fa2' : v >= 4 ? '#a06cff' : v >= 2 ? '#6ce5e8' : '#7ee081';
@@ -566,7 +611,7 @@ function mkGem(x, y, v){
 function hurtPlayer(dmg){
   if(p.inv > 0 || state !== 'playing') return;
   dmg = dmg * (1 - p.armor);
-  p.hp -= dmg; p.inv = 0.78;
+  p.hp -= dmg; p.inv = 0.95;
   shake(9); SFX.hurt();
   text(p.x, p.y - 24, '-' + Math.round(dmg), '#ff2e79', 18);
   burst(p.x, p.y, 8, '#ff5fa2', 160, 4);
@@ -715,12 +760,12 @@ function updateShots(dt){
 /* ------------------------- enemies ------------------------- */
 function spawnEnemy(type, x, y, elite){
   const T = ETYPE[type], m = time / 60;
-  const hpS = 1 + m * 0.45 + m * m * 0.05;
-  const dmS = 1 + m * 0.10;
+  const hpS = 1 + m * 0.42 + m * m * 0.045;
+  const dmS = 1 + m * 0.09;
   const hp = T.hp * hpS * (elite ? 7 : 1);
   enemies.push({
     id: ++eid, type, x, y, r: T.r * (elite ? 1.55 : 1), hp, maxHp: hp,
-    sp: T.sp * (elite ? 0.8 : 1) * (1 + m * 0.02),
+    sp: T.sp * (elite ? 0.8 : 1) * (1 + m * 0.012),
     dmg: T.dmg * dmS * (elite ? 1.5 : 1), xp: Math.round(T.xp * (elite ? 9 : 1)),
     c1: T.c1, c2: T.c2, wave: T.wave, pass: T.pass, elite: !!elite,
     kx: 0, ky: 0, flash: 0, bob: rnd(0, TAU), tick: {}, dead: false
@@ -734,15 +779,15 @@ function spawnBoss(def){
     hp: def.hp, maxHp: def.hp, sp: def.sp, dmg: def.dmg, xp: def.xp,
     c1: def.c1, c2: def.c2, kx: 0, ky: 0, flash: 0, bob: 0, tick: {}, dead: false
   };
-  enemies.push(e); activeBoss = e;
+  enemies.push(e);
   SFX.boss(); shake(14); flash = 0.35;
   text(p.x, p.y - 70, 'ボスしゅつげん！', '#ff2e79', 30);
 }
 function spawnPool(){
   const t = time, a = ['slime', 'bat'];
-  if(t > 55)  a.push('runner');
-  if(t > 110) a.push('ghost', 'bat');
-  if(t > 190) a.push('spiky');
+  if(t > 80)  a.push('runner');
+  if(t > 140) a.push('ghost', 'bat');
+  if(t > 200) a.push('spiky');
   if(t > 260) a.push('runner', 'ghost');
   if(t > 330) a.push('blob', 'spiky');
   if(t > 430) a.push('blob', 'spiky', 'ghost');
@@ -755,12 +800,12 @@ function spawnPoint(){
 function updateSpawn(dt){
   if(bossIdx < BOSSES.length && time >= BOSSES[bossIdx].at){ spawnBoss(BOSSES[bossIdx]); bossIdx++; }
 
-  const cap = 380;
+  const cap = 320;
   spawnT -= dt;
   if(spawnT <= 0){
-    spawnT = Math.max(0.085, 0.62 - time * 0.00082);
+    spawnT = Math.max(0.10, 0.82 - time * 0.00105);
     if(enemies.length < cap){
-      const n = 1 + Math.floor(time / 150), pool = spawnPool();
+      const n = 1 + Math.floor(time / 170), pool = spawnPool();
       for(let i = 0; i < n; i++){
         const pt = spawnPoint();
         spawnEnemy(pick(pool), pt[0], pt[1]);
@@ -771,14 +816,14 @@ function updateSpawn(dt){
   if(time > 30 && Math.random() < dt * 0.09 && enemies.length < cap - 80){
     const pool = spawnPool(), mode = rndi(0, 2);
     if(mode === 0){
-      const type = pick(pool), n = 20 + Math.floor(time / 24), R = Math.hypot(W, H) / 2 + 70;
+      const type = pick(pool), n = 17 + Math.floor(time / 28), R = Math.hypot(W, H) / 2 + 70;
       for(let i = 0; i < n; i++){
         const a = i / n * TAU;
         spawnEnemy(type, p.x + Math.cos(a) * R, p.y + Math.sin(a) * R);
       }
       text(p.x, p.y - 80, 'とりかこまれた！', '#a06cff', 22);
     } else if(mode === 1){
-      const a = rnd(0, TAU), R = Math.hypot(W, H) / 2 + 60, n = 16 + Math.floor(time / 30);
+      const a = rnd(0, TAU), R = Math.hypot(W, H) / 2 + 60, n = 14 + Math.floor(time / 34);
       const px = -Math.sin(a), py = Math.cos(a);
       for(let i = 0; i < n; i++)
         spawnEnemy('runner', p.x + Math.cos(a) * R + px * (i - n / 2) * 30,
@@ -899,7 +944,7 @@ function gainXP(v){
   p.xp += v * p.xpMul;
   while(p.xp >= p.xpNext){
     p.xp -= p.xpNext; p.lv++;
-    p.xpNext = Math.floor(5 + p.lv * 2.8 + Math.pow(p.lv, 1.5) * 0.5);
+    p.xpNext = Math.floor(6 + p.lv * 3.2 + Math.pow(p.lv, 1.54) * 0.55);
     pendingLv++;
   }
   if(pendingLv > 0 && state === 'playing') openLevelUp();
@@ -1024,7 +1069,8 @@ function endGame(win){
     '<span>たおした数</span><i>' + kills + '</i>' +
     '<span>レベル</span><i>' + p.lv + '</i>' +
     '<span>そうダメージ</span><i>' + Math.round(dmgDealt).toLocaleString() + '</i>';
-  setTimeout(() => overEl.classList.add('on'), 700);
+  // クリア時はボス撃破演出を見せきってから結果を出す
+  setTimeout(() => overEl.classList.add('on'), win ? 2600 : 700);
 }
 document.getElementById('startBtn').onclick = startGame;
 document.getElementById('againBtn').onclick = startGame;
@@ -1038,6 +1084,8 @@ document.getElementById('snd').onclick = toggleSound;
 function update(dt){
   frame++;
   sfxBudget = 6;
+  // ボスを倒した瞬間だけ時間をほぼ止める（手応えを出す）
+  if(hitstop > 0){ hitstop = Math.max(0, hitstop - dt); dt *= 0.16; }
   flash = Math.max(0, flash - dt * 2.4);
   cam.sh *= Math.pow(0.0015, dt);
 
@@ -1075,6 +1123,9 @@ function update(dt){
   if(frame % 90 === 0) pruneChunks();
   nearObstacles(cam.x, cam.y, Math.hypot(W, H) / 2, o => { o.flash = Math.max(0, o.flash - dt); });
 
+  activeBosses = enemies.filter(e => e.boss && !e.dead)
+    .sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y));
+
   rebuildGrid();
   updateSpawn(dt);
   updateWeapons(dt);
@@ -1104,8 +1155,14 @@ function updateParticles(dt){
     if(t.life <= 0) texts.splice(i, 1);
   }
   for(let i = fx.length - 1; i >= 0; i--){
-    fx[i].life -= dt;
-    if(fx[i].life <= 0) fx.splice(i, 1);
+    const f = fx[i];
+    if(f.wait > 0){ f.wait -= dt; continue; }
+    f.life -= dt;
+    if(f.life <= 0) fx.splice(i, 1);
+  }
+  if(banner){
+    banner.t += dt;
+    if(banner.t >= banner.life) banner = null;
   }
 }
 function updateHUD(){
@@ -1311,7 +1368,8 @@ function render(){
     ctx.fillStyle = 'rgba(255,40,110,' + Math.max(0, a) + ')';
     ctx.fillRect(0, 0, W, H);
   }
-  if(activeBoss && !activeBoss.dead && state !== 'title') drawBossBar();
+  if(banner) drawBanner(t);
+  if(state !== 'title') drawBossBars();
   if(stick.on && state === 'playing') drawStick();
 }
 
@@ -1539,6 +1597,7 @@ function drawShot(s, t){
 }
 
 function drawFX(f, t){
+  if(f.wait > 0) return;
   const a = clamp(f.life / f.max, 0, 1);
   if(f.kind === 'sector'){
     ctx.save();
@@ -1558,6 +1617,15 @@ function drawFX(f, t){
     }
     ctx.globalAlpha = 1;
     ctx.restore();
+  } else if(f.kind === 'shock'){
+    const k = 1 - a;                       // 0→1 に広がる
+    const r = lerp(f.r0, f.r, 1 - Math.pow(1 - k, 2.4));
+    ctx.globalAlpha = a * 0.9;
+    ctx.strokeStyle = f.c; ctx.lineWidth = 3 + a * 14;
+    ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, TAU); ctx.stroke();
+    ctx.globalAlpha = a * 0.55; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2 + a * 5;
+    ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, TAU); ctx.stroke();
+    ctx.globalAlpha = 1;
   } else if(f.kind === 'ring'){
     ctx.globalAlpha = a * 0.6;
     ctx.strokeStyle = f.c; ctx.lineWidth = 5;
@@ -1642,9 +1710,69 @@ function drawPlayer(t){
   ctx.restore();
 }
 
-function drawBossBar(){
-  const e = activeBoss;
-  const w = Math.min(560, W - 60), x = (W - w) / 2, y = 74;
+// 撃破の横断幕。ぷるんと出て、少し止まって、上に抜けて消える
+function drawBanner(t){
+  const k = banner.t / banner.life;
+  let sc, alpha = 1, rise = 0;
+  if(k < 0.16){ const u = k / 0.16; sc = 1.25 - 0.25 * (1 - Math.pow(1 - u, 3)); alpha = Math.min(1, u * 3); }
+  else if(k < 0.24){ const u = (k - 0.16) / 0.08; sc = 1 + Math.sin(u * Math.PI) * 0.07; }
+  else if(k < 0.8){ sc = 1; }
+  else { const u = (k - 0.8) / 0.2; sc = 1 - u * 0.12; alpha = 1 - u; rise = -u * 60; }
+
+  const cx = W / 2, cy = H * 0.32 + rise;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(cx, cy);
+  ctx.rotate(Math.sin(t * 2.4) * 0.022);
+  ctx.scale(sc, sc);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+
+  // 後光
+  const halo = ctx.createRadialGradient(0, 0, 10, 0, 0, 300);
+  halo.addColorStop(0, 'rgba(255,225,120,.5)');
+  halo.addColorStop(1, 'rgba(255,225,120,0)');
+  ctx.fillStyle = halo;
+  ctx.beginPath(); ctx.arc(0, 0, 300, 0, TAU); ctx.fill();
+
+  // きらきら
+  for(let i = 0; i < 10; i++){
+    const a = t * 1.4 + i * TAU / 10;
+    const rr = 150 + Math.sin(t * 3 + i) * 26;
+    ctx.save();
+    ctx.translate(Math.cos(a) * rr, Math.sin(a) * rr * 0.5);
+    ctx.rotate(a * 2);
+    ctx.fillStyle = PARTY[i % PARTY.length];
+    star(0, 0, 9 + Math.sin(t * 5 + i) * 3, 4, 0.4);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  const big = banner.last ? 'FINAL BOSS DOWN!' : 'BOSS DOWN!';
+  ctx.font = '900 ' + Math.round(Math.min(W, H) * 0.085) + 'px "Hiragino Maru Gothic ProN",system-ui,sans-serif';
+  ctx.lineWidth = 12; ctx.strokeStyle = '#4a2b45';
+  ctx.strokeText(big, 0, -18);
+  const g = ctx.createLinearGradient(0, -60, 0, 20);
+  g.addColorStop(0, '#fff'); g.addColorStop(1, '#ffd93d');
+  ctx.fillStyle = g;
+  ctx.fillText(big, 0, -18);
+
+  ctx.font = '900 ' + Math.round(Math.min(W, H) * 0.042) + 'px "Hiragino Maru Gothic ProN",system-ui,sans-serif';
+  ctx.lineWidth = 8; ctx.strokeStyle = '#4a2b45';
+  ctx.strokeText('👑 ' + banner.name + ' げきは！', 0, 34);
+  ctx.fillStyle = '#fff';
+  ctx.fillText('👑 ' + banner.name + ' げきは！', 0, 34);
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+// 生きているボスぶんだけHPバーを積む（最大3体）
+function drawBossBars(){
+  const list = activeBosses.slice(0, 3);
+  for(let i = 0; i < list.length; i++) drawBossBar(list[i], i);
+}
+function drawBossBar(e, slot){
+  const w = Math.min(560, W - 60), x = (W - w) / 2, y = 74 + slot * 44;
   ctx.save();
   ctx.fillStyle = '#fff'; ctx.strokeStyle = '#4a2b45'; ctx.lineWidth = 4;
   ctx.beginPath();
@@ -1661,14 +1789,15 @@ function drawBossBar(){
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = '900 15px "Hiragino Maru Gothic ProN",system-ui,sans-serif';
   ctx.lineWidth = 4; ctx.strokeStyle = '#4a2b45'; ctx.lineJoin = 'round';
-  ctx.strokeText('👑 ' + e.name, W / 2, y - 12);
+  ctx.font = '900 ' + (slot ? 13 : 15) + 'px "Hiragino Maru Gothic ProN",system-ui,sans-serif';
+  ctx.strokeText('👑 ' + e.name, W / 2, y - 11);
   ctx.fillStyle = '#fff';
-  ctx.fillText('👑 ' + e.name, W / 2, y - 12);
+  ctx.fillText('👑 ' + e.name, W / 2, y - 11);
   ctx.restore();
 
   const dx = e.x - cam.x, dy = e.y - cam.y;
   if(Math.abs(dx) > W / 2 - 40 || Math.abs(dy) > H / 2 - 40){
-    const a = Math.atan2(dy, dx), rad = Math.min(W, H) / 2 - 46;
+    const a = Math.atan2(dy, dx), rad = Math.min(W, H) / 2 - 46 - slot * 22;
     ctx.save();
     ctx.translate(W / 2 + Math.cos(a) * rad, H / 2 + Math.sin(a) * rad);
     ctx.rotate(a);

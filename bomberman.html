@@ -20,11 +20,25 @@
     -webkit-user-select:none;user-select:none;touch-action:manipulation;
     overflow:hidden;
   }
-  #wrap{display:flex;flex-direction:column;align-items:center;gap:6px;max-width:100%}
+  #wrap{
+    display:flex;flex-direction:column;align-items:center;gap:6px;max-width:100%;
+    /* 幅と高さの両方に収まる最大サイズ（15:13） */
+    --gameW:min(96vw, calc((100dvh - 84px) * 15 / 13), 1100px);
+  }
+  body.touch #wrap{--gameW:min(96vw, calc((100dvh - 252px) * 15 / 13), 1100px)}
+  #toprow{display:flex;gap:5px;width:var(--gameW);align-items:stretch}
+  #fsBtn{
+    flex:0 0 auto;margin-left:auto;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(180deg,#2b3350,#1a2036);border:2px solid var(--line);
+    border-radius:10px;color:var(--ink);font-size:12px;font-weight:800;
+    padding:0 11px;cursor:pointer;white-space:nowrap;
+    box-shadow:0 3px 0 rgba(0,0,0,.35);
+  }
+  #fsBtn:active{transform:translateY(3px);box-shadow:none}
 
   /* ---------- HUD ---------- */
   #hud{
-    width:min(96vw,600px);display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+    flex:1;min-width:0;display:flex;align-items:center;gap:9px;flex-wrap:wrap;
     background:linear-gradient(180deg,#242b42,#1a2033);
     border:2px solid var(--line);border-radius:10px;padding:6px 9px;
     font-size:13px;letter-spacing:.03em;box-shadow:0 6px 18px rgba(0,0,0,.45);
@@ -41,7 +55,7 @@
   #timeFill{height:100%;width:100%;background:linear-gradient(90deg,#4ecdc4,#ffd166);transition:width .2s linear}
 
   /* ---------- VS HUD ---------- */
-  #vsHud{width:min(96vw,600px);display:none;gap:5px}
+  #vsHud{flex:1;min-width:0;display:none;gap:5px}
   #vsHud.on{display:flex}
   .pcard{
     flex:1;min-width:0;background:linear-gradient(180deg,#242b42,#1a2033);
@@ -60,7 +74,7 @@
   /* ---------- stage ---------- */
   #stagebox{position:relative;line-height:0}
   canvas{
-    width:min(96vw,600px);aspect-ratio:15/13;height:auto;display:block;
+    width:var(--gameW);aspect-ratio:15/13;height:auto;display:block;
     border:3px solid var(--line);border-radius:8px;
     background:#1b6b3a;box-shadow:0 10px 30px rgba(0,0,0,.55);
   }
@@ -105,7 +119,7 @@
   @keyframes bl{50%{opacity:.15}}
 
   /* ---------- touch ---------- */
-  #pad{display:none;width:min(96vw,600px);justify-content:space-between;align-items:center;margin-top:2px}
+  #pad{display:none;width:var(--gameW);justify-content:space-between;align-items:center;margin-top:2px}
   #dpad{display:grid;grid-template-columns:repeat(3,50px);grid-template-rows:repeat(3,50px);gap:4px}
   .btn{
     background:linear-gradient(180deg,#2b3350,#1a2036);border:2px solid var(--line);
@@ -123,6 +137,7 @@
 <body>
 <div id="wrap">
 
+  <div id="toprow">
   <div id="hud">
     <div class="st"><span class="lbl">STAGE</span><b id="hStage">1</b></div>
     <div class="sep"></div>
@@ -141,8 +156,9 @@
     </div>
     <div id="timeBar"><div id="timeFill"></div></div>
   </div>
-
   <div id="vsHud"></div>
+  <div id="fsBtn">⛶ 全画面</div>
+  </div>
 
   <div id="stagebox">
     <canvas id="game"></canvas>
@@ -181,12 +197,25 @@ const DIRS={up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]};
 const OPPOSITE={up:'down',down:'up',left:'right',right:'left'};
 const F_C=1, F_H=2, F_V=4;
 const AIL_TIME=12;
+const MISO_MAX_BOMBS=2;     // ミソボンが同時に出せる弾数
+const MISO_THROW_CD=0.8;    // 連投の間隔（秒）
+const MISO_THROW_DIST=3;    // 投げた弾が落ちるマス数
+const CD_TIME=3;            // 次ラウンドのカウントダウン
 
 const canvas=document.getElementById('game');
 const ctx=canvas.getContext('2d');
 const dpr=Math.max(1,Math.min(2,window.devicePixelRatio||1));
-canvas.width=W*dpr; canvas.height=H*dpr;
-ctx.setTransform(dpr,0,0,dpr,0,0);
+function resizeCanvas(){
+  const r=canvas.getBoundingClientRect();
+  const w=r.width||W;
+  const s=Math.max(1,Math.min(2.6,(w/W)*dpr));      // 表示サイズに合わせた内部解像度
+  const bw=Math.round(W*s), bh=Math.round(H*s);
+  if(canvas.width!==bw||canvas.height!==bh){ canvas.width=bw; canvas.height=bh; }
+  ctx.setTransform(s,0,0,s,0,0);
+}
+resizeCanvas();
+addEventListener('resize',resizeCanvas);
+addEventListener('orientationchange',()=>setTimeout(resizeCanvas,120));
 
 const $=id=>document.getElementById(id);
 const rnd=(a,b)=>a+Math.random()*(b-a);
@@ -239,7 +268,12 @@ const SFX={
   clear(){ [523,659,784,1046,1318].forEach((f,i)=>setTimeout(()=>tone(f,0.15,'triangle',0.14),i*105)); },
   over(){ [392,330,262,196].forEach((f,i)=>setTimeout(()=>tone(f,0.3,'triangle',0.15),i*190)); },
   drop(){ noiseBurst(0.16,0.22); tone(180,0.12,'square',0.08,70); },
-  round(){ [784,988,1318].forEach((f,i)=>setTimeout(()=>tone(f,0.13,'square',0.12),i*90)); }
+  round(){ [784,988,1318].forEach((f,i)=>setTimeout(()=>tone(f,0.13,'square',0.12),i*90)); },
+  roundWin(){ [784,988,1175,1568,1175,1568].forEach((f,i)=>setTimeout(()=>tone(f,0.17,'square',0.13),i*125)); },
+  roundDraw(){ [523,466,392,349].forEach((f,i)=>setTimeout(()=>tone(f,0.28,'triangle',0.12),i*170)); },
+  count(){ tone(880,0.10,'square',0.13); },
+  go(){ tone(1318,0.14,'square',0.14); setTimeout(()=>tone(1976,0.22,'square',0.14),100); },
+  bounce(){ tone(520,0.05,'square',0.07,300); }
 };
 
 /* ---- BGM（オリジナルの8bitループ） ---- */
@@ -350,6 +384,7 @@ let entityId=1, banner=null;
 let vsCfg={players:4, humans:1, cpu:'normal', winsNeeded:3, misobon:1,
   items:{fire:true,bomb:true,speed:true,kick:true,wall:true,bombpass:true,heart:true,skull:true}};
 let vsSpiral=[], vsSpiralIdx=0, vsSdTimer=0, vsRound=1, endGrace=-1;
+let roundWait=false, pendingChamp=null, cdT=0, cdLast=0;
 
 /* ============================================================
    ボンバー生成
@@ -366,7 +401,7 @@ function makeBomber(idx,color,ctrl){
     ail:null, ailT:0, ailLock:0,
     alive:true, invul:RESPAWN_INVUL, walk:0, wins:0,
     cpu:!!(ctrl&&ctrl.cpu), aim:null, think:0, pressed:[], bombEdge:false, detEdge:false,
-    misobon:false, mdir:null,
+    misobon:false, mdir:null, throwCd:0,
     ghost:false, deadT:0
   };
 }
@@ -507,7 +542,7 @@ function resetBomber(b,keepPowers){
   b.x=b.home[0]*TILE+TILE/2; b.y=b.home[1]*TILE+TILE/2;
   b.alive=true; b.invul=RESPAWN_INVUL; b.bombsOut=0; b.dir='down';
   b.ail=null; b.ailT=0; b.pressed.length=0; b.aim=null; b.deadT=0;
-  b.misobon=false; b.mdir=null; b.ringIdx=null; b.ringDir=1; b.moving=false;
+  b.misobon=false; b.mdir=null; b.ringIdx=null; b.ringDir=1; b.moving=false; b.throwCd=0;
   if(!keepPowers){
     b.maxBombs=1; b.range=2; b.speed=96; b.spd=1;
     b.kick=false; b.remote=false; b.wallPass=false; b.bombPass=false; b.shield=false;
@@ -859,7 +894,7 @@ function misobonAt(cx,cy,self){
 }
 function toMisobon(b){
   b.misobon=true; b.mdir=null; b.bombsOut=0; b.ail=null; b.ailT=0; b.aim=null;
-  b.pressed.length=0; b.invul=0; b.shield=false;
+  b.pressed.length=0; b.invul=0; b.shield=false; b.throwCd=0;
   const cx=clamp(cellOf(b.x),1,COLS-2), cy=clamp(cellOf(b.y),1,ROWS-2);
   const cand=[[cx,0],[cx,ROWS-1],[0,cy],[COLS-1,cy]];
   let best=null, bd=1e9;
@@ -899,45 +934,52 @@ function revive(b){
   return true;
 }
 // 内側へ投げる：ブロックを飛び越えて最初の空きマスに落ちる
+const misoLimit=b=>Math.min(MISO_MAX_BOMBS,b.maxBombs);
+const cellFree=(x,y)=>grid[y][x]===EMPTY && !bombAt(x,y);
+// 3マス目に落ちる。物体があれば1マス先へ跳ね、そこも塞がっていればさらに1マス先へ
 function throwTarget(b){
   const cx=cellOf(b.x), cy=cellOf(b.y);
   const onTop=cy===0, onBottom=cy===ROWS-1, onLeft=cx===0, onRight=cx===COLS-1;
   let dir=null;
-  if((onTop||onBottom)&&(onLeft||onRight)){        // 角：斜め内側へ投げる
-    dir=[onLeft?1:-1, onTop?1:-1];
-  }
+  if((onTop||onBottom)&&(onLeft||onRight)) dir=[onLeft?1:-1, onTop?1:-1];   // 角は斜め
   else if(onTop) dir=[0,1];
   else if(onBottom) dir=[0,-1];
   else if(onLeft) dir=[1,0];
   else if(onRight) dir=[-1,0];
   if(!dir) return null;
-  for(const from of [2,1]){
-    for(let d=from;d<=8;d++){
-      const x=cx+dir[0]*d, y=cy+dir[1]*d;
-      if(x<1||y<1||x>COLS-2||y>ROWS-2) break;
-      if(grid[y][x]===EMPTY && !bombAt(x,y)) return {cx:x,cy:y};
-    }
+  const pts=[];
+  for(let d=MISO_THROW_DIST; d<=MISO_THROW_DIST+9; d++){
+    const x=cx+dir[0]*d, y=cy+dir[1]*d;
+    if(x<1||y<1||x>COLS-2||y>ROWS-2) return null;      // 跳ねた先が場外なら投げない
+    pts.push([x,y]);
+    if(cellFree(x,y)) return {cx:x, cy:y, pts};
   }
   return null;
 }
 function throwBomb(b){
-  if(b.bombsOut>=b.maxBombs) return false;
+  if(b.throwCd>0) return false;                        // 連投しない
+  if(b.bombsOut>=misoLimit(b)) return false;           // 同時に出せるのは2発まで
   const t=throwTarget(b);
   if(!t) return false;
   b.bombsOut++;
-  throws.push({owner:b, x0:b.x, y0:b.y, x1:t.cx*TILE+TILE/2, y1:t.cy*TILE+TILE/2,
-               cx:t.cx, cy:t.cy, t:0, dur:0.5, range:effRange(b)});
+  b.throwCd=MISO_THROW_CD;
+  throws.push({owner:b, x0:b.x, y0:b.y, pts:t.pts, seg:0, t:0, range:effRange(b)});
   SFX.kick();
   return true;
 }
+const segDur=seg=>seg===0?0.45:0.17;
 function updateThrows(dt){
   for(const f of throws){
     f.t+=dt;
-    if(f.t<f.dur) continue;
+    if(f.t<segDur(f.seg)) continue;
+    f.t=0; f.seg++;
+    if(f.seg<f.pts.length){ SFX.bounce(); continue; }   // 跳ねて次のマスへ
     f.done=true;
-    if(grid[f.cy][f.cx]===EMPTY && !bombAt(f.cx,f.cy)){
-      bombs.push({cx:f.cx,cy:f.cy,x:f.x1,y:f.y1,t:FUSE,age:0,range:f.range,
-                  owner:f.owner,dead:false,pass:new Set(),dir:null,remote:false});
+    const last=f.pts[f.pts.length-1];
+    if(cellFree(last[0],last[1])){
+      bombs.push({cx:last[0],cy:last[1],x:last[0]*TILE+TILE/2,y:last[1]*TILE+TILE/2,
+                  t:FUSE,age:0,range:f.range,owner:f.owner,dead:false,
+                  pass:new Set(),dir:null,remote:false});
       SFX.place();
     }else{
       f.owner.bombsOut=Math.max(0,f.owner.bombsOut-1);
@@ -946,6 +988,7 @@ function updateThrows(dt){
   throws=throws.filter(f=>!f.done);
 }
 function updateMisobon(b,dt){
+  if(b.throwCd>0) b.throwCd=Math.max(0,b.throwCd-dt);
   if(b.cpu) cpuMisobon(b,dt);
   if(b.bombEdge){ b.bombEdge=false; throwBomb(b); }
   b.detEdge=false;
@@ -1170,7 +1213,7 @@ function cpuThink(b,dt){
 
   const {dist,prev}=bfsSafe(cx,cy,b,dz,par.escapeMargin);
   // 2) 置ける？（置いた後に逃げ道があるかを確認）
-  const canBomb = b.bombsOut<b.maxBombs && canPlace(b) && !bombAt(cx,cy);
+  const canBomb = b.bombsOut<b.maxBombs && canPlace(b) && !bombAt(cx,cy) && grid[cy][cx]===EMPTY;
   let want=false;
   if(canBomb){
     const rng=effRange(b);
@@ -1210,6 +1253,7 @@ function cpuThink(b,dt){
   for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++){
     const k=y*COLS+x;
     if(dist[k]<0||dz[y][x]!==Infinity) continue;
+    if(grid[y][x]!==EMPTY) continue;      // 壁の中は目的地にしない（かべぬけ持ち対策）
     let score=1e9;
     if(items[y][x] && items[y][x]!=='skull') score=dist[k]/par.itemWant;
     else{
@@ -1233,9 +1277,12 @@ function cpuThink(b,dt){
     const opts=[];
     for(const k in DIRS){
       const nx=cx+DIRS[k][0], ny=cy+DIRS[k][1];
-      if(!solidAt(nx,ny,b)&&dz[ny][nx]===Infinity) opts.push(k);
+      if(!solidAt(nx,ny,b)&&dz[ny][nx]===Infinity) opts.push({k,empty:grid[ny][nx]===EMPTY});
     }
-    b.aim=opts.length?opts[(Math.random()*opts.length)|0]:null;
+    // 壁の中にいるときは、まず空きマスへ出る
+    const outs=opts.filter(o=>o.empty);
+    const pool=(grid[cy][cx]!==EMPTY&&outs.length)?outs:opts;
+    b.aim=pool.length?pool[(Math.random()*pool.length)|0].k:null;
   }
 }
 
@@ -1408,7 +1455,7 @@ function startVs(){
   for(let i=0;i<n;i++){
     bombers.push(makeBomber(i,COLORS[i],{cpu: i>=vsCfg.humans}));
   }
-  vsRound=1;
+  vsRound=1; roundWait=false; pendingChamp=null;
   newVsRound();
   mode='play'; hideOverlay();
   banner={text:'ROUND 1',t:1.3,color:'#ffd166'};
@@ -1418,28 +1465,29 @@ function startVs(){
 }
 function endRound(){
   const alive=bombers.filter(b=>b.alive);
-  mode='roundend'; modeTimer=2.4;
+  mode='roundend'; modeTimer=1.3; roundWait=false;
   if(alive.length===1){
     alive[0].wins++;
-    banner={text:alive[0].name+' の かち！',t:2.2,color:alive[0].col.dot};
-    SFX.clear();
+    banner={text:alive[0].name+' の かち！',t:999,color:alive[0].col.dot};
+    SFX.roundWin();
   }else{
-    banner={text:'ひきわけ',t:2.2,color:'#cfd8e6'};
-    SFX.over();
+    banner={text:'ひきわけ',t:999,color:'#cfd8e6'};
+    SFX.roundDraw();
   }
+  pendingChamp=bombers.find(b=>b.wins>=vsCfg.winsNeeded)||null;
   buildVsHud();
 }
-function nextRound(){
-  const champ=bombers.find(b=>b.wins>=vsCfg.winsNeeded);
-  if(champ){ matchEnd(champ); return; }
+// ボタンが押されたら次ラウンドのカウントダウンを開始する
+function beginNextRound(){
+  if(!(scene==='vs'&&mode==='roundend'&&roundWait)) return false;
+  roundWait=false; banner=null;
   vsRound++;
   newVsRound();
-  mode='play'; hideOverlay();
-  banner={text:'ROUND '+vsRound,t:1.3,color:'#ffd166'};
-  SFX.round();
+  mode='countdown'; cdT=CD_TIME; cdLast=Math.ceil(CD_TIME)+1;
+  return true;
 }
 function matchEnd(champ){
-  mode='matchend';
+  mode='matchend'; roundWait=false; banner=null; pendingChamp=null;
   BGM.stop();
   const list=bombers.slice().sort((a,b)=>b.wins-a.wins)
     .map(b=>'<span style="color:'+b.col.dot+'">■</span> '+b.name+' … '+b.wins+'勝').join('<br>');
@@ -1505,8 +1553,22 @@ function update(dt){
       if(modeTimer<=0) nextStage();
     }else if(mode==='roundend'){
       updateBombs(dt); updateFlames(dt);
-      modeTimer-=dt;
-      if(modeTimer<=0) nextRound();
+      if(modeTimer>0){
+        modeTimer-=dt;
+        if(modeTimer<=0){
+          if(pendingChamp) matchEnd(pendingChamp);
+          else roundWait=true;              // ボタン待ちへ
+        }
+      }
+    }else if(mode==='countdown'){
+      cdT-=dt;
+      const n=Math.ceil(cdT);
+      if(n!==cdLast){ cdLast=n; if(n>0) SFX.count(); }
+      if(cdT<=0){
+        mode='play';
+        banner={text:'スタート！',t:0.9,color:'#7ef0a0'};
+        SFX.go();
+      }
     }
   }
   updateHUD();
@@ -1788,7 +1850,7 @@ function drawMisobon(b){
   drawBomber(b);
   ctx.restore();
   // 投げ先の目印（人間プレイヤーのみ）
-  if(!b.cpu){
+  if(!b.cpu && b.throwCd<=0 && b.bombsOut<misoLimit(b)){
     const t=throwTarget(b);
     if(t){
       ctx.save();
@@ -1801,9 +1863,13 @@ function drawMisobon(b){
 }
 function drawThrows(){
   for(const f of throws){
-    const k=Math.min(1,f.t/f.dur);
-    const gx=f.x0+(f.x1-f.x0)*k, gy=f.y0+(f.y1-f.y0)*k;
-    const y=gy-Math.sin(Math.PI*k)*62;
+    const seg=Math.min(f.seg,f.pts.length-1);
+    const from = seg===0 ? [f.x0,f.y0]
+                         : [f.pts[seg-1][0]*TILE+TILE/2, f.pts[seg-1][1]*TILE+TILE/2];
+    const to = [f.pts[seg][0]*TILE+TILE/2, f.pts[seg][1]*TILE+TILE/2];
+    const k=Math.min(1,f.t/segDur(seg));
+    const gx=from[0]+(to[0]-from[0])*k, gy=from[1]+(to[1]-from[1])*k;
+    const y=gy-Math.sin(Math.PI*k)*(seg===0?62:22);
     ctx.save();
     ctx.fillStyle='rgba(0,0,0,.28)';
     ctx.beginPath(); ctx.ellipse(gx,gy+8,9,4,0,0,7); ctx.fill();
@@ -1891,6 +1957,38 @@ function drawParticles(){
   }
   ctx.globalAlpha=1;
 }
+function drawRoundPrompt(){
+  const a=0.55+0.45*Math.sin(tick*5);
+  ctx.save();
+  ctx.textAlign='center';
+  ctx.font='bold 17px system-ui,sans-serif';
+  ctx.globalAlpha=a;
+  ctx.lineWidth=4; ctx.strokeStyle='rgba(0,0,0,.85)';
+  const msg='ボタン / タップで つぎのラウンドへ';
+  ctx.strokeText(msg,W/2,H/2+64);
+  ctx.fillStyle='#ffd166'; ctx.fillText(msg,W/2,H/2+64);
+  ctx.restore();
+}
+function drawCountdown(){
+  const n=Math.max(1,Math.ceil(cdT));
+  const frac=1-(cdT-Math.floor(cdT));
+  ctx.save();
+  ctx.fillStyle='rgba(8,10,20,.5)'; ctx.fillRect(0,0,W,H);
+  ctx.textAlign='center';
+  ctx.save();
+  ctx.translate(W/2,H/2);
+  ctx.scale(1+(1-frac)*0.45,1+(1-frac)*0.45);
+  ctx.font='bold 86px system-ui,sans-serif';
+  ctx.lineWidth=9; ctx.strokeStyle='rgba(0,0,0,.85)';
+  ctx.strokeText(n,0,28);
+  ctx.fillStyle='#ffd166'; ctx.fillText(n,0,28);
+  ctx.restore();
+  ctx.font='bold 18px system-ui,sans-serif';
+  ctx.lineWidth=4; ctx.strokeStyle='rgba(0,0,0,.8)';
+  ctx.strokeText('ROUND '+vsRound,W/2,H/2+76);
+  ctx.fillStyle='#e8ecff'; ctx.fillText('ROUND '+vsRound,W/2,H/2+76);
+  ctx.restore();
+}
 function drawBanner(){
   if(!banner) return;
   const a=Math.min(1,banner.t*2.2);
@@ -1939,6 +2037,8 @@ function render(){
     ctx.fillRect(0,0,W,H);
   }
   drawBanner();
+  if(scene==='vs'&&mode==='roundend'&&roundWait) drawRoundPrompt();
+  if(mode==='countdown') drawCountdown();
 }
 
 /* ============================================================
@@ -2021,6 +2121,7 @@ function showTitle(){
       '<span>2P爆弾</span><span>Q</span>'+
       '<span>2P起爆</span><span>E</span>'+
       '<span>ポーズ / 音楽</span><span>P / M</span>'+
+      '<span>全画面</span><span>F（右上のボタンでも可）</span>'+
     '</div>');
   bind('mStory',()=>startStory());
   bind('mVs',()=>showVsSetup());
@@ -2074,6 +2175,29 @@ function togglePause(){
 }
 
 /* ============================================================
+   フルスクリーン
+============================================================ */
+function isFullscreen(){ return !!(document.fullscreenElement||document.webkitFullscreenElement); }
+function toggleFullscreen(){
+  const e=document.documentElement;
+  if(!isFullscreen()){
+    const rq=e.requestFullscreen||e.webkitRequestFullscreen;
+    if(rq) try{ rq.call(e); }catch(err){}
+  }else{
+    const ex=document.exitFullscreen||document.webkitExitFullscreen;
+    if(ex) try{ ex.call(document); }catch(err){}
+  }
+}
+function syncFsBtn(){
+  const b=$('fsBtn');
+  if(b) b.textContent = isFullscreen() ? '⛶ もどす' : '⛶ 全画面';
+  setTimeout(resizeCanvas,80);
+}
+$('fsBtn').addEventListener('pointerdown',e=>{ e.preventDefault(); ac(); toggleFullscreen(); });
+addEventListener('fullscreenchange',syncFsBtn);
+addEventListener('webkitfullscreenchange',syncFsBtn);
+
+/* ============================================================
    入力
 ============================================================ */
 const P1_KEYS={ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'};
@@ -2095,11 +2219,13 @@ addEventListener('keydown',e=>{
   if(P1_KEYS[k]||P1_ALT[k]||k===' '||k==='z'||k==='x'||k==='q') e.preventDefault();
   ac();
   if(mode!=='play'){
-    if(k===' '||k==='Enter'){
+    if(k===' '||k==='Enter'||k==='z'||k==='q'||k==='e'){
+      if(beginNextRound()) return;
       if(mode==='pause') togglePause();
     }
     if(k==='p') togglePause();
     if(k==='m'){ BGM.on=!BGM.on; BGM.on?BGM.start():BGM.stop(); }
+    if(k==='f') toggleFullscreen();
     return;
   }
   const p1=humanBomber(0), p2=humanBomber(1);
@@ -2117,6 +2243,7 @@ addEventListener('keydown',e=>{
   if(k==='e'){ if(!keyHeld.d2){ keyHeld.d2=true; if(p2) p2.detEdge=true; } return; }
   if(k==='p') togglePause();
   if(k==='m'){ BGM.on=!BGM.on; BGM.on?BGM.start():BGM.stop(); }
+  if(k==='f') toggleFullscreen();
   if(k==='r'&&scene==='story') startStory();
 },{passive:false});
 addEventListener('keyup',e=>{
@@ -2147,7 +2274,11 @@ document.querySelectorAll('#dpad .btn[data-dir]').forEach(el=>{
 });
 $('bombBtn').addEventListener('pointerdown',e=>{
   e.preventDefault(); ac();
+  if(beginNextRound()) return;
   const p=humanBomber(0); if(p&&mode==='play') p.bombEdge=true;
+});
+$('stagebox').addEventListener('pointerdown',e=>{
+  if(scene==='vs'&&mode==='roundend'&&roundWait){ e.preventDefault(); ac(); beginNextRound(); }
 });
 $('detBtn').addEventListener('pointerdown',e=>{
   e.preventDefault(); ac();
@@ -2161,9 +2292,12 @@ setHudMode('none');
 showTitle();
 
 let last=performance.now();
+let lastCW=-1;
 function loop(now){
   let dt=(now-last)/1000; last=now;
   if(dt>0.05) dt=0.05;
+  // 表示サイズが変わったら内部解像度も合わせる（全画面・ウィンドウ変更に追従）
+  if(canvas.clientWidth!==lastCW){ lastCW=canvas.clientWidth; resizeCanvas(); }
   if(mode==='title'||mode==='pause'||mode==='gameover'||mode==='matchend'){
     tick+=dt;
     if(grid) updateParticles(dt);

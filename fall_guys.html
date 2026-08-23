@@ -512,7 +512,7 @@ function makeBean(i, isPlayer){
     x:0, y:0, z:0, vx:0, vy:0, vz:0, face:Math.PI/2,
     state:'run', stun:0, inv:0, spin:0, spinRate:0, jumpCd:0, diveCd:0,
     zoneMul:1, slip:0, lowG:0, skill:rnd(0.88,1.03), lane:rnd(-230,230), anim:Math.random()*10,
-    out:false, done:false, place:0, finalRank:0, fallT:0, respawn:0,
+    out:false, done:false, place:0, finalRank:0, fallT:0, respawn:0, slimed:0,
     doorSel:{}, bridge:0, aiT:irnd(0,40), noJumpT:0, alive:true, layer:0, hT:null, dropT:0
   };
 }
@@ -2335,7 +2335,7 @@ function respawnRace(b){
   let cp = world.cps[0];
   for(const c of world.cps) if(c > b.y + 40) cp = c;   // 手前のチェックポイントへ
   b.state = 'run'; b.stun = 0; b.inv = 60; b.z = 0; b.vx = b.vy = b.vz = 0;
-  b.x = clamp(b.x, 90, 710); b.y = cp; b.fallT = 0;
+  b.x = clamp(b.x, 90, 710); b.y = cp; b.fallT = 0; b.slimed = 0;
   burst(b.x, b.y, 10, 12, b.color, 3);
 }
 
@@ -2427,7 +2427,7 @@ function startRound(idx){
   G.timeLeft = R.time*60; G.elapsed = 0; G.rt = 0; G.endT = 0; G.freeze = CD_ALL; G.winner = null;
   G.slow = 0; G.cheer = 0; rings = [];
   for(const b of G.beans) b.cheer = 0;
-  for(const b of G.beans){ b.out = false; b.done = false; b.place = 0; b.alive = true; }
+  for(const b of G.beans){ b.out = false; b.done = false; b.place = 0; b.alive = true; b.slimed = 0; }
   G.stage.build();
   G.phase = 'intro';
   showIntro(G.round);
@@ -2526,7 +2526,7 @@ function updateRace(){
       if(b.x < BEAN_R){ b.x = BEAN_R; if(b.vx<0) b.vx *= -0.3; }
       if(b.x > world.w-BEAN_R){ b.x = world.w-BEAN_R; if(b.vx>0) b.vx *= -0.3; }
     } else if(b.z <= 2 && b.state !== 'fall' && offPath(b) && !onFloor(b)){
-      b.state = 'fall'; b.fallT = 18; sfx.fall();
+      b.state = 'fall'; b.fallT = 0; b.slimed = 1; sfx.fall();
       burst(b.x, b.y, 6, 18, '#3ddc84', 3.2);
       if(b.isPlayer){ G.flash = 10; showBanner('SLIMED!', '#3ddc84'); }
       continue;
@@ -2534,7 +2534,7 @@ function updateRace(){
     if(b.y > -20){ b.y = -20; if(b.vy>0) b.vy = 0; }
     checkHoles(b);
     if(G.stage.chase && b.y > G.slimeY && b.state !== 'fall'){   // スライムに飲まれた
-      b.state = 'fall'; b.fallT = 20; sfx.fall();
+      b.state = 'fall'; b.fallT = 0; b.slimed = 1; sfx.fall();
       burst(b.x, b.y, 6, 16, '#3ddc84', 3);
       if(b.isPlayer) G.flash = 10;
       continue;
@@ -2768,12 +2768,15 @@ function drawRaceFloor(){
     }
   }
   if(pathMode){
-    ctx.restore();                       // クリップ解除
+    ctx.restore();                       // 道の内側への描画を終了
+    ctx.restore();                       // 道クリップを解除（フチは両側均等に出す）
     ctx.save();
     pathPoly(y0, y1);
     ctx.strokeStyle = '#ffd6ef'; ctx.lineWidth = 9; ctx.stroke();
     ctx.strokeStyle = '#ff8fd0'; ctx.lineWidth = 4; ctx.stroke();
     ctx.restore();
+    ctx.save();
+    pathPoly(y0, y1); ctx.clip();        // 穴・床・ゴールは道の内側だけ
     ctx.save();
   }
   // 穴
@@ -2924,6 +2927,7 @@ function drawRaceFloor(){
     }
   }
   ctx.restore();
+  if(pathMode) ctx.restore();            // 道クリップを完全に解除（道の外のビーンも描けるように）
 }
 
 function drawArenaFloor(){
@@ -2995,38 +2999,8 @@ function drawCrown(){
   ctx.restore();
 }
 
-function drawBean(b){
-  if(G.stage && G.stage.kind === 'hex'){
-    if(b.state === 'drop') return drawHexDrop(b);
-    if(b.layer !== viewLayer()) return;
-  }
-  const sx = b.x - cam.x, sy = b.y - cam.y;
-  if(sx < -70 || sx > VW+70 || sy < -110 || sy > VH+110) return;
-  const z = Math.max(b.z, 0);
-  const falling = b.state === 'fall';
-  const k = falling ? Math.max(0, 1 - b.fallT/38) : 1;
-
-  if(!falling){
-    ctx.save();
-    ctx.globalAlpha = clamp(0.30 - z*0.0022, 0.05, 0.30);
-    ctx.fillStyle = '#000';
-    const s = 1 - clamp(z,0,150)/300;
-    ctx.beginPath(); ctx.ellipse(sx, sy+5, 15*s, 7.5*s, 0, 0, TAU); ctx.fill();
-    ctx.restore();
-  }
-
-  if(b.isPlayer && !falling && z > 10){          // 高さが分かるガイド
-    ctx.save();
-    ctx.strokeStyle = 'rgba(255,45,135,.45)'; ctx.lineWidth = 3; ctx.setLineDash([4,6]);
-    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx, sy - z + 12); ctx.stroke();
-    ctx.setLineDash([]); ctx.restore();
-  }
-
-  ctx.save();
-  ctx.translate(sx, sy - z);
-  if(falling){ ctx.scale(k,k); ctx.globalAlpha = k; ctx.rotate(b.fallT*0.12); }
-  if(b.state === 'tumble') ctx.rotate(b.spin);
-
+// ビーン本体（原点＝体の中心。translate/rotate 済みで呼ぶ）
+function beanBody(b){
   let rx = 15, ry = 17, lean = 0;
   if(b.state === 'dive' || b.state === 'prone'){
     ctx.rotate(b.face - Math.PI/2);
@@ -3088,6 +3062,79 @@ function drawBean(b){
     ctx.lineTo(5,-ry-9); ctx.lineTo(13,-ry-16); ctx.lineTo(11,-ry-4);
     ctx.closePath(); ctx.fill(); ctx.stroke();
   }
+}
+
+// スライムに沈む演出：水面で切れて飲み込まれていく
+function drawSlimeSink(b, sx, sy){
+  const p = clamp(b.fallT/34, 0, 1);
+  const surf = sy + 20;                      // スライムの水面（足元のライン）
+  ctx.save();
+  ctx.beginPath(); ctx.rect(sx-46, surf-120, 92, 120); ctx.clip();   // 水面より上だけ見える
+  ctx.translate(sx, sy + p*48);              // じわじわ沈む
+  ctx.rotate(Math.sin(b.fallT*0.34)*0.18);   // もがくように揺れる
+  ctx.globalAlpha = 1 - p*0.25;
+  beanBody(b);
+  ctx.restore();
+
+  ctx.save();
+  // 水面と体の境目
+  ctx.globalAlpha = (1-p)*0.75;
+  ctx.fillStyle = '#7ee9b4';
+  ctx.beginPath(); ctx.ellipse(sx, surf, 19*(1-p*0.5), 6*(1-p*0.5), 0, 0, TAU); ctx.fill();
+  // 広がる波紋
+  ctx.strokeStyle = '#a8f5cd'; ctx.lineWidth = 3;
+  for(let i=0;i<3;i++){
+    const t = clamp(p*1.4 - i*0.2, 0, 1);
+    if(t <= 0) continue;
+    const r = 12 + t*36;
+    ctx.globalAlpha = (1-t)*0.5;
+    ctx.beginPath(); ctx.ellipse(sx, surf, r, r*0.42, 0, 0, TAU); ctx.stroke();
+  }
+  // 泡
+  ctx.fillStyle = 'rgba(255,255,255,.7)';
+  for(let i=0;i<4;i++){
+    const t = p*1.7 - 0.3 - i*0.18;
+    if(t <= 0 || t > 1) continue;
+    ctx.globalAlpha = (1-t)*0.8;
+    ctx.beginPath(); ctx.arc(sx + Math.sin(i*2.3)*13, surf - 4 - t*18, 2 + (i%3), 0, TAU); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawBean(b){
+  if(G.stage && G.stage.kind === 'hex'){
+    if(b.state === 'drop') return drawHexDrop(b);
+    if(b.layer !== viewLayer()) return;
+  }
+  const sx = b.x - cam.x, sy = b.y - cam.y;
+  if(sx < -70 || sx > VW+70 || sy < -110 || sy > VH+110) return;
+  const z = Math.max(b.z, 0);
+  const falling = b.state === 'fall';
+  const k = falling ? Math.max(0, 1 - b.fallT/38) : 1;
+
+  if(!falling){
+    ctx.save();
+    ctx.globalAlpha = clamp(0.30 - z*0.0022, 0.05, 0.30);
+    ctx.fillStyle = '#000';
+    const s = 1 - clamp(z,0,150)/300;
+    ctx.beginPath(); ctx.ellipse(sx, sy+5, 15*s, 7.5*s, 0, 0, TAU); ctx.fill();
+    ctx.restore();
+  }
+
+  if(b.isPlayer && !falling && z > 10){          // 高さが分かるガイド
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,45,135,.45)'; ctx.lineWidth = 3; ctx.setLineDash([4,6]);
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx, sy - z + 12); ctx.stroke();
+    ctx.setLineDash([]); ctx.restore();
+  }
+
+  if(b.slimed && falling){ drawSlimeSink(b, sx, sy); return; }
+
+  ctx.save();
+  ctx.translate(sx, sy - z);
+  if(falling){ ctx.scale(k,k); ctx.globalAlpha = k; ctx.rotate(b.fallT*0.12); }
+  if(b.state === 'tumble') ctx.rotate(b.spin);
+  beanBody(b);
   ctx.restore();
 
   // プレイヤーマーカー

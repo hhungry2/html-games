@@ -570,6 +570,7 @@ function setFly(f, tx, ty, speed, dmg, kind, opt) {
   const m = Math.hypot(dx, dy) || 1; dx /= m; dy /= m;
   // 投げる方向に少し前へ出す（外野が自分側の場外で即アウトにならないように）
   const sx = f.x + dx * 15, sy = f.y + dy * 9, sz = f.z + 26;
+  f.dir = dx >= 0 ? 1 : -1;                 // 投げた方向を向く
   B.mode = 'fly'; B.owner = null; B.team = f.team; B.from = f;
   B.bx = sx; B.by = sy; B.x = sx; B.y = sy; B.z = sz;
   B.dx = dx; B.dy = dy;
@@ -598,9 +599,16 @@ function pickTarget(f, err) {
 }
 function lvOf(f) { return f.team === 0 ? 2.5 : TEAMS[enemyIdx].lv; }
 function faceDir(f) {
-  if (f.state === 'in') return f.team === 0 ? 1 : -1;
-  const cx = f.team === 0 ? CW * 0.75 : CW * 0.25;   // 相手コートの中心
-  return f.x > cx ? -1 : 1;
+  // 持っている間は投げる方向（相手コート側）を向く
+  if (B.mode === 'held' && B.owner === f) {
+    if (f.state === 'in') return f.team === 0 ? 1 : -1;
+    const cx = f.team === 0 ? CW * 0.75 : CW * 0.25;   // 相手コートの中心
+    return f.x > cx ? -1 : 1;
+  }
+  // それ以外はボールのある方を向く（真横付近ではブレさせない）
+  const d = B.x - f.x;
+  if (Math.abs(d) < 7) return f.dir;
+  return d > 0 ? 1 : -1;
 }
 
 function shoot(f, type) {
