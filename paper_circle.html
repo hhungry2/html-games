@@ -395,8 +395,13 @@ function findSpawn(minDist){
   return null;
 }
 function giveHome(p, x, y){
-  for(let j = -3; j <= 3; j++) for(let i = -3; i <= 3; i++){
-    const k = (y + j) * G + (x + i);
+  /* 初期陣地は四角ではなく円形にする */
+  const hr = 4.1;
+  for(let j = -5; j <= 5; j++) for(let i = -5; i <= 5; i++){
+    if(i * i + j * j > hr * hr) continue;
+    const nx = x + i, ny = y + j;
+    if(nx < 0 || ny < 0 || nx >= G || ny >= G) continue;
+    const k = ny * G + nx;
     if(owner[k] !== VOID) owner[k] = p.id;
   }
   p.x = x; p.y = y; p.fx = x + 0.5; p.fy = y + 0.5;
@@ -550,6 +555,27 @@ function enterCell(p, x, y){
   }
   return true;
 }
+/* 頭の見た目のぶんだけ範囲でしっぽを切る。
+   セルまたぎの瞬間しか見ないと、①相手が自分の居るセルに線を引いた ②相手が自分より後に動いた
+   ③頭より判定が細い、のときに撃ち漏らすため、移動後に毎フレーム判定する */
+const CUT_R = 1.05;          // 頭の半幅0.62＋しっぽの半幅0.29。隣接セルの線は確実に切れる間合い
+function cutCheck(p){
+  const x0 = Math.floor(p.fx - CUT_R), x1 = Math.floor(p.fx + CUT_R);
+  const y0 = Math.floor(p.fy - CUT_R), y1 = Math.floor(p.fy + CUT_R);
+  for(let y = y0; y <= y1; y++){
+    if(y < 0 || y >= G) continue;
+    for(let x = x0; x <= x1; x++){
+      if(x < 0 || x >= G) continue;
+      const t = trailMap[y * G + x];
+      if(!t || t === p.id) continue;
+      if(elapsed < GRACE && p.bot && t === 1) continue;      // 序盤の救済
+      const dx = p.fx - (x + 0.5), dy = p.fy - (y + 0.5);   // しっぽはセル中心を通る線
+      if(dx * dx + dy * dy > CUT_R * CUT_R) continue;
+      const q = players.find(v => v.id === t);
+      if(q && q.alive && q.inv <= 0) die(q, 'cut', p);
+    }
+  }
+}
 function moveP(p, dt){
   if(p.lock > 0) p.lock -= dt;
   else {
@@ -631,6 +657,28 @@ function makePlan(b){
     }
     if(bi){ a.wp = [{ x: bi.x, y: bi.y }, { x: b.homeX, y: b.homeY }]; a.mode = 'loop'; return; }
   }
+  /* 円弧でふくらませる＝陣地が丸く育つ */
+  if(Math.random() < 0.7){
+    for(let t = 0; t < 10; t++){
+      const rad = rnd(7, a.reach);
+      const base = Math.random() * TAU;
+      const sweep = (Math.random() < 0.5 ? 1 : -1) * rnd(1.7, 3.6);
+      const n = rndi(3, 5);
+      const pts = [];
+      let ok = true;
+      for(let k = 0; k <= n; k++){
+        const ang = base + sweep * k / n;
+        const x = b.fx + Math.cos(ang) * rad, y = b.fy + Math.sin(ang) * rad;
+        if(!inArena(x, y, 3)){ ok = false; break; }
+        pts.push({ x, y });
+      }
+      if(!ok) continue;
+      pts.push({ x: b.homeX, y: b.homeY });
+      a.wp = pts; a.mode = 'loop';
+      return;
+    }
+  }
+  /* たまに長方形（変化をつける） */
   for(let t = 0; t < 12; t++){
     const u = Math.random() * TAU, s = Math.random() < 0.5 ? 1 : -1;
     const L1 = rnd(7, a.reach), L2 = rnd(6, a.reach);
@@ -777,7 +825,8 @@ function simplify(p, eps){
   for(let i = 0; i < n; i++) if(keep[i]) out.push(p[i*2], p[i*2+1]);
   return out;
 }
-/* 角を丸めた閉パスを足す */
+/* 角を丸めた閉パスを足す（大きめに丸めて四角さを消す） */
+const CORNER_R = 2.1;
 function addLoop(path, raw){
   const p = simplify(dropCollinear(raw), 0.62);   // 見た目と当たり判定のズレを1セル未満に抑える
   const n = p.length / 2;
@@ -787,7 +836,7 @@ function addLoop(path, raw){
     const j = (i + 1) % n, k = (i + n - 1) % n;
     const x1 = p[i*2], y1 = p[i*2+1], x2 = p[j*2], y2 = p[j*2+1];
     const l1 = Math.hypot(x1 - p[k*2], y1 - p[k*2+1]), l2 = Math.hypot(x2 - x1, y2 - y1);
-    const r = Math.max(0.06, Math.min(0.75, l1 / 2, l2 / 2));
+    const r = Math.max(0.06, Math.min(CORNER_R, l1 / 2, l2 / 2));
     path.arcTo(x1, y1, (x1 + x2) / 2, (y1 + y2) / 2, r);
   }
   path.closePath();
@@ -1047,6 +1096,9 @@ function update(dt){
     if(p.bot) botThink(p, dt);
     moveP(p, dt);
   }
+
+  /* しっぽ切り：全員の移動が終わってから毎フレーム判定する */
+  for(const p of players) if(p.alive) cutCheck(p);
 
   /* 接触判定：自陣にいるほうが勝つ。外どうしは何も起きない */
   for(let i = 0; i < players.length; i++){
