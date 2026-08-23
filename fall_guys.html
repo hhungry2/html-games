@@ -511,12 +511,9 @@ const ROUNDS = [
     rule:'仕掛けだらけのアスレチック！ ベルトコンベア→ジャンプ台→消える床→氷→動く床→回転床。回転床は穴の上に浮いていて、外周ほど強く振り回される。落ちてもチェックポイントから復帰、先着した上位が通過。', time:115, qualify:6 },
   { stage:'roll',    name:'ROUND 4', title:'ロール・アウト',
     rule:'', time:55, qualify:0, variants:[
-      { key:'sprint', title:'ロール・アウト 〜短期決戦〜', time:40, qualify:0, ramp:0.85, rampT:2100,
-        badge:'短期決戦', short:'40秒フルスロットル。生き残っていれば全員クリア',
-        rule:'巨大ローラーの短期決戦！ 5本のリングが別々の向きに高速回転する。流されないよう逆向きに歩き、回ってくる穴は横に避けるかジャンプで飛び越えろ。40秒を耐え抜けば、残っていた人は全員クリア！' },
       { key:'attrition', title:'ロール・アウト 〜生き残り勝負〜', time:95, qualify:4, ramp:2.4, rampT:3600, addHole:true,
         badge:'生き残り勝負', short:'規定人数まで削り合う長期戦',
-        rule:'巨大ローラーのサバイバル！ 残り{Q}人になるまで終わらない長期戦。回転はじわじわ速くなる。流されないよう逆向きに歩き、穴は横に避けるかジャンプで飛び越えろ。規定人数まで減った時点で、残っている人がクリア！' }
+        rule:'巨大ローラーのサバイバル！ 残り{Q}人になるまで終わらない長期戦。回転はじわじわ速くなる。流されないよう逆向きに歩け。切れ目も壁もロールの端から端まで届く——切れ目はジャンプで飛び越え、越えられない壁は隣のロールへ逃げてかわせ。四方の端は奈落だ！' }
     ] },
   { stage:'final',   name:'FINAL',   title:'クラウン・マウンテン',
     rule:'転がり落ちてくる大玉とハンマーをかいくぐって山を登れ！ 頂上の王冠は上下に動いている。低く降りてきた瞬間にジャンプで飛びついた者が優勝！', time:80, qualify:1 }
@@ -1966,8 +1963,7 @@ function drawFloorArena(){
 // 円筒の表面を展開したトップビュー。縦5本の帯＝リングで、各帯の床が上下にスクロールする。
 // 切れ目（穴）も壁も1本のロールの端から端まで。よけられないのでジャンプか隣のロールへ。
 const ROLL_HOLE_H = 70;      // 切れ目の幅（回転方向）
-const ROLL_WALL_H = 26;      // 壁の厚み
-const ROLL_WALL_Z = 16;      // 壁の高さ（これ以上跳べば越えられる）
+const ROLL_WALL_H = 26;      // 壁の厚み（ジャンプでは越えられない高さの壁）
 function buildRoll(){
   obstacles = []; zones = []; holes = []; parts = []; pads = []; tiles = []; plats = [];
   roll.x = 64; roll.y = 66; roll.w = 832; roll.h = 512; roll.n = 5;
@@ -2068,17 +2064,21 @@ function aiRoll(b){
     return d;
   };
   const dHole = dOf(holeRects(c)), dWall = dOf(wallRects(c));
-  const colSafe = j=>{
+  const holeFree = j=>{
     if(j < 0 || j >= roll.cols.length) return false;
     for(const h of holeRects(roll.cols[j])) if(Math.abs((h.y+h.h/2) - b.y) < 120) return false;
     return true;
   };
-  // 横：切れ目が迫ったら隣の安全なロールへ逃げる（余裕があるうちだけ）
+  const colSafe = j=>{
+    if(!holeFree(j)) return false;
+    for(const w of wallRects(roll.cols[j])) if(Math.abs((w.y+w.h/2) - b.y) < 70) return false;
+    return true;
+  };
+  // 横：切れ目や壁が迫ったら隣のロールへ逃げる（壁は飛び越えられない）
   let mx = 0, escaping = false;
-  if(dHole < 150 && margin > 170){
-    const cand = [];
-    if(colSafe(i-1)) cand.push(i-1);
-    if(colSafe(i+1)) cand.push(i+1);
+  if(dWall < 110 || (dHole < 150 && margin > 130)){          // 壁は避けるしかないので余裕に関係なく逃げる
+    let cand = [i-1, i+1].filter(colSafe);
+    if(!cand.length) cand = [i-1, i+1].filter(holeFree);
     if(cand.length){
       const cx = j=> roll.x + (j+0.5)*roll.cw;
       cand.sort((p,q)=> Math.abs(cx(p)-b.x) - Math.abs(cx(q)-b.x));
@@ -2091,21 +2091,22 @@ function aiRoll(b){
   // 縦：上流寄りをキープ。切れ目・壁が来ているときは助走をつけて全力で登る
   let my = 0;
   if(!escaping){
-    const ty = (c.dir > 0) ? roll.y + roll.h*0.34 : roll.y + roll.h*0.66;
+    const k = 0.30 + (b.id % 5) * 0.035;                     // 団子にならないよう目標をばらす
+    const ty = (c.dir > 0) ? roll.y + roll.h*k : roll.y + roll.h*(1-k);
     my = clamp((ty - b.y)/90, -1, 1);
     const needClimb = (b.y - ty) * (-up) > 20;      // 流されて目標より下流にいる
-    if(dHole < 170){
+    if(dWall < 80 && needClimb) my = 0;                   // 壁は越えられない：登らず横へ逃げる
+    else if(dHole < 170){
       if(!needClimb) my = 0;                        // 急がないなら切れ目に近づかない（床に乗って流れる）
       else if(dHole < 60 && margin > 120) my = -up; // 助走距離が足りない：いったん下がる
       else my = up;                                 // 助走をつけて突っ込む
-    } else if(needClimb && dWall < 120) my = up;
+    }
   }
-  // 十分な助走があるときだけ飛び越える
+  // 切れ目だけは十分な助走があれば飛び越えられる
   let jump = false;
   if(b.z <= 0 && Math.sign(my) === up){
     const sp = Math.abs(b.vy);
     if(sp > 2.3 && dHole > 6 && dHole < 14 + sp*6) jump = true;
-    if(dWall > -20 && dWall < 30) jump = true;      // 壁は薄いので接触中でも跳べば越えられる
   }
   return { mx, my, jump, dive:false };
 }
@@ -2137,8 +2138,8 @@ function updateRoll(){
     // 回転している床に運ばれる（空中なら流されない）
     const c = colAt(b.x);
     if(b.z <= 0.02 && c) b.y += c.dir*c.spd*boost;
-    // 壁：ジャンプで越えられなければ回転方向へ押し出される
-    if(c && b.z < ROLL_WALL_Z && b.state !== 'fall'){
+    // 壁：飛び越えられない。ぶつかると回転方向へ押し出される
+    if(c && b.state !== 'fall'){
       const r = BEAN_R*0.8;
       for(const w of wallRects(c)){
         if(b.y + r <= w.y || b.y - r >= w.y + w.h) continue;
@@ -2225,14 +2226,16 @@ function drawRollFloor(){
     // 壁（ロールの端から端まで／ジャンプで越える）
     for(const w of wallRects(c)){
       if(w.y > roll.y+roll.h+30 || w.y+w.h < roll.y-30) continue;
-      ctx.fillStyle = 'rgba(20,8,44,.30)';
-      roundRect(w.x+3, w.y+7, w.w-6, w.h, 9); ctx.fill();
-      ctx.fillStyle = '#b13c86';
-      roundRect(w.x+3, w.y-5, w.w-6, w.h+9, 9); ctx.fill();
-      ctx.fillStyle = '#ff5fa2';
-      roundRect(w.x+3, w.y-10, w.w-6, w.h, 9); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,.4)';
-      ctx.fillRect(w.x+14, w.y-6, w.w-28, 4);
+      ctx.fillStyle = 'rgba(20,8,44,.32)';
+      roundRect(w.x+3, w.y+8, w.w-6, w.h, 9); ctx.fill();
+      ctx.fillStyle = '#8e2c6b';                                   // 壁の側面（高さを表現）
+      roundRect(w.x+3, w.y-26, w.w-6, w.h+30, 9); ctx.fill();
+      ctx.fillStyle = '#ff5fa2';                                   // 天面
+      roundRect(w.x+3, w.y-34, w.w-6, w.h, 9); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.42)';
+      ctx.fillRect(w.x+14, w.y-30, w.w-28, 5);
+      ctx.strokeStyle = 'rgba(255,255,255,.30)'; ctx.lineWidth = 3;
+      for(let k=1;k<4;k++){ const bx = w.x + w.w*k/4; ctx.beginPath(); ctx.moveTo(bx, w.y-24); ctx.lineTo(bx, w.y+w.h); ctx.stroke(); }
     }
     ctx.restore();
     // リングの継ぎ目
@@ -2498,7 +2501,7 @@ function respawnRace(b){
 // ---------------------------------------------------------------- 進行管理
 function eliminate(b){
   if(b.out) return;
-  b.out = true; b.alive = false; b.state = 'fall';
+  b.out = true; b.alive = false; b.state = 'fall'; b.cheer = 0;
   const remain = G.beans.filter(x=>!x.out && !x.done).length + 1;
   b.finalRank = remain;
   G.outOrder.push(b);
@@ -2509,6 +2512,11 @@ function finish(b){
   b.done = true; b.place = G.finishOrder.length + 1;
   b.finalRank = b.place;
   G.finishOrder.push(b);
+  const q = (G.round && G.round.qualify) || 0;
+  if(q > 0 && b.place > q){                       // 通過ラインの外＝敗退なので喜ばない
+    if(b.isPlayer && !G.spectate){ sfx.out(); showBanner('ELIMINATED', '#ff5f6d'); }
+    return;
+  }
   b.cheer = 1;
   confetti(b.x, b.y, 34); ring(b.x, b.y, '#ffd23f');
   if(b.isPlayer) qualifyFX('QUALIFIED!', b);
@@ -2522,10 +2530,18 @@ function qualifyFX(text, b){
   if(b){ ring(b.x, b.y, '#fff'); ring(b.x, b.y, '#ffd23f'); confetti(b.x, b.y, 70); }
   rainConfetti(70);
 }
-// ラウンド終了時の祝勝演出
+// ラウンド終了時の祝勝演出（喜ぶのは勝ち残った者だけ）
+function roundSurvivors(){
+  if(G.stage.goal === 'crown') return G.winner ? [G.winner] : [];
+  if(G.stage.goal === 'first'){
+    const q = (G.round && G.round.qualify) || 0;
+    return q > 0 ? G.finishOrder.slice(0, q) : G.finishOrder.slice();
+  }
+  return G.beans.filter(b=> !b.out && b.state !== 'fall');
+}
 function celebrateRound(){
   G.cheer = 1; rainConfetti(90); sfx.fanfare();
-  for(const b of G.beans) if(!b.out){ b.cheer = 1; ring(b.x, b.y, '#ffd23f'); }
+  for(const b of roundSurvivors()){ b.cheer = 1; ring(b.x, b.y, '#ffd23f'); }
 }
 
 // ---- 敗退パネル（ゲームは止めない）
@@ -3473,7 +3489,7 @@ function showTitle(){
 // 好きなステージを単体で遊ぶ
 const SELECT_LIST = [
   { k:'race', v:'gatecrash' }, { k:'slime', v:'slimeclimb' }, { k:'jump', v:'jumpclub' }, { k:'bounce', v:'bounceparty' }, { k:'hex', v:'hexagone' }, { k:'floor', v:'floorout' }, { k:'gimmick' },
-  { k:'roll', v:'sprint' }, { k:'roll', v:'attrition' }, { k:'final' }
+  { k:'roll', v:'attrition' }, { k:'final' }
 ];
 function showStageSelect(){
   G.phase = 'title';
@@ -3604,8 +3620,7 @@ function showResult(qualified, eliminated){
   let btns = '';
   if(last) btns = '<button class="btn" id="bAgain">もう一度あそぶ</button>';
   else if(pQual) btns = '<button class="btn" id="bNext">次のラウンドへ</button>';
-  else btns = '<button class="btn" id="bNext">観戦を続ける</button>'+
-              '<button class="btn sub" id="bAgain">もう一度あそぶ</button>';
+  else btns = '<button class="btn" id="bAgain">もう一度あそぶ</button>';
   openOv(head + body + btns);
   const bn = document.getElementById('bNext'), ba = document.getElementById('bAgain');
   const go = ()=>{
