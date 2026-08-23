@@ -92,6 +92,12 @@
   #liteBtn.on{background:linear-gradient(180deg,#8ceaf8,#2ba3c7);color:#04303f;border-color:#c4f4ff}
   #liteBtn.on b{filter:none}
   #fps{opacity:.5;font-size:9px;letter-spacing:0;margin-left:8px}
+  #lvTag{
+    display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;
+    font-size:9.5px;font-weight:900;letter-spacing:.04em;color:#3a1c00;
+    background:linear-gradient(180deg,#ffd98a,#ff9d2e);
+  }
+  #lvTag.hide{display:none}
   /* 軽量モードでは重い合成処理を止める */
   body.lite .ov{backdrop-filter:none}
   body.lite #feverFlash.on{animation:none}
@@ -254,7 +260,7 @@
 
   <div id="hud">
     <div class="panel" id="scoreP">
-      <div class="lbl">SCORE</div>
+      <div class="lbl">SCORE <span id="lvTag" class="hide">Lv.1</span></div>
       <div id="score">0</div>
     </div>
     <div class="panel" id="timeP">
@@ -308,7 +314,7 @@
         </div>
         <div class="hrow">
           <div class="hicon">⏰</div>
-          <div><b>タイムアタック</b>45秒から開始。<b>5つ以上つなげるたびに時間が増えます</b>（5個で+1秒／7個で+2秒／10個で+3秒／15個以上で+5秒）。上限は99秒。消し続けるほど長く遊べます。</div>
+          <div><b>タイムアタック</b>45秒から開始。<b>5つ以上つなげるたびに時間が増えます</b>（5個で+1秒／7個で+2秒／10個で+3秒／15個以上で+5秒）。上限は99秒。ただし<b>スコアが伸びるほど難易度が上がり</b>、Lv.3でツムの色が<b>6色</b>に増え、同じ色もそろいにくく、落下も速くなります。Lv.4からは増える時間も1秒減ります。</div>
         </div>
         <div class="hrow">
           <div class="hicon">🔋</div>
@@ -372,11 +378,23 @@ const MODES = {
 const TIME_BONUS = [
   {n:15, sec:5}, {n:10, sec:3}, {n:7, sec:2}, {n:5, sec:1},
 ];
+// タイムアタックの難易度：スコアが伸びるほど色が増え、そろいにくくなる
+const EXT_LEVELS = [
+  {min:520000, lv:5, types:6, cluster:0.10, bonusAdj:-1, grav:1.22},
+  {min:300000, lv:4, types:6, cluster:0.18, bonusAdj:-1, grav:1.15},
+  {min:150000, lv:3, types:6, cluster:0.26, bonusAdj: 0, grav:1.10},
+  {min: 60000, lv:2, types:5, cluster:0.32, bonusAdj: 0, grav:1.05},
+  {min:     0, lv:1, types:5, cluster:0.45, bonusAdj: 0, grav:1.00},
+];
 let mode = MODES.m120;
 let gameTime = mode.time;           // 現在のモードの制限時間
+let level = EXT_LEVELS[EXT_LEVELS.length-1];
 const LINK_DIST = R*2 + 24;         // つなげられる距離（広め）
 const HIT_SCALE = 1.28;             // 指の当たり判定（広め）
 const CLUSTER_RATE = 0.45;          // 補充時に多い色を出す確率＝そろいやすさ
+let activeTypes = 5;                // 実際に出すツムの種類数
+let clusterRate = CLUSTER_RATE;
+let gravMul = 1;                    // 落下の速さ（難易度で上がる）
 
 const cv = document.getElementById('cv');
 const ctx = cv.getContext('2d');
@@ -408,6 +426,8 @@ const TYPES = [
   {name:'アカ',  body:'#f2635c', dark:'#c93f3c', muzzle:'#ffe2dc', ear:'top',   eye:'oval'},
   {name:'ミズ',  body:'#59c2ef', dark:'#2f96c9', muzzle:'#e2f6ff', ear:'side',  eye:'round'},
   {name:'ミドリ',body:'#78cf72', dark:'#4aa348', muzzle:'#e8ffe3', ear:'top',   eye:'sleepy'},
+  // 6色目。タイムアタックのレベル3以降だけ登場する
+  {name:'モモ',  body:'#f79bc4', dark:'#d16b9c', muzzle:'#ffe8f3', ear:'side',  eye:'oval'},
 ];
 // 掛け声（消した数に応じて）
 const PRAISE = [
@@ -516,19 +536,19 @@ function boomSound(){
 function pickType(){
   let n = 0;
   for(const p of tsums) if(p.state === 'live') n++;
-  if(n > 6 && Math.random() < CLUSTER_RATE){
+  if(n > 6 && Math.random() < clusterRate){
     let k = (Math.random()*n)|0, pick = -1;
     for(const p of tsums){
       if(p.state !== 'live') continue;
       if(k-- === 0){ pick = p.t; break; }
     }
-    if(pick >= 0){
+    if(pick >= 0 && pick < activeTypes){
       let c = 0;
       for(const p of tsums) if(p.state === 'live' && p.t === pick) c++;
       if(c / n < 0.3) return pick;
     }
   }
-  return Math.floor(Math.random()*TYPES.length);
+  return Math.floor(Math.random()*activeTypes);
 }
 function makeTsum(highY){
   return {
@@ -561,7 +581,7 @@ function physics(){
   liveArr.length = 0;
   for(const p of tsums){
     if(p.state !== 'live'){ continue; }
-    p.vy += GRAV; p.vx *= 0.985; p.vy *= 0.995;
+    p.vy += GRAV * gravMul; p.vx *= 0.985; p.vy *= 0.995;
     p.vx = Math.max(-22, Math.min(22, p.vx));
     p.vy = Math.max(-24, Math.min(24, p.vy));
     p.px = p.x; p.py = p.y;
@@ -896,10 +916,11 @@ function releaseChain(){
   const pr = PRAISE.find(v => total >= v.n);
   if(pr) showBanner(pr.txt, pr.color);
 
-  // タイムアタック：たくさん消すと時間が増える
+  // タイムアタック：たくさん消すと時間が増える（レベルが上がると増え幅は減る）
   if(mode.extend){
     const tb = TIME_BONUS.find(v => total >= v.n);
-    if(tb) addTime(tb.sec);
+    if(tb) addTime(Math.max(1, tb.sec + level.bonusAdj));
+    checkLevel();
   }
 
   noise(0.16, 0.2);
@@ -932,6 +953,33 @@ function releaseChain(){
 }
 
 /* =========================================================
+   タイムアタックの難易度（スコアで段階的に上がる）
+   ========================================================= */
+function applyLevel(lv, announce){
+  level = lv;
+  activeTypes = Math.min(TYPES.length, lv.types);
+  clusterRate = lv.cluster;
+  gravMul = lv.grav;
+  const tag = document.getElementById('lvTag');
+  tag.textContent = 'Lv.' + lv.lv;
+  tag.classList.toggle('hide', !mode.extend);
+  if(announce){
+    showBanner('LEVEL ' + lv.lv, '#ff9d2e');
+    popText(W/2, H*0.52, lv.types > 5 ? 'ツムの色が増えた！' : 'そろいにくくなった！', '#ffd24a', 20);
+    flash = Math.max(flash, 0.5); shake = Math.max(shake, 12);
+    ring(W/2, H*0.42, W*1.3, '#ff9d2e', 14);
+    beep(523,.12,'square',.15);
+    setTimeout(()=>beep(659,.12,'square',.15),110);
+    setTimeout(()=>beep(880,.26,'square',.15),220);
+  }
+}
+function checkLevel(){
+  if(!mode.extend) return;
+  const lv = EXT_LEVELS.find(l => score >= l.min);
+  if(lv && lv.lv !== level.lv) applyLevel(lv, true);
+}
+
+/* =========================================================
    残り時間わずかの警告演出
    ========================================================= */
 const DANGER_AT = 10;               // 残りこの秒数から警告
@@ -950,16 +998,11 @@ function updateDanger(dt){
   const t = timeLeft;
   setDanger(t <= DANGER_AT, t <= 5);
   if(!danger){ lastTick = -1; return; }
-  // 1秒ごとに秒読み。最後の3秒は音を高くして数字も出す
+  // 最後の3秒は数字を表示（音は鳴らさない）
   const sec = Math.ceil(t);
   if(sec !== lastTick && sec > 0){
     lastTick = sec;
-    if(sec <= 3){
-      beep(1046, .18, 'square', .17);
-      popText(W/2, H*0.34, String(sec), '#ff5a6e', 64);
-    }else{
-      beep(740, .09, 'square', .12);
-    }
+    if(sec <= 3) popText(W/2, H*0.34, String(sec), '#ff5a6e', 64);
   }
 }
 function endDanger(){
@@ -1138,9 +1181,27 @@ function firework(x, y, color){
   beep(180 + Math.random()*120, .18, 'sine', .1);
   noise(0.2, 0.12);
 }
+// 鐘のような柔らかい音。倍音を重ねてゆっくり減衰させる
+function chime(freq, dur, vol, delay){
+  const a = ac(); if(!a) return;
+  const t = a.currentTime + (delay || 0);
+  [[1,1],[2,0.4],[3,0.16],[4.2,0.08]].forEach(([mul, amp]) => {
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = 'sine'; o.frequency.value = freq*mul;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol*amp, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(a.destination);
+    o.start(t); o.stop(t + dur + 0.05);
+  });
+}
+// 終了時のジングル：きらめく上昇 → 温かい和音で締める
 function fanfare(){
-  [523,659,784,1046].forEach((f,i) => setTimeout(()=>beep(f,.26,'triangle',.15), i*115));
-  setTimeout(()=>{ beep(1318,.5,'triangle',.15); beep(1046,.5,'sine',.1); }, 480);
+  const up = [784, 1046, 1318, 1568];            // G5 C6 E6 G6
+  up.forEach((f, i) => chime(f, 0.5, 0.10, i*0.075));
+  // 締めの和音（Cメジャー6th）
+  [523, 659, 784, 880].forEach((f, i) => chime(f, 2.4, 0.11, 0.34 + i*0.02));
+  chime(261.6, 2.8, 0.09, 0.34);                 // 低音の余韻
 }
 function startCelebration(power){      // power: 1(D)〜5(S)
   sizeFx();
@@ -1250,11 +1311,37 @@ function startGame(){
   gameTime = mode.time;
   timeLeft = gameTime; feverGauge = 0; feverTime = 0;
   endFever(); endDanger(); skillGauge = 0; shake = 0;
+  // 難易度はモードごとに初期化（タイムアタック以外は常にレベル1相当）
+  applyLevel(EXT_LEVELS[EXT_LEVELS.length-1], false);
   for(let i=0;i<TARGET;i++) tsums.push(makeTsum(-R - i*13 - Math.random()*50));
-  playing = true;
+  playing = false;                 // カウントダウン中は操作できない
+  countdown = COUNTDOWN_FROM;
+  countTick = -1;
   document.getElementById('titleOv').classList.add('hide');
   document.getElementById('resultOv').classList.add('hide');
   updateHUD();
+}
+/* ---------- 開始前のカウントダウン ---------- */
+const COUNTDOWN_FROM = 3;
+let countdown = 0, countTick = -1;
+function stepCountdown(dt){
+  if(countdown <= 0) return;
+  countdown -= dt;
+  const n = Math.ceil(countdown);
+  if(n !== countTick){
+    countTick = n;
+    if(n > 0){
+      showBanner(String(n), '#7ee8fa');
+      beep(660, .09, 'triangle', .12);
+    }
+  }
+  if(countdown <= 0){
+    countdown = 0;
+    playing = true;
+    showBanner('START!', '#9dff8a');
+    beep(1046, .22, 'triangle', .15);
+    ring(W/2, H*0.42, W*1.2, '#9dff8a', 12);
+  }
 }
 // 120秒プレイを基準にした必要スコア。実際に遊んだ時間で割り増し/割り引きするので、
 // どのモードでも同じ感覚でランクが付く
@@ -1270,7 +1357,7 @@ function rankOf(score, seconds){
   return RANKS.find(r => score >= r.min * scale);
 }
 function endGame(){
-  playing = false; dragging = false; clearChain(); endFever(); endDanger();
+  playing = false; countdown = 0; dragging = false; clearChain(); endFever(); endDanger();
   scoreDisp = score; banner = null; updateHUD();
   const isNew = score > best.get(mode.key) && score > 0;
   if(isNew) best.set(mode.key, score);
@@ -1279,8 +1366,8 @@ function endGame(){
   document.getElementById('rankLetter').textContent = rk.letter;
   document.getElementById('medal').classList.toggle('r-d', rk.letter === 'D');
   document.getElementById('rankTxt').textContent = rk.letter + ' ランク　' + rk.txt;
-  document.getElementById('resMode').textContent =
-    mode.label + (mode.extend ? '　' + Math.round(elapsed) + '秒つづいた' : '');
+  document.getElementById('resMode').textContent = mode.label +
+    (mode.extend ? '　' + Math.round(elapsed) + '秒つづいた　Lv.' + level.lv + '到達' : '');
   document.getElementById('stPop').textContent = popped;
   document.getElementById('stCombo').textContent = maxCombo;
   document.getElementById('stBest').textContent = best.get(mode.key).toLocaleString();
@@ -1297,6 +1384,7 @@ function endGame(){
 document.getElementById('startBtn').addEventListener('click', startGame);
 document.getElementById('retryBtn').addEventListener('click', () => {
   // リトライはタイトルに戻して、モードを選び直せるようにする
+  playing = false; countdown = 0; banner = null;
   document.getElementById('resultOv').classList.add('hide');
   document.getElementById('titleOv').classList.remove('hide');
   fxActive = false; fcv.classList.remove('on');
@@ -1353,6 +1441,8 @@ function loop(now){
   }
 
   if(hitstop > 0){ hitstop -= dt; dt *= 0.22; }   // 大量消しの瞬間だけスロー
+
+  stepCountdown(dt);
 
   if(playing){
     timeLeft -= dt;
