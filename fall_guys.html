@@ -189,7 +189,6 @@
       <div class="ltitle">ELIMINATED</div>
       <div class="lsub" id="lrank"></div>
       <div class="lbtns">
-        <button class="btn sub sm" id="lWatch">観戦する</button>
         <button class="btn sm" id="lAgain">もう一度あそぶ</button>
       </div>
     </div>
@@ -2170,6 +2169,34 @@ function updateRoll(){
   else if(R.qualify > 0 && alive <= R.qualify) clear();   // 規定数まで減ったら終了
   else if(G.timeLeft <= 0) clear();                       // 時間切れ：残っている人は全員クリア
 }
+// ロールの壁（端から端まで届く、越えられない壁）
+function drawRollWall(w, c){
+  if(w.y > roll.y+roll.h+40 || w.y+w.h < roll.y-40) return;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(c.x, roll.y, c.w, roll.h); ctx.clip();
+  const top = w.y - 18, bot = w.y + w.h + 6;
+  ctx.fillStyle = 'rgba(20,8,44,.32)';                       // 床に落ちる影
+  ctx.fillRect(w.x, bot, w.w, 9);
+  const g = ctx.createLinearGradient(0, top, 0, bot);        // 壁面
+  g.addColorStop(0, '#ff7ab8'); g.addColorStop(0.45, '#e04a95'); g.addColorStop(1, '#7e2560');
+  ctx.fillStyle = g; ctx.fillRect(w.x, top, w.w, bot-top);
+  ctx.fillStyle = '#ffa8d4';                                 // 天面
+  ctx.fillRect(w.x, top, w.w, w.h*0.62);
+  ctx.fillStyle = 'rgba(255,255,255,.5)';
+  ctx.fillRect(w.x, top, w.w, 4);
+  ctx.strokeStyle = 'rgba(40,10,40,.28)'; ctx.lineWidth = 2; // ブロックの目地
+  const seam = top + w.h*0.62;
+  ctx.beginPath(); ctx.moveTo(w.x, seam); ctx.lineTo(w.x+w.w, seam); ctx.stroke();
+  for(let k=1;k<6;k++){
+    const bx = w.x + w.w*k/6;
+    ctx.beginPath(); ctx.moveTo(bx, seam); ctx.lineTo(bx, bot); ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(255,255,255,.16)';                   // 端の柱
+  ctx.fillRect(w.x, top, 5, bot-top); ctx.fillRect(w.x+w.w-5, top, 5, bot-top);
+  ctx.fillStyle = 'rgba(20,8,44,.22)';
+  ctx.fillRect(w.x, bot-4, w.w, 4);
+  ctx.restore();
+}
 function drawRollFloor(){
   fillView('#241246');
   // 落下ゾーンのハザード帯（ロールの外側は四方すべて奈落）
@@ -2222,20 +2249,6 @@ function drawRollFloor(){
       ctx.fillStyle = hg; ctx.fillRect(h.x, h.y, h.w, h.h);
       ctx.fillStyle = 'rgba(255,255,255,.16)';
       ctx.fillRect(h.x, h.y, h.w, 4); ctx.fillRect(h.x, h.y+h.h-4, h.w, 4);
-    }
-    // 壁（ロールの端から端まで／ジャンプで越える）
-    for(const w of wallRects(c)){
-      if(w.y > roll.y+roll.h+30 || w.y+w.h < roll.y-30) continue;
-      ctx.fillStyle = 'rgba(20,8,44,.32)';
-      roundRect(w.x+3, w.y+8, w.w-6, w.h, 9); ctx.fill();
-      ctx.fillStyle = '#8e2c6b';                                   // 壁の側面（高さを表現）
-      roundRect(w.x+3, w.y-26, w.w-6, w.h+30, 9); ctx.fill();
-      ctx.fillStyle = '#ff5fa2';                                   // 天面
-      roundRect(w.x+3, w.y-34, w.w-6, w.h, 9); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,.42)';
-      ctx.fillRect(w.x+14, w.y-30, w.w-28, 5);
-      ctx.strokeStyle = 'rgba(255,255,255,.30)'; ctx.lineWidth = 3;
-      for(let k=1;k<4;k++){ const bx = w.x + w.w*k/4; ctx.beginPath(); ctx.moveTo(bx, w.y-24); ctx.lineTo(bx, w.y+w.h); ctx.stroke(); }
     }
     ctx.restore();
     // リングの継ぎ目
@@ -2555,7 +2568,6 @@ function showLosePanel(){
   G.spectate = true;                       // カメラはトップ争いを追いかける
 }
 function hideLosePanel(){ document.getElementById('lose').classList.add('hide'); }
-document.getElementById('lWatch').onclick = ()=>{ hideLosePanel(); };
 document.getElementById('lAgain').onclick = ()=>{
   hideLosePanel(); closeOv();
   if(G.practice && G.stage) startStage(G.stage.key, G.round && G.round.key); else startGame();
@@ -3427,7 +3439,15 @@ function draw(){
 
   drawRings();
   const sorted = G.beans.slice().sort((a,b)=> a.y - b.y);
-  for(const b of sorted) drawBean(b);
+  if(G.stage.kind === 'roll'){
+    // 壁とビーンを奥から手前へ。壁の向こう側にいるビーンは壁に隠れる
+    const items = sorted.map(b=> ({ y:b.y, bean:b }));
+    for(const c of roll.cols) for(const w of wallRects(c)) items.push({ y:w.y + w.h, wall:w, col:c });
+    items.sort((a,b)=> a.y - b.y);
+    for(const it of items){ if(it.bean) drawBean(it.bean); else drawRollWall(it.wall, it.col); }
+  } else {
+    for(const b of sorted) drawBean(b);
+  }
 
   for(const o of high) o.draw();
   if(G.stage.goal === 'crown' && !G.winner) drawCrown();
