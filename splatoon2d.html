@@ -271,6 +271,19 @@ canvas#cv{position:absolute;inset:0;display:block;touch-action:none;cursor:cross
 /* =======================================================================
    スプラバトル2D  ―  2Dトップビューの陣取りインクシューター
    ======================================================================= */
+// 何かエラーが起きたら黙って止まらず、画面に出す（原因を報告できるように）
+addEventListener('error',ev=>{
+  try{
+    let bar=document.getElementById('errbar');
+    if(!bar){
+      bar=document.createElement('div');bar.id='errbar';
+      bar.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:99;background:#c0142c;color:#fff;'+
+        'font:700 12px/1.5 monospace;padding:8px 10px;white-space:pre-wrap;max-height:40%;overflow:auto';
+      document.body.appendChild(bar);
+    }
+    bar.textContent+='ERROR: '+(ev.message||ev.error||'?')+'  ('+((ev.filename||'').split('/').pop())+':'+ev.lineno+')\n';
+  }catch(e){}
+});
 const $=id=>document.getElementById(id);
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 const rnd=(a,b)=>a+Math.random()*(b-a);
@@ -1715,8 +1728,9 @@ function updateSJPanel(){
     const mk=(label,target)=>{
       const b=document.createElement('button');
       b.className='sjc';b.textContent=label;b._t=target;
-      b.addEventListener('click',e=>{
-        e.stopPropagation();audioUnlock();p.sj=target;markSJ();sfx('count');
+      onTap(b,e=>{
+        if(e&&e.stopPropagation)e.stopPropagation();
+        audioUnlock();p.sj=target;markSJ();sfx('count');
       });
       box.appendChild(b);
     };
@@ -1860,6 +1874,25 @@ function frame(ts){
 requestAnimationFrame(frame);
 
 /* ---------------- タイトル／UI ---------------- */
+// click が届かない環境（タッチ／一部の埋め込みブラウザ）でも反応するよう二重化
+function onTap(el,fn){
+  if(!el)return;
+  let last=0,armed=false;
+  const down=()=>{armed=true;};
+  const run=e=>{
+    if(e.type!=='click'&&!armed)return;   // その要素で押していないときは無視（スクロール解除など）
+    armed=false;
+    const t=Date.now();
+    if(t-last<400)return;                 // click と pointerup の二重発火よけ
+    last=t;
+    fn(e);
+  };
+  el.addEventListener('pointerdown',down);
+  el.addEventListener('touchstart',down,{passive:true});
+  el.addEventListener('click',run);
+  el.addEventListener('pointerup',run);
+  el.addEventListener('touchend',run);
+}
 function buildWsel(){
   const el=$('wsel');el.innerHTML='';
   for(const k in WPN){
@@ -1868,14 +1901,15 @@ function buildWsel(){
     d.className='wc'+(k===G.wpn?' on':'');
     d.innerHTML='<div class="ic">'+w.ico+'</div><div class="nm">'+w.name+'</div>'+
       '<div class="tp">'+w.tip+'</div><div class="sp">SP '+SPI[w.sp].i+' '+SPI[w.sp].n+'</div>';
-    d.addEventListener('click',()=>{G.wpn=k;audioUnlock();sfx('count');buildWsel();});
+    onTap(d,()=>{G.wpn=k;audioUnlock();sfx('count');buildWsel();});
     el.appendChild(d);
   }
 }
-buildWsel();
+try{buildWsel();}catch(e){}   // 万一失敗しても下のボタン登録は必ず走らせる
 function segBind(id,fn){
-  $(id).addEventListener('click',e=>{
-    const b=e.target.closest('button');if(!b)return;
+  onTap($(id),e=>{
+    const b=e.target&&e.target.closest?e.target.closest('button'):null;
+    if(!b||!$(id).contains(b))return;
     fn(b);
     for(const x of $(id).querySelectorAll('button'))x.classList.toggle('on',x===b);
     audioUnlock();sfx('count');
@@ -1884,22 +1918,22 @@ function segBind(id,fn){
 segBind('tsel',b=>{G.dur=parseInt(b.dataset.t,10);});
 segBind('rsel',b=>{G.rule=b.dataset.r;});
 segBind('dsel',b=>{G.diff=b.dataset.d;});
-$('start').addEventListener('click',()=>{
+onTap($('start'),()=>{
   audioUnlock();$('title').classList.remove('on');$('res').classList.remove('on');startMatch();
 });
-$('again').addEventListener('click',()=>{
+onTap($('again'),()=>{
   audioUnlock();$('res').classList.remove('on');startMatch();
 });
-$('toTitle').addEventListener('click',()=>{
+onTap($('toTitle'),()=>{
   $('res').classList.remove('on');$('title').classList.add('on');
   G.state='title';$('hud').classList.remove('on');stopBGM();
 });
-$('hbtn').addEventListener('click',()=>{
+onTap($('hbtn'),()=>{
   const h=$('help');h.classList.toggle('on');
   $('hbtn').textContent=h.classList.contains('on')?'あそびかた ▲':'あそびかた ▼';
 });
-$('bMute').addEventListener('click',e=>{
-  e.stopPropagation();
+onTap($('bMute'),e=>{
+  if(e&&e.stopPropagation)e.stopPropagation();
   muted=!muted;
   try{localStorage.setItem('spl2d_mute',muted?'1':'0');}catch(err){}
   $('bMute').textContent=muted?'🔇':'🔊';
