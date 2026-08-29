@@ -1,7 +1,6 @@
 # html-games
 
 htmlで作ったゲームとかツール置き場です。  
-o3-mini,claudeを使用しています。  
 
 【ゲーム】  
 - GitHub Pages: [**index.html**](https://hhungry2.github.io/html-games/index.html)  
