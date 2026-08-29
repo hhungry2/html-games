@@ -1,655 +1,1358 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=0.7, user-scalable=no">
-  <title>ミスタードリラー風ゲーム</title>
-  <style>
-    * {
-      user-select: none;
-      -webkit-user-select: none;
-      -webkit-touch-callout: none;
-      -webkit-tap-highlight-color: rgba(0,0,0,0);
-    }
-    body {
-      margin: 0;
-      padding: 0;
-      background: #eee;
-      font-family: sans-serif;
-    }
-    canvas {
-      display: block;
-      background-color: #87CEEB;
-    }
-    #controls {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      width: 100%;
-      height: 120px;
-    }
-    #controls button {
-      width: 100%;
-      height: 100%;
-      font-size: 36px;
-      border: none;
-      background-color: #fff;
-    }
-    #startBtn {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      font-size: 40px;
-      padding: 15px 30px;
-      border: none;
-      border-radius: 10px;
-      background-color: #fff;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.5);
-      z-index: 200;
-      display: none;
-    }
-    #repoLink {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      font-size: 16px;
-      color: white;
-      background: rgba(0,0,0,0.5);
-      padding: 5px 10px;
-      border-radius: 5px;
-      text-decoration: none;
-      z-index: 300;
-      display: none;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>MR. DIGGER - HTML5 掘削アクション</title>
+<meta name="description" content="HTML5 Canvasで作ったミスタードリラー風の落ち物掘削アクションゲーム。掘ると隣接同色が連鎖消滅・エアゲージ・X ブロック搭載。">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #0b0d16;
+  background-image:
+    radial-gradient(circle at 20% 0%, #1d2340 0%, transparent 55%),
+    radial-gradient(circle at 85% 100%, #2a1633 0%, transparent 50%);
+  color: #e8ecf5;
+  font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 10px;
+  overflow: hidden;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.game-wrapper {
+  width: 336px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ---------- HUD ---------- */
+.hud-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 10px;
+  font-family: "Consolas", monospace;
+}
+.hud-item { display: flex; flex-direction: column; gap: 2px; }
+.hud-item.air { flex: 1; }
+.hud-label { font-size: 9px; letter-spacing: .12em; color: #7f8bab; }
+.hud-value { font-size: 14px; font-weight: 700; }
+.hud-value.gold { color: #ffd24d; }
+.hud-value.small { font-size: 10px; color: #9aa6c4; }
+
+.air-bar {
+  width: 100%;
+  height: 8px;
+  background: #1b2036;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.air-fill {
+  height: 100%;
+  width: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #3ee0c8, #46a8ff);
+  transition: width .1s linear, background .3s;
+}
+.air-fill.low { background: linear-gradient(90deg, #ffb648, #ff5a5a); }
+
+/* ---------- Canvas ---------- */
+.canvas-container {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0,0,0,.6);
+  line-height: 0;
+}
+canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+  background: #10131f;
+}
+
+/* ---------- Overlays ---------- */
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(8,10,18,.88);
+  backdrop-filter: blur(3px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px;
+  text-align: center;
+  line-height: 1.5;
+}
+.overlay.hidden { display: none; }
+
+.logo {
+  font-size: 30px;
+  letter-spacing: .06em;
+  background: linear-gradient(180deg, #ffe27a, #ff8a3d);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 4px 12px rgba(255,140,60,.25);
+}
+.sub { font-size: 11px; color: #9aa6c4; letter-spacing: .1em; }
+
+.rules {
+  list-style: none;
+  font-size: 11px;
+  color: #c3cbe0;
+  text-align: left;
+  margin: 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.rules li::before { content: "◆ "; color: #46a8ff; }
+.rules b { color: #ffd24d; }
+
+.btn {
+  margin-top: 6px;
+  padding: 10px 34px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  color: #0b0d16;
+  background: linear-gradient(180deg, #ffe27a, #ffb03a);
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 4px 0 #b9762a;
+  transition: transform .06s, box-shadow .06s;
+}
+.btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #b9762a; }
+
+.keys { font-size: 10px; color: #6f7b99; margin-top: 4px; }
+
+.result-title { font-size: 26px; color: #ff6a6a; letter-spacing: .08em; }
+.result-title.clear { color: #52e6a5; }
+.result-line { font-size: 13px; color: #c3cbe0; }
+.result-line b { color: #ffd24d; font-family: "Consolas", monospace; }
+.result-line.small { font-size: 11px; color: #8d97b5; }
+
+/* ---------- Touch ---------- */
+.touch-pad {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.tbtn {
+  padding: 14px 0;
+  font-size: 16px;
+  color: #cdd6ea;
+  background: rgba(255,255,255,.07);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.tbtn:active { background: rgba(255,255,255,.2); }
+
+@media (hover: hover) and (pointer: fine) {
+  .touch-pad { display: none; }
+}
+</style>
 </head>
 <body>
-  <a id="repoLink" href="https://github.com/hhungry2/html-games" target="_blank">GitHub Repository</a>
-  <canvas id="gameCanvas"></canvas>
-  <div id="controls">
-    <button id="jumpBtn">ジャンプ</button>
+
+<div class="game-wrapper">
+
+  <header class="hud-bar">
+    <div class="hud-item">
+      <span class="hud-label">DEPTH</span>
+      <span class="hud-value" id="depthVal">0 m</span>
+    </div>
+    <div class="hud-item">
+      <span class="hud-label">SCORE</span>
+      <span class="hud-value gold" id="scoreVal">000000</span>
+    </div>
+    <div class="hud-item air">
+      <span class="hud-label">AIR</span>
+      <div class="air-bar"><div class="air-fill" id="airFill"></div></div>
+      <span class="hud-value small" id="airVal">100%</span>
+    </div>
+  </header>
+
+  <div class="canvas-container">
+    <canvas id="gameCanvas" width="336" height="576"></canvas>
+
+    <div class="overlay" id="titleScreen">
+      <h1 class="logo">MR. DIGGER</h1>
+      <p class="sub">- 地下 300m を掘り抜け -</p>
+      <ul class="rules">
+        <li>掘ったブロックと <b>つながった同色</b> はまとめて消滅</li>
+        <li>同じ色が <b>4つ以上</b> つながっても自然消滅</li>
+        <li>茶色の <b>X ブロック</b> は硬く、掘ると <b>AIR -20%</b></li>
+        <li>白い <b>エアカプセル</b> で AIR 回復</li>
+        <li>落下ブロックに潰されると即死</li>
+      </ul>
+      <button class="btn" id="startBtn">START</button>
+      <p class="keys">← → 移動 / ↓ 掘る / ↑ 上を掘る / M 音楽</p>
+    </div>
+
+    <div class="overlay hidden" id="resultScreen">
+      <h2 class="result-title" id="resultTitle">GAME OVER</h2>
+      <p class="result-line">DEPTH <b id="resultDepth">0 m</b></p>
+      <p class="result-line">SCORE <b id="resultScore">0</b></p>
+      <p class="result-line small" id="resultBest">BEST 0 m</p>
+      <button class="btn" id="retryBtn">RETRY</button>
+    </div>
   </div>
-  <button id="startBtn">スタート</button>
 
-  <script>
-    (function(){
-      "use strict";
+  <div class="touch-pad">
+    <button class="tbtn" data-dir="left">◀</button>
+    <button class="tbtn" data-dir="up">▲</button>
+    <button class="tbtn" data-dir="down">▼</button>
+    <button class="tbtn" data-dir="right">▶</button>
+  </div>
 
-      // iPhone判定とプレイヤー用絵文字
-      const isIphone = /iPhone/.test(navigator.userAgent);
-      const playerEmoji = isIphone ? "🐥" : "🐧";
+</div>
 
-      // 定数定義
-      const CONTROL_ZONE_HEIGHT = 120;
-      const BLOCK_WIDTH = 80, BLOCK_HEIGHT = 80;
-      // ブロックの種類（茶色も追加）
-      const BLOCK_TYPES = ["red", "green", "brown"];
-      const BLOCK_DESTROY_PUSH_COUNT = 3;
-      const BASE_GRAVITY = 0.3;
-      const ITEM_SIZE = 40;
-      const LIFE_ICON_SIZE = 48, LIFE_SPACING = 60;
+<script>
+/* ============================================================
+   MR. DIGGER - 単一HTML版
+   audio / level / player / render / main を1ファイルに統合
+   ============================================================ */
+(function (global) {
+'use strict';
 
-      // キャンバスとコンテキスト
-      const canvas = document.getElementById("gameCanvas");
-      const ctx = canvas.getContext("2d");
+/* ============================================================
+   Sound - Web Audio API による効果音・BGM合成（音源ファイル不要）
+   ============================================================ */
+var Sound = (function () {
+  var ctx = null, master = null, bgmGain = null, bgmTimer = null, bgmStep = 0, enabled = true;
 
-      // ゲーム状態（"start", "playing", "gameover", "clear"）
-      let gameState = "start",
-          startTime,
-          score = 0,
-          bonusScore = 0,
-          cameraOffset = 0,
-          blockTransparentTimer = 0,
-          blocks = [],
-          items = [],
-          effects = [],
-          highScore = parseInt(localStorage.getItem("highScore")) || 0;
+  function init() {
+    if (ctx) return;
+    var AC = global.AudioContext || global.webkitAudioContext;
+    if (!AC) { enabled = false; return; }
+    ctx = new AC();
+    master = ctx.createGain();
+    master.gain.value = 0.35;
+    master.connect(ctx.destination);
+    bgmGain = ctx.createGain();
+    bgmGain.gain.value = 0.18;
+    bgmGain.connect(master);
+  }
 
-      let comboCount = 0;
-      let lastComboTime = 0;
-      const COMBO_RESET_TIME = 2000;
+  function now() { return ctx.currentTime; }
 
-      // プレイヤーオブジェクト（サイズ80%）
-      const player = {
-         x: 0,
-         y: 100,
-         width: 56,
-         height: 56,
-         vx: 0,
-         vy: 0,
-         speed: 3,
-         jumpStrength: -10,
-         onBlock: false,
-         onBlockTarget: null,
-         lives: 3,
-         invincible: false,
-         invincibleTimer: 0,
-         muscleInvincible: false,
-         muscleInvincibleTimer: 0,
-         pushingDown: false,
-         // 下キー連続押し用のタイマー（下キーを一定間隔で反応させる）
-         downKeyTimer: 0
-      };
+  function tone(opt) {
+    if (!ctx || !enabled) return;
+    var o = ctx.createOscillator();
+    var g = ctx.createGain();
+    o.type = opt.type || 'square';
+    o.frequency.setValueAtTime(opt.freq, now());
+    if (opt.to) o.frequency.exponentialRampToValueAtTime(opt.to, now() + opt.dur);
+    g.gain.setValueAtTime(0.0001, now());
+    g.gain.exponentialRampToValueAtTime(opt.vol || 0.25, now() + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, now() + opt.dur);
+    o.connect(g);
+    g.connect(opt.bus || master);
+    o.start(now());
+    o.stop(now() + opt.dur + 0.02);
+  }
 
-      // キー入力状態管理
-      const keys = {};
+  function noise(dur, vol, freq, q) {
+    if (!ctx || !enabled) return;
+    var len = Math.max(1, Math.floor(ctx.sampleRate * dur));
+    var buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    var d = buf.getChannelData(0);
+    for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    var src = ctx.createBufferSource();
+    src.buffer = buf;
+    var bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = freq || 900;
+    bp.Q.value = q || 1.2;
+    var g = ctx.createGain();
+    g.gain.value = vol;
+    src.connect(bp); bp.connect(g); g.connect(master);
+    src.start();
+  }
 
-      // キャンバスリサイズ処理
-      let gameAreaHeight = 0;
-      const resizeCanvas = () => {
-         const winWidth = window.innerWidth;
-         const winHeight = window.innerHeight;
-         const aspectRatio = winHeight / winWidth;
-         let scale = 1;
-         if(aspectRatio > 1.8) {
-           scale = aspectRatio / 1.8;
-         }
-         canvas.width = winWidth * scale;
-         canvas.height = winHeight * scale;
-         ctx.setTransform(scale, 0, 0, scale, 0, 0);
-         gameAreaHeight = canvas.height / scale - CONTROL_ZONE_HEIGHT;
-      };
-      window.addEventListener("resize", resizeCanvas);
-      resizeCanvas();
-
-      // リポジトリリンク
-      const repoLink = document.getElementById("repoLink");
-
-      // キー操作イベント
-      document.addEventListener("keydown", (e) => {
-         if(["ArrowLeft", "ArrowRight", "Space", "ArrowDown"].includes(e.code)) e.preventDefault();
-         if(e.code === "Space" && (gameState === "start" || gameState === "gameover" || gameState === "clear")){
-             initGame();
-             startBtn.style.display = "none";
-             return;
-         }
-         keys[e.code] = true;
-         if(e.code === "ArrowDown") {
-             player.pushingDown = true;
-         }
+  var SFX = {
+    drill:   function () { noise(0.12, 0.30, 1400, 2.0); },
+    hard:    function () { noise(0.20, 0.35, 500, 3.0); tone({ type: 'square', freq: 90, to: 55, dur: 0.18, vol: 0.2 }); },
+    walk:    function () { noise(0.05, 0.12, 500, 1.0); },
+    land:    function () { tone({ type: 'sine', freq: 160, to: 60, dur: 0.16, vol: 0.3 }); },
+    capsule: function () {
+      tone({ type: 'sine', freq: 660, to: 1320, dur: 0.22, vol: 0.3 });
+      tone({ type: 'triangle', freq: 990, to: 1760, dur: 0.25, vol: 0.15 });
+    },
+    clear: function (chain) {
+      var base = 520 * Math.pow(1.12, Math.min(chain || 0, 8));
+      [0, 4, 7, 12].forEach(function (semi, i) {
+        var f = base * Math.pow(2, semi / 12);
+        setTimeout(function () { tone({ type: 'square', freq: f, dur: 0.16, vol: 0.22 }); }, i * 45);
       });
-      document.addEventListener("keyup", (e) => {
-         keys[e.code] = false;
-         if(e.code === "ArrowDown") {
-             player.pushingDown = false;
-             // キーを離したらタイマーをリセット
-             player.downKeyTimer = 0;
-         }
+    },
+    alarm:   function () { tone({ type: 'square', freq: 880, to: 440, dur: 0.18, vol: 0.18 }); },
+    death:   function () {
+      tone({ type: 'sawtooth', freq: 400, to: 60, dur: 0.9, vol: 0.3 });
+      noise(0.5, 0.3, 300, 0.8);
+    },
+    goal: function () {
+      [523, 659, 784, 1046, 1318].forEach(function (f, i) {
+        setTimeout(function () { tone({ type: 'square', freq: f, dur: 0.3, vol: 0.25 }); }, i * 110);
       });
-      window.addEventListener("blur", () => {
-         keys["ArrowLeft"] = keys["ArrowRight"] = keys["Space"] = keys["ArrowDown"] = false;
-         player.pushingDown = false;
-      });
+    }
+  };
 
-      // タッチ操作の統一処理
-      const handleTouch = (e) => {
-         keys["ArrowLeft"] = keys["ArrowRight"] = keys["ArrowDown"] = false;
-         for(let i = 0; i < e.touches.length; i++){
-             const touchX = e.touches[i].clientX;
-             if(touchX < window.innerWidth / 3){
-               keys["ArrowLeft"] = true;
-             } else if (touchX < window.innerWidth * 2 / 3) {
-               keys["ArrowDown"] = true;
-               player.pushingDown = true;
-             } else {
-               keys["ArrowRight"] = true;
-             }
-         }
-      };
-      const handleTouchEnd = (e) => {
-         if(e.touches.length === 0){
-             keys["ArrowLeft"] = keys["ArrowRight"] = keys["ArrowDown"] = false;
-             player.pushingDown = false;
-         } else {
-             handleTouch(e);
-         }
-      };
-      canvas.addEventListener("touchstart", handleTouch);
-      canvas.addEventListener("touchmove", handleTouch);
-      canvas.addEventListener("touchend", handleTouchEnd);
-      canvas.addEventListener("touchcancel", handleTouchEnd);
+  var BASS = [55, 55, 82.4, 55, 61.7, 61.7, 92.5, 61.7];
+  var ARP  = [440, 523, 659, 523, 494, 587, 740, 587];
 
-      // ジャンプボタンイベント
-      const jumpBtn = document.getElementById("jumpBtn");
-      const jumpAction = (e) => {
-         e.preventDefault();
-         if(gameState === "playing" && player.onBlock){
-             player.vy = player.jumpStrength;
-             player.onBlock = false;
-         }
-      };
-      jumpBtn.addEventListener("touchstart", jumpAction);
-      jumpBtn.addEventListener("mousedown", jumpAction);
+  function bgmTick() {
+    if (!ctx || !enabled) return;
+    var i = bgmStep % 8;
+    tone({ type: 'triangle', freq: BASS[i], dur: 0.22, vol: 0.5, bus: bgmGain });
+    if (bgmStep % 2 === 0) tone({ type: 'square', freq: ARP[i], dur: 0.13, vol: 0.12, bus: bgmGain });
+    if (bgmStep % 4 === 2) noise(0.05, 0.05, 6000, 1.0);
+    bgmStep++;
+  }
 
-      // スタートボタンイベント
-      const startBtn = document.getElementById("startBtn");
-      startBtn.addEventListener("click", (e) => {
-         e.preventDefault();
-         initGame();
-         startBtn.style.display = "none";
-      });
+  return {
+    unlock: function () {
+      init();
+      if (ctx && ctx.state === 'suspended') ctx.resume();
+    },
+    play: function (name, arg) {
+      if (!enabled) return;
+      init();
+      if (SFX[name]) SFX[name](arg);
+    },
+    startBgm: function () {
+      init();
+      if (!ctx || bgmTimer || !enabled) return;
+      bgmStep = 0;
+      bgmTimer = setInterval(bgmTick, 230);
+    },
+    stopBgm: function () {
+      if (bgmTimer) { clearInterval(bgmTimer); bgmTimer = null; }
+    },
+    toggle: function () {
+      enabled = !enabled;
+      if (!enabled) this.stopBgm(); else this.startBgm();
+      return enabled;
+    },
+    isEnabled: function () { return enabled; }
+  };
+})();
 
-      // ヘルパー：乱数生成
-      const random = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
-      // ヘルパー：矩形同士の当たり判定
-      const rectsIntersect = (ax, ay, aw, ah, bx, by, bw, bh) =>
-         ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+/* ============================================================
+   Level - フィールド生成 / 連結判定 / ブロック落下物理
+   ============================================================ */
+var CFG = {
+  COLS: 7,
+  TILE: 48,
+  VIEW_ROWS: 12,
+  SURFACE_ROW: 3,          // これより上は空（スタート地点）
+  BOTTOM_ROW: 300,         // 到達目標（岩盤）
+  COLORS: ['#ff4d5a', '#4ea8ff', '#4ede77', '#ffd24d', '#c07dff'],
+  BLOCK_ACC: 1500,         // ブロック落下加速度 px/s^2
+  BLOCK_MAX: 720,
+  CLEAR_TIME: 0.26,        // 消滅演出時間
+  FALL_DELAY: 0.55         // 支えを失ってから落ち始めるまでの猶予（ゆっくりめ）
+};
 
-      // 連結するブロック群を取得（上下左右に同色のブロックがあればグループ化）
-      function getConnectedGroup(startBlock) {
-         let group = [];
-         let stack = [startBlock];
-         let visited = new Set();
-         while(stack.length > 0) {
-            let b = stack.pop();
-            let key = b.row + "," + b.col;
-            if(visited.has(key)) continue;
-            visited.add(key);
-            group.push(b);
-            for(let other of blocks) {
-               if(other.type === b.type) {
-                  if ((other.row === b.row && Math.abs(other.col - b.col) === 1) ||
-                      (other.col === b.col && Math.abs(other.row - b.row) === 1)) {
-                     let otherKey = other.row + "," + other.col;
-                     if(!visited.has(otherKey)) {
-                        stack.push(other);
-                     }
-                  }
-               }
-            }
-         }
-         return group;
+var T = CFG.TILE;
+
+var Level = {
+  CFG: CFG,
+  cells: null,      // "col,row" -> block
+  items: null,      // "col,row" -> {type:'air'}
+  blocks: null,     // block配列
+  dirty: true,
+  chain: 0,
+  onClear: null,    // function(size, chain, col, row)
+  onCrush: null,    // function(col,row)
+  onLand: null,
+
+  key: function (c, r) { return c + ',' + r; },
+  at: function (c, r) { return this.cells.get(c + ',' + r); },
+  itemAt: function (c, r) { return this.items.get(c + ',' + r); },
+  isSolid: function (c, r) {
+    if (c < 0 || c >= CFG.COLS) return true;
+    if (r >= CFG.BOTTOM_ROW) return true;      // 岩盤
+    return !!this.cells.get(c + ',' + r);
+  },
+
+  /* ---------------- 生成 ---------------- */
+  generate: function () {
+    this.cells = new Map();
+    this.items = new Map();
+    this.blocks = [];
+    this.dirty = true;
+    this.chain = 0;
+    var self = this;
+    var uid = 0;
+
+    function put(c, r, type, color) {
+      var b = { id: uid++, col: c, row: r, type: type, color: color, off: 0, vel: 0, wait: 0,
+                g: -1, hp: type === 'X' ? 2 : 1, state: 'idle', t: 0, drill: 0 };
+      self.cells.set(self.key(c, r), b);
+      self.blocks.push(b);
+      return b;
+    }
+
+    // 同色4連結が最初から出来ないように色を選ぶ
+    function pickColor(c, r, palette) {
+      var order = palette.slice();
+      for (var i = order.length - 1; i > 0; i--) {
+        var j = (Math.random() * (i + 1)) | 0;
+        var tmp = order[i]; order[i] = order[j]; order[j] = tmp;
+      }
+      // 隣と揃えたい気持ち（かたまりを作る）
+      var neigh = [self.at(c - 1, r), self.at(c, r - 1)].filter(function (b) { return b && b.type === 'B'; });
+      if (neigh.length && Math.random() < 0.55) {
+        var pref = neigh[(Math.random() * neigh.length) | 0].color;
+        order.unshift(pref);
+      }
+      for (var k = 0; k < order.length; k++) {
+        if (groupSizeIfPlaced(c, r, order[k]) < 4) return order[k];
+      }
+      return order[0];
+    }
+
+    // (c,r) に color を置いたと仮定した連結数
+    function groupSizeIfPlaced(c, r, color) {
+      var seen = {}, stack = [[c, r]], n = 0;
+      while (stack.length) {
+        var p = stack.pop(), k = p[0] + ',' + p[1];
+        if (seen[k]) continue;
+        seen[k] = 1;
+        var b = (p[0] === c && p[1] === r) ? { type: 'B', color: color } : self.cells.get(k);
+        if (!b || b.type !== 'B' || b.color !== color) continue;
+        n++;
+        if (n >= 4) return n;
+        stack.push([p[0] + 1, p[1]], [p[0] - 1, p[1]], [p[0], p[1] + 1], [p[0], p[1] - 1]);
+      }
+      return n;
+    }
+
+    for (var r = CFG.SURFACE_ROW; r < CFG.BOTTOM_ROW; r++) {
+      var depth = (r - CFG.SURFACE_ROW) / (CFG.BOTTOM_ROW - CFG.SURFACE_ROW);
+      var nColors = depth < 0.15 ? 3 : (depth < 0.45 ? 4 : 5);
+      var palette = CFG.COLORS.slice(0, nColors);
+      var pX = Math.min(0.13, 0.01 + depth * 0.14);   // 硬いXブロック
+      // フィールドは隙間なく詰める（隙間があると初期状態で崩落してしまう）
+      for (var c = 0; c < CFG.COLS; c++) {
+        var rnd = Math.random();
+        if (rnd < pX) { put(c, r, 'X', '#8a6a4a'); continue; }
+        put(c, r, 'B', pickColor(c, r, palette));
       }
 
-      // ★ブロック生成★  
-      // ここではあらかじめ100段分のブロックを生成します。
-      // 各ブロックは、y座標 = 150 + (行番号 × BLOCK_HEIGHT) で配置し、
-      // 一番下の行（行番号99）のブロックは fixed:true として落下しないようにしています。
-      function spawnBlocks() {
-         const numRows = 100;
-         const numCols = Math.floor(canvas.width / BLOCK_WIDTH);
-         blocks = [];
-         for (let row = 0; row < numRows; row++) {
-            for (let col = 0; col < numCols; col++) {
-               let fixed = (row === numRows - 1);
-               let block = {
-                  x: col * BLOCK_WIDTH,
-                  y: 150 + row * BLOCK_HEIGHT,
-                  width: BLOCK_WIDTH,
-                  height: BLOCK_HEIGHT,
-                  row: row,
-                  col: col,
-                  type: BLOCK_TYPES[random(0, BLOCK_TYPES.length - 1)],
-                  remainingCount: BLOCK_DESTROY_PUSH_COUNT,
-                  falling: false,
-                  vy: 0,
-                  fixed: fixed
-               };
-               blocks.push(block);
-            }
-         }
+      // 12行ごとにエアカプセル
+      if (r > 8 && r % 12 === 0) {
+        var ac = (Math.random() * CFG.COLS) | 0;
+        var b = this.at(ac, r);
+        if (b) this.removeBlock(b);
+        this.items.set(this.key(ac, r), { type: 'air' });
+      }
+    }
+  },
+
+  removeBlock: function (b) {
+    this.cells.delete(this.key(b.col, b.row));
+    var i = this.blocks.indexOf(b);
+    if (i >= 0) this.blocks.splice(i, 1);
+    this.dirty = true;
+  },
+
+  /* ---------------- 連結グループ ---------------- */
+  buildGroups: function () {
+    var i, b;
+    for (i = 0; i < this.blocks.length; i++) this.blocks[i].g = -1;
+    var gid = 0;
+    this.groups = [];
+    for (i = 0; i < this.blocks.length; i++) {
+      b = this.blocks[i];
+      if (b.g >= 0) continue;
+      var list = [], stack = [b];
+      b.g = gid;
+      while (stack.length) {
+        var cur = stack.pop();
+        list.push(cur);
+        if (cur.type !== 'B') continue;   // Xブロックは単独グループ
+        var nb = [this.at(cur.col + 1, cur.row), this.at(cur.col - 1, cur.row),
+                  this.at(cur.col, cur.row + 1), this.at(cur.col, cur.row - 1)];
+        for (var k = 0; k < 4; k++) {
+          var n = nb[k];
+          if (n && n.g < 0 && n.type === 'B' && n.color === cur.color) { n.g = gid; stack.push(n); }
+        }
+      }
+      this.groups.push(list);
+      gid++;
+    }
+    // 下の行から処理したいのでソート用に最下段行を保持
+    for (i = 0; i < this.groups.length; i++) {
+      var gl = this.groups[i], maxR = -1;
+      for (var j = 0; j < gl.length; j++) if (gl[j].row > maxR) maxR = gl[j].row;
+      gl.maxRow = maxR;
+    }
+    this.dirty = false;
+  },
+
+  /* ---------------- 支持判定（落ちないグループ） ---------------- */
+  computeSupport: function (winTop, winBot) {
+    var groups = this.groups, i, j;
+    var sup = new Uint8Array(groups.length);
+    // 岩盤に接している / 画面外（＝静止扱い）のグループ
+    for (i = 0; i < groups.length; i++) {
+      var gl = groups[i];
+      if (gl.maxRow >= winBot || gl.maxRow < winTop) { sup[i] = 1; continue; }
+      for (j = 0; j < gl.length; j++) {
+        if (gl[j].row + 1 >= CFG.BOTTOM_ROW) { sup[i] = 1; break; }
+      }
+    }
+    // 下から順に伝播（収束するまで）
+    var order = groups.map(function (g, idx) { return idx; })
+                      .sort(function (a, b) { return groups[b].maxRow - groups[a].maxRow; });
+    var changed = true, guard = 0;
+    while (changed && guard++ < 50) {
+      changed = false;
+      for (var oi = 0; oi < order.length; oi++) {
+        var gi = order[oi];
+        if (sup[gi]) continue;
+        var g = groups[gi];
+        for (j = 0; j < g.length; j++) {
+          var below = this.at(g[j].col, g[j].row + 1);
+          if (below && below.g !== gi && sup[below.g]) { sup[gi] = 1; changed = true; break; }
+        }
+      }
+    }
+    return sup;
+  },
+
+  /* ---------------- 更新 ---------------- */
+  update: function (dt, player, winTop, winBot) {
+    if (winTop === undefined) { winTop = 0; winBot = CFG.BOTTOM_ROW; }
+    if (this.dirty) this.buildGroups();
+    var sup = this.computeSupport(winTop, winBot);
+    var groups = this.groups;
+    var anyFalling = false;
+
+    // 下のグループから落下処理
+    var order = groups.map(function (g, i) { return i; })
+                      .sort(function (a, b) { return groups[b].maxRow - groups[a].maxRow; });
+
+    for (var oi = 0; oi < order.length; oi++) {
+      var gi = order[oi], g = groups[gi], j, b;
+      if (g.length === 0) continue;
+      if (g[0].state === 'clear') continue;
+
+      if (sup[gi]) {
+        if (g[0].off !== 0) { if (this.onLand) this.onLand(); }
+        for (j = 0; j < g.length; j++) { g[j].off = 0; g[j].vel = 0; g[j].wait = 0; }
+        continue;
       }
 
-      // アイテム生成（従来通り）
-      let nextItemY = 200;
-      function spawnItems() {
-         while(nextItemY < cameraOffset + gameAreaHeight + 200) {
-             const itemX = random(0, canvas.width - ITEM_SIZE);
-             const r = Math.random();
-             let type = (r < 0.2) ? "heart" : (r < 0.5) ? "muscle" : "cake";
-             items.push({ x: itemX, y: nextItemY, size: ITEM_SIZE, type: type });
-             nextItemY += random(200,300);
-         }
+      anyFalling = true;
+
+      // 落ち始めるまでの猶予（プルプル揺れる）
+      if (g[0].off === 0 && g[0].vel === 0) {
+        var w = 0;
+        for (j = 0; j < g.length; j++) if (g[j].wait > w) w = g[j].wait;
+        w += dt;
+        if (w < CFG.FALL_DELAY) {
+          for (j = 0; j < g.length; j++) g[j].wait = w;
+          continue;
+        }
+        for (j = 0; j < g.length; j++) g[j].wait = 0;
       }
 
-      // ★落下ブロックの更新★（fixedがtrueの場合は更新対象外）
-      function updateFallingBlocks() {
-         for(let block of blocks) {
-             if(block.fixed) continue;
-             if(!block.falling) {
-                 let supported = false;
-                 for(let other of blocks) {
-                     if(other !== block && !other.falling && other.col === block.col) {
-                         if(Math.abs(other.y - (block.y + BLOCK_HEIGHT)) < 5) {
-                             supported = true;
-                             break;
-                         }
-                     }
-                 }
-                 if(!supported) {
-                     block.falling = true;
-                     block.vy = 0;
-                 }
-             }
-             if(block.falling) {
-                 block.vy += BASE_GRAVITY;
-                 let newY = block.y + block.vy;
-                 let landingY = null;
-                 for(let other of blocks) {
-                     if(other !== block && !other.falling && other.col === block.col) {
-                         if(block.y + BLOCK_HEIGHT <= other.y && newY + BLOCK_HEIGHT >= other.y) {
-                             let candidateY = other.y - BLOCK_HEIGHT;
-                             if(landingY === null || candidateY < landingY) {
-                                 landingY = candidateY;
-                             }
-                         }
-                     }
-                 }
-                 if(landingY !== null) {
-                     block.y = landingY;
-                     block.falling = false;
-                     block.vy = 0;
-                 } else {
-                     block.y = newY;
-                 }
-                 // 落下中のブロックとプレイヤーの衝突判定
-                 if(rectsIntersect(player.x, player.y, player.width, player.height,
-                                   block.x, block.y, block.width, block.height)) {
-                     player.lives--;
-                     block.toRemove = true;
-                 }
-             }
-         }
-         blocks = blocks.filter(b => !b.toRemove);
+      var off = 0, vel = 0;
+      for (j = 0; j < g.length; j++) { if (g[j].off > off) off = g[j].off; if (g[j].vel > vel) vel = g[j].vel; }
+      vel = Math.min(vel + CFG.BLOCK_ACC * dt, CFG.BLOCK_MAX);
+      off += vel * dt;
+
+      var guard = 0;
+      while (off >= T && guard++ < 4) {
+        var canMove = true;
+        for (j = 0; j < g.length; j++) {
+          b = g[j];
+          if (b.row + 1 >= CFG.BOTTOM_ROW) { canMove = false; break; }
+          var n = this.at(b.col, b.row + 1);
+          if (n && n.g !== gi) { canMove = false; break; }
+        }
+        if (!canMove) { off = 0; vel = 0; if (this.onLand) this.onLand(); break; }
+
+        // 下の行から順に移動
+        var sorted = g.slice().sort(function (x, y) { return y.row - x.row; });
+        for (j = 0; j < sorted.length; j++) {
+          b = sorted[j];
+          this.cells.delete(this.key(b.col, b.row));
+        }
+        for (j = 0; j < sorted.length; j++) {
+          b = sorted[j];
+          b.row++;
+          this.cells.set(this.key(b.col, b.row), b);
+          // 押し潰し判定
+          if (player && player.state !== 'dead' && b.col === player.col && b.row === player.row) {
+            if (this.onCrush) this.onCrush(b.col, b.row);
+          }
+          // カプセルは落下ブロックに潰される
+          var ik = this.key(b.col, b.row);
+          if (this.items.has(ik)) this.items.delete(ik);
+        }
+        this.dirty = true;
+        off -= T;
       }
+      for (j = 0; j < g.length; j++) { g[j].off = off; g[j].vel = vel; }
+    }
 
-      // ★ゲーム更新処理★
-      function update() {
-         if(gameState !== "playing") return;
-         const elapsed = (Date.now() - startTime) / 1000;
-         score = Math.floor(elapsed * 10) + bonusScore;
-         if(score > highScore) {
-           highScore = score;
-           localStorage.setItem("highScore", highScore);
-         }
-         const currentGravity = BASE_GRAVITY;
-         if(elapsed < 2) player.invincible = true;
-
-         // 着地判定用：前フレームの下辺位置
-         let oldBottom = player.y + player.height;
-
-         if(keys["ArrowLeft"]) player.x -= player.speed;
-         if(keys["ArrowRight"]) player.x += player.speed;
-         player.x = Math.max(0, Math.min(player.x, canvas.width - player.width));
-         if(keys["Space"] && player.onBlock) {
-             player.vy = player.jumpStrength;
-             player.onBlock = false;
-         }
-
-         player.vy += currentGravity;
-         player.y += player.vy;
-         let newBottom = player.y + player.height;
-
-         if(player.y - cameraOffset > gameAreaHeight / 3) {
-             cameraOffset = player.y - gameAreaHeight / 3;
-         }
-
-         const playerScreenY = player.y - cameraOffset;
-         if(playerScreenY < 0 && blockTransparentTimer <= 0) {
-             if(--player.lives <= 0) gameState = "gameover";
-             blockTransparentTimer = 10;
-             player.vy = 5;
-         }
-         if(blockTransparentTimer > 0) blockTransparentTimer--;
-
-         // アイテム生成
-         spawnItems();
-         // 落下ブロックの更新
-         updateFallingBlocks();
-
-         // 着地判定：前フレームの下辺と現在の下辺を比較してブロック上部に到達した場合
-         player.onBlock = false;
-         player.onBlockTarget = null;
-         for(let block of blocks) {
-             if(block.falling) continue;
-             if(player.x + player.width/2 >= block.x && player.x + player.width/2 <= block.x + block.width) {
-                 if(player.vy >= 0 && oldBottom <= block.y + 5 && newBottom >= block.y) {
-                     player.y = block.y - player.height;
-                     player.vy = 0;
-                     player.onBlock = true;
-                     player.onBlockTarget = block;
-                     break;
-                 }
-             }
-         }
-
-         // ★ブロックカウントダウン処理★
-         // 下キーが押されており、かつプレイヤーがブロック上にいる場合、
-         // 一定のクールダウン（15フレーム）ごとに連結グループの残カウントを1減少させます。
-         if(keys["ArrowDown"] && player.onBlock && player.onBlockTarget) {
-             if(!player.downKeyTimer || player.downKeyTimer <= 0) {
-                let group = getConnectedGroup(player.onBlockTarget);
-                let removeGroup = false;
-                group.forEach(block => {
-                   block.remainingCount--;
-                   if(block.remainingCount <= 0) {
-                      removeGroup = true;
-                   }
-                });
-                player.downKeyTimer = 15;
-                if(removeGroup) {
-                   blocks = blocks.filter(b => !group.includes(b));
-                   player.onBlock = false;
-                   player.onBlockTarget = null;
-                }
-             }
-         }
-         if(player.downKeyTimer && player.downKeyTimer > 0) {
-             player.downKeyTimer--;
-         }
-
-         // ゲームクリア判定：あらかじめ生成した100段目（y = 150 + 100×BLOCK_HEIGHT）に到達したらクリア
-         const bottomY = 150 + 100 * BLOCK_HEIGHT;
-         if(player.y >= bottomY - player.height) {
-             gameState = "clear";
-         }
-
-         // アイテムとの衝突判定
-         for(let i = items.length - 1; i >= 0; i--) {
-             let item = items[i];
-             if(rectsIntersect(player.x, player.y, player.width, player.height,
-                               item.x, item.y, item.size, item.size)) {
-                 if(item.type === "heart") {
-                     player.lives++;
-                     effects.push({ x: item.x + item.size/2, y: item.y, alpha: 1, timer: 30, text: "💖" });
-                 } else if(item.type === "muscle") {
-                     player.muscleInvincible = true;
-                     player.muscleInvincibleTimer = 600;
-                     effects.push({ x: item.x + item.size/2, y: item.y, alpha: 1, timer: 30, text: "💪" });
-                 } else {
-                     bonusScore += 100;
-                     effects.push({ x: item.x + item.size/2, y: item.y, alpha: 1, timer: 30, text: "+100" });
-                 }
-                 items.splice(i, 1);
-             }
-         }
-
-         // エフェクト更新
-         for(let i = effects.length - 1; i >= 0; i--) {
-             let eff = effects[i];
-             if(--eff.timer <= 0) effects.splice(i, 1);
-             else {
-               eff.y -= 0.5;
-               eff.alpha = eff.timer / 30;
-             }
-         }
-
-         if(elapsed >= 2 && player.invincible && --player.invincibleTimer <= 0) {
-             player.invincible = false;
-         }
-         if(player.muscleInvincible && --player.muscleInvincibleTimer <= 0) {
-             player.muscleInvincible = false;
-             comboCount = 0;
-             lastComboTime = 0;
-         }
-
-         if(player.y - cameraOffset + player.height > gameAreaHeight) gameState = "gameover";
+    // 消滅演出タイマー
+    var toRemove = null;
+    for (var i = 0; i < this.blocks.length; i++) {
+      var bl = this.blocks[i];
+      if (bl.state === 'clear') {
+        bl.t += dt;
+        if (bl.t >= CFG.CLEAR_TIME) { (toRemove || (toRemove = [])).push(bl); }
       }
+    }
+    if (toRemove) { for (var m = 0; m < toRemove.length; m++) this.removeBlock(toRemove[m]); }
 
-      // ★描画処理★
-      function draw() {
-         ctx.clearRect(0, 0, canvas.width, canvas.height);
-         ctx.fillStyle = "#87CEEB";
-         ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // 落下が止まっていれば4連結チェック
+    if (!anyFalling) {
+      var cleared = this.checkClears();
+      if (!cleared && !this.hasClearing()) this.chain = 0;
+    }
+    this.falling = anyFalling;
+  },
 
-         if(gameState === "start") {
-             repoLink.style.display = "block";
-             ctx.fillStyle = "white";
-             ctx.textAlign = "center";
-             ctx.textBaseline = "middle";
-             ctx.font = "80px sans-serif";
-             ctx.fillText(playerEmoji, canvas.width/2, canvas.height/2 - 150);
-             ctx.font = "50px sans-serif";
-             ctx.fillText("ドリラー風ゲーム", canvas.width/2, canvas.height/2 - 80);
-             ctx.font = "30px sans-serif";
-             ctx.fillText("スタートボタンかスペースキーで開始", canvas.width/2, canvas.height/4);
-             startBtn.textContent = "スタート";
-             startBtn.style.display = "block";
-             return;
-         }
-         repoLink.style.display = "none";
+  hasClearing: function () {
+    for (var i = 0; i < this.blocks.length; i++) if (this.blocks[i].state === 'clear') return true;
+    return false;
+  },
 
-         // ブロック描画
-         for(let block of blocks) {
-             let blockScreenY = block.y - cameraOffset;
-             if(blockScreenY + block.height >= -20 && blockScreenY <= gameAreaHeight + 20) {
-               let baseAlpha = (blockTransparentTimer > 0 ? 0.3 : 1);
-               ctx.globalAlpha = baseAlpha;
-               ctx.fillStyle = block.type;
-               ctx.fillRect(block.x, blockScreenY, block.width, block.height);
-               ctx.globalAlpha = baseAlpha * 0.5;
-               ctx.strokeStyle = "#555";
-               ctx.lineWidth = 2;
-               ctx.strokeRect(block.x, blockScreenY, block.width, block.height);
-               ctx.globalAlpha = 1;
-               ctx.fillStyle = "white";
-               ctx.font = "40px sans-serif";
-               ctx.textAlign = "center";
-               ctx.textBaseline = "middle";
-               ctx.fillText(block.remainingCount, block.x + block.width/2, blockScreenY + block.height/2);
-             }
-         }
-
-         // アイテム描画
-         ctx.font = "48px sans-serif";
-         ctx.textAlign = "center";
-         ctx.textBaseline = "middle";
-         for(let item of items) {
-             let itemScreenY = item.y - cameraOffset;
-             if(itemScreenY > -20 && itemScreenY < gameAreaHeight + 20) {
-               const emoji = (item.type === "heart") ? "💖" :
-                             (item.type === "muscle") ? "💪" : "🍰";
-               ctx.fillText(emoji, item.x + item.size/2, itemScreenY + item.size/2);
-             }
-         }
-
-         // プレイヤー描画
-         let playerScreenY = player.y - cameraOffset;
-         if(player.invincible) ctx.globalAlpha = 0.5;
-         ctx.font = "56px sans-serif";
-         ctx.textAlign = "center";
-         ctx.textBaseline = "middle";
-         ctx.fillText(playerEmoji, player.x + player.width/2, playerScreenY + player.height/2);
-         ctx.globalAlpha = 1;
-         if(player.muscleInvincible) {
-             ctx.font = "50px sans-serif";
-             ctx.fillText("💪", player.x - 10, playerScreenY + player.height/2);
-         }
-         ctx.fillStyle = "black";
-         ctx.font = "30px sans-serif";
-         ctx.textAlign = "center";
-         ctx.fillText("High Score: " + highScore, canvas.width/2, 40);
-         ctx.textAlign = "left";
-         ctx.fillText("Score: " + score, 10, 70);
-         const livesCount = player.lives;
-         const startX = canvas.width - (livesCount * LIFE_SPACING) - 10;
-         ctx.textAlign = "center";
-         ctx.textBaseline = "middle";
-         for(let i = 0; i < livesCount; i++) {
-             ctx.font = LIFE_ICON_SIZE + "px sans-serif";
-             ctx.fillText(playerEmoji, startX + i * LIFE_SPACING + LIFE_ICON_SIZE/2, 70);
-         }
-         ctx.save();
-         ctx.textAlign = "center";
-         ctx.textBaseline = "middle";
-         for(let eff of effects) {
-             ctx.globalAlpha = eff.alpha;
-             ctx.font = "70px sans-serif";
-             ctx.fillText(eff.text, eff.x, eff.y - cameraOffset);
-             if(eff.comboText) {
-               ctx.font = "40px sans-serif";
-               ctx.fillStyle = "gold";
-               ctx.fillText(eff.comboText, eff.x, eff.y - cameraOffset - 50);
-             }
-         }
-         ctx.restore();
-         ctx.globalAlpha = 1;
-
-         // ゲームオーバー or クリア表示
-         if(gameState === "gameover") {
-             ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
-             ctx.fillRect(0, 0, canvas.width, canvas.height);
-             ctx.fillStyle = "white";
-             ctx.font = "80px sans-serif";
-             ctx.textAlign = "center";
-             ctx.textBaseline = "middle";
-             ctx.fillText("Game Over", canvas.width/2, canvas.height/3);
-             startBtn.textContent = "再スタート";
-             startBtn.style.display = "block";
-         }
-         if(gameState === "clear") {
-             ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
-             ctx.fillRect(0, 0, canvas.width, canvas.height);
-             ctx.fillStyle = "white";
-             ctx.font = "80px sans-serif";
-             ctx.textAlign = "center";
-             ctx.textBaseline = "middle";
-             ctx.fillText("Game Clear!", canvas.width/2, canvas.height/3);
-             startBtn.textContent = "再スタート";
-             startBtn.style.display = "block";
-         }
+  checkClears: function () {
+    if (this.dirty) this.buildGroups();
+    var did = false;
+    for (var i = 0; i < this.groups.length; i++) {
+      var g = this.groups[i];
+      if (g.length < 4 || g[0].type !== 'B' || g[0].state === 'clear') continue;
+      var cx = 0, cy = 0;
+      for (var j = 0; j < g.length; j++) {
+        g[j].state = 'clear'; g[j].t = 0;
+        cx += g[j].col; cy += g[j].row;
       }
+      this.chain++;
+      did = true;
+      if (this.onClear) this.onClear(g.length, this.chain, cx / g.length, cy / g.length);
+    }
+    return did;
+  },
 
-      function gameLoop() {
-         if(gameState === "playing") update();
-         draw();
-         requestAnimationFrame(gameLoop);
+  /* 掘った穴に隣接する同色ブロックを、つながっている分まとめて消す */
+  clearConnectedFrom: function (col, row, color) {
+    var seen = {}, stack = [], list = [], i, k, b;
+    var starts = [[col + 1, row], [col - 1, row], [col, row + 1], [col, row - 1]];
+    for (i = 0; i < 4; i++) stack.push(starts[i]);
+    while (stack.length) {
+      var p = stack.pop();
+      k = p[0] + ',' + p[1];
+      if (seen[k]) continue;
+      seen[k] = 1;
+      b = this.at(p[0], p[1]);
+      if (!b || b.type !== 'B' || b.color !== color || b.state === 'clear') continue;
+      list.push(b);
+      stack.push([p[0] + 1, p[1]], [p[0] - 1, p[1]], [p[0], p[1] + 1], [p[0], p[1] - 1]);
+    }
+    if (!list.length) return 0;
+    var cx = 0, cy = 0;
+    for (i = 0; i < list.length; i++) {
+      list[i].state = 'clear'; list[i].t = 0;
+      cx += list[i].col; cy += list[i].row;
+    }
+    this.chain++;
+    // 掘ったブロック自身も個数に含めて加点
+    if (this.onClear) this.onClear(list.length + 1, this.chain, cx / list.length, cy / list.length);
+    return list.length;
+  },
+
+  /* 掘削: 成功したら true */
+  dig: function (b) {
+    if (!b || b.state === 'clear') return false;
+    b.hp--;
+    if (b.hp > 0) { b.drill = 1; return false; }
+    var col = b.col, row = b.row, type = b.type, color = b.color;
+    this.removeBlock(b);
+    if (type === 'B') this.clearConnectedFrom(col, row, color);
+    this.checkClears();
+    return true;
+  }
+};
+
+/* ============================================================
+   Player - ドリラー本体（移動・掘削・落下・エア）
+   ============================================================ */
+var WALK_TIME  = 0.11;
+var DRILL_TIME = 0.15;
+var DRILL_HARD = 0.40;
+var FALL_ACC   = 2600;
+var FALL_MAX   = 1200;
+var AIR_MAX    = 100;
+var AIR_DRAIN  = 1.15;   // %/秒
+var AIR_CAPSULE = 20;
+var AIR_HARD   = 20;     // Xブロック破壊コスト
+
+var Player = {
+  AIR_MAX: AIR_MAX,
+
+  reset: function () {
+    this.col = (CFG.COLS / 2) | 0;
+    this.row = CFG.SURFACE_ROW - 1;
+    this.off = 0;
+    this.xo = 0;
+    this.vel = 0;
+    this.dir = 1;
+    this.state = 'idle';
+    this.timer = 0;
+    this.targetCol = this.col;
+    this.block = null;
+    this.air = AIR_MAX;
+    this.maxDepth = 0;
+    this.anim = 0;
+    this.drillDir = 0;
+    this.lowAirBeep = 0;
+  },
+
+  depth: function () { return Math.max(0, this.row - CFG.SURFACE_ROW + 1); },
+  pixelX: function () { return this.col * T + this.xo; },
+  pixelY: function () { return this.row * T + this.off; },
+
+  kill: function (reason) {
+    if (this.state === 'dead') return;
+    this.state = 'dead';
+    this.reason = reason || 'crush';
+    Sound.play('death');
+    if (this.onDeath) this.onDeath(reason);
+  },
+
+  collect: function () {
+    var it = Level.itemAt(this.col, this.row);
+    if (it) {
+      Level.items.delete(Level.key(this.col, this.row));
+      this.air = Math.min(AIR_MAX, this.air + AIR_CAPSULE);
+      Sound.play('capsule');
+      if (this.onCapsule) this.onCapsule();
+    }
+  },
+
+  startDrill: function (block, dx, dy) {
+    this.state = 'drill';
+    this.timer = 0;
+    this.block = block;
+    this.drillDir = dy > 0 ? 1 : (dy < 0 ? -1 : 0);
+    this.drillDx = dx;
+    this.dur = block.type === 'X' ? DRILL_HARD : DRILL_TIME;
+    block.drill = 0.01;
+    Sound.play(block.type === 'X' ? 'hard' : 'drill');
+  },
+
+  startWalk: function (nc) {
+    this.state = 'walk';
+    this.timer = 0;
+    this.targetCol = nc;
+    Sound.play('walk');
+  },
+
+  update: function (dt, input) {
+    if (this.state === 'dead' || this.state === 'goal') return;
+    var L = Level;
+
+    // --- エア消費 ---
+    this.air -= AIR_DRAIN * dt;
+    if (this.air <= 20) {
+      this.lowAirBeep -= dt;
+      if (this.lowAirBeep <= 0) { Sound.play('alarm'); this.lowAirBeep = 1.0; }
+    }
+    if (this.air <= 0) { this.air = 0; this.kill('air'); return; }
+
+    this.anim += dt;
+    this.collect();
+
+    switch (this.state) {
+
+      case 'idle':
+        if (!L.isSolid(this.col, this.row + 1)) { this.state = 'fall'; this.vel = 0; break; }
+        if (this.row >= CFG.BOTTOM_ROW - 1) { this.reachGoal(); break; }
+
+        if (input.down) {
+          var bd = L.at(this.col, this.row + 1);
+          if (bd) this.startDrill(bd, 0, 1);
+        } else if (input.up) {
+          var bu = L.at(this.col, this.row - 1);
+          if (bu) this.startDrill(bu, 0, -1);
+        } else if (input.left || input.right) {
+          var d = input.left ? -1 : 1;
+          this.dir = d;
+          var nc = this.col + d;
+          if (nc < 0 || nc >= CFG.COLS) break;
+          var bl = L.at(nc, this.row);
+          if (bl) this.startDrill(bl, d, 0);
+          else this.startWalk(nc);
+        }
+        break;
+
+      case 'walk':
+        this.timer += dt;
+        var p = Math.min(1, this.timer / WALK_TIME);
+        this.xo = (this.targetCol - this.col) * T * p;
+        if (p >= 1) { this.col = this.targetCol; this.xo = 0; this.state = 'idle'; this.collect(); }
+        break;
+
+      case 'drill':
+        this.timer += dt;
+        var b = this.block;
+        if (!b || b.state === 'clear' || L.at(b.col, b.row) !== b) { this.state = 'idle'; this.block = null; break; }
+        b.drill = Math.min(0.99, this.timer / this.dur);
+        if (this.timer >= this.dur) {
+          var hard = b.type === 'X';
+          var col = b.col, row = b.row;
+          var broke = L.dig(b);
+          this.block = null;
+          if (broke) {
+            if (hard) { this.air = Math.max(0, this.air - AIR_HARD); Sound.play('hard'); }
+            else Sound.play('drill');
+            if (this.drillDx) {
+              if (!L.at(col, row)) this.startWalk(col);
+              else this.state = 'idle';
+            } else this.state = 'idle';
+          } else {
+            // Xブロックはもう一撃
+            Sound.play('hard');
+            this.state = 'idle';
+          }
+        }
+        break;
+
+      case 'fall':
+        this.vel = Math.min(this.vel + FALL_ACC * dt, FALL_MAX);
+        this.off += this.vel * dt;
+        if (this.xo !== 0) this.xo *= Math.pow(0.001, dt);   // 横移動の余韻
+        // 空中での左右移動
+        if (input.left || input.right) {
+          var dd = input.left ? -1 : 1;
+          this.dir = dd;
+          var tc = this.col + dd;
+          if (tc >= 0 && tc < CFG.COLS && !L.at(tc, this.row) && !L.at(tc, this.row + (this.off > T * 0.5 ? 1 : 0))) {
+            this.col = tc;
+            this.xo = -dd * T * 0.8;
+          }
+        }
+        var guard = 0;
+        while (this.off >= T && guard++ < 6) {
+          if (L.isSolid(this.col, this.row + 1)) break;
+          this.row++;
+          this.off -= T;
+          this.collect();
+        }
+        if (L.isSolid(this.col, this.row + 1)) {
+          this.off = 0; this.vel = 0; this.state = 'idle';
+          Sound.play('land');
+        }
+        if (this.row >= CFG.BOTTOM_ROW - 1) { this.row = CFG.BOTTOM_ROW - 1; this.off = 0; this.reachGoal(); }
+        break;
+    }
+
+    if (this.depth() > this.maxDepth) {
+      var gained = this.depth() - this.maxDepth;
+      this.maxDepth = this.depth();
+      if (this.onDepth) this.onDepth(gained);
+    }
+
+    // 埋まってしまったら死亡（保険）
+    var here = L.at(this.col, this.row);
+    if (here && here.state !== 'clear' && this.state !== 'drill') this.kill('crush');
+  },
+
+  reachGoal: function () {
+    if (this.state === 'goal') return;
+    this.state = 'goal';
+    Sound.play('goal');
+    if (this.onGoal) this.onGoal();
+  }
+};
+
+/* ============================================================
+   Render - Canvas 描画（ブロック・キャラ・エフェクト）
+   ============================================================ */
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function shade(hex, amt) {
+  var n = parseInt(hex.slice(1), 16);
+  var r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  var f = 1 + amt;
+  r = Math.max(0, Math.min(255, r * f)) | 0;
+  g = Math.max(0, Math.min(255, g * f)) | 0;
+  b = Math.max(0, Math.min(255, b * f)) | 0;
+  return 'rgb(' + r + ',' + g + ',' + b + ')';
+}
+
+var Render = {
+  camY: 0,
+  shake: 0,
+  pops: [],   // 消滅エフェクト
+
+  init: function (canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.W = canvas.width;
+    this.H = canvas.height;
+    this.camY = 0;
+    this.pops = [];
+    this.shake = 0;
+  },
+
+  addPop: function (col, row, text, color) {
+    this.pops.push({ x: col * T + T / 2, y: row * T + T / 2, t: 0, text: text, color: color || '#fff' });
+  },
+
+  update: function (dt, player) {
+    var target = player.pixelY() - T * 4.2;
+    var min = -T * 2;
+    var max = (CFG.BOTTOM_ROW + 1) * T - this.H;
+    if (target < min) target = min;
+    if (target > max) target = max;
+    this.camY += (target - this.camY) * Math.min(1, dt * 9);
+    if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 3);
+    for (var i = this.pops.length - 1; i >= 0; i--) {
+      this.pops[i].t += dt;
+      if (this.pops[i].t > 0.9) this.pops.splice(i, 1);
+    }
+  },
+
+  /* ---------- 背景 ---------- */
+  drawBg: function (ctx) {
+    var top = this.camY;
+    var g = ctx.createLinearGradient(0, 0, 0, this.H);
+    var d = Math.min(1, Math.max(0, top / (CFG.BOTTOM_ROW * T)));
+    g.addColorStop(0, shade('#1b2a4a', -d * 0.55));
+    g.addColorStop(1, shade('#0d1120', -d * 0.3));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, this.W, this.H);
+
+    // 空（地表より上）
+    var skyH = CFG.SURFACE_ROW * T - top;
+    if (skyH > 0) {
+      var sg = ctx.createLinearGradient(0, 0, 0, skyH);
+      sg.addColorStop(0, '#2b4d8f');
+      sg.addColorStop(1, '#6fa8dc');
+      ctx.fillStyle = sg;
+      ctx.fillRect(0, 0, this.W, skyH);
+      ctx.fillStyle = 'rgba(255,255,255,.85)';
+      ctx.beginPath(); ctx.arc(this.W - 46, skyH - 92, 16, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // 深度目盛
+    ctx.font = '10px Consolas, monospace';
+    ctx.textAlign = 'left';
+    var r0 = Math.floor(top / T), r1 = r0 + CFG.VIEW_ROWS + 1;
+    for (var r = r0; r <= r1; r++) {
+      var m = r - CFG.SURFACE_ROW + 1;
+      if (m > 0 && m % 10 === 0) {
+        var y = r * T - top;
+        ctx.strokeStyle = 'rgba(255,255,255,.06)';
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.W, y); ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,.22)';
+        ctx.fillText(m + 'm', 3, y - 3);
       }
+    }
+  },
 
-      function initGame() {
-         gameState = "playing";
-         cameraOffset = 0;
-         startTime = Date.now();
-         score = bonusScore = 0;
-         blockTransparentTimer = 0;
-         effects = [];
-         items = [];
-         nextItemY = 200;
-         // プレイヤー初期化
-         player.x = canvas.width/2 - player.width/2;
-         player.y = 100;
-         player.vx = player.vy = 0;
-         player.onBlock = false;
-         player.onBlockTarget = null;
-         player.lives = 3;
-         player.invincible = false;
-         player.invincibleTimer = 0;
-         player.muscleInvincible = false;
-         player.muscleInvincibleTimer = 0;
-         player.pushingDown = false;
-         player.downKeyTimer = 0;
-         // 100段のブロックを生成
-         spawnBlocks();
-         // アイテム初期化
-         items = [];
+  /* ---------- ブロック ---------- */
+  drawBlock: function (ctx, b, top) {
+    var x = b.col * T;
+    var y = b.row * T + b.off - top;
+    if (b.wait > 0) x += Math.sin(b.wait * 70) * 2;   // 落下直前の揺れ
+    if (y < -T || y > this.H) return;
+    var pad = 1;
+    var w = T - pad * 2, h = T - pad * 2;
+    var alpha = 1, sc = 1;
+
+    if (b.state === 'clear') {
+      var p = b.t / CFG.CLEAR_TIME;
+      alpha = 1 - p;
+      sc = 1 + p * 0.45;
+    }
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(x + T / 2, y + T / 2);
+    ctx.scale(sc, sc);
+    ctx.translate(-T / 2, -T / 2);
+
+    var base = b.color;
+    ctx.fillStyle = base;
+    roundRect(ctx, pad, pad, w, h, 6);
+    ctx.fill();
+
+    // ハイライト・シャドウ
+    ctx.fillStyle = 'rgba(255,255,255,.28)';
+    roundRect(ctx, pad + 3, pad + 3, w - 6, (h - 6) * 0.4, 4);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,.25)';
+    roundRect(ctx, pad + 3, pad + h * 0.62, w - 6, h * 0.32, 4);
+    ctx.fill();
+
+    if (b.type === 'X') {
+      ctx.strokeStyle = 'rgba(30,18,10,.75)';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(12, 12); ctx.lineTo(T - 12, T - 12);
+      ctx.moveTo(T - 12, 12); ctx.lineTo(12, T - 12);
+      ctx.stroke();
+      if (b.hp <= 1) {
+        ctx.strokeStyle = 'rgba(255,255,255,.5)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(T * 0.5, 4); ctx.lineTo(T * 0.4, T * 0.5); ctx.lineTo(T * 0.62, T - 5);
+        ctx.stroke();
       }
+    }
 
-      gameState = "start";
-      startBtn.style.display = "block";
-      gameLoop();
+    // 掘削中のひび
+    if (b.drill > 0) {
+      ctx.strokeStyle = 'rgba(0,0,0,.55)';
+      ctx.lineWidth = 2;
+      var n = 3;
+      for (var i = 0; i < n; i++) {
+        var a = (Math.PI * 2 / n) * i + b.drill * 2;
+        ctx.beginPath();
+        ctx.moveTo(T / 2, T / 2);
+        ctx.lineTo(T / 2 + Math.cos(a) * T * 0.45 * b.drill, T / 2 + Math.sin(a) * T * 0.45 * b.drill);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  },
 
-    })();
-  </script>
+  drawItem: function (ctx, col, row, top, tt) {
+    var x = col * T + T / 2;
+    var y = row * T + T / 2 - top + Math.sin(tt * 3 + col) * 3;
+    if (y < -T || y > this.H + T) return;
+    ctx.save();
+    ctx.translate(x, y);
+    var g = ctx.createRadialGradient(0, 0, 2, 0, 0, 20);
+    g.addColorStop(0, 'rgba(120,240,255,.55)');
+    g.addColorStop(1, 'rgba(120,240,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(0, 0, 20, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#eafcff';
+    roundRect(ctx, -9, -13, 18, 26, 9); ctx.fill();
+    ctx.fillStyle = '#5ad7ff';
+    roundRect(ctx, -6, -9, 12, 10, 5); ctx.fill();
+    ctx.fillStyle = '#123';
+    ctx.font = 'bold 9px Consolas, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('A', 0, 9);
+    ctx.restore();
+  },
+
+  /* ---------- プレイヤー ---------- */
+  drawPlayer: function (ctx, p, top) {
+    var x = p.pixelX() + T / 2;
+    var y = p.pixelY() + T / 2 - top;
+    var bob = (p.state === 'walk' || p.state === 'drill') ? Math.sin(p.anim * 26) * 1.6 : 0;
+    ctx.save();
+    ctx.translate(x, y + bob);
+    if (p.state === 'dead') ctx.rotate(Math.sin(Date.now() / 90) * 0.25);
+    ctx.scale(p.dir, 1);
+
+    // 影
+    ctx.fillStyle = 'rgba(0,0,0,.3)';
+    ctx.beginPath(); ctx.ellipse(0, 20, 14, 4, 0, 0, Math.PI * 2); ctx.fill();
+
+    // ドリル
+    var dd = p.state === 'drill' ? p.drillDir : 0;
+    ctx.save();
+    if (dd === 1) ctx.rotate(Math.PI / 2);
+    else if (dd === -1) ctx.rotate(-Math.PI / 2);
+    var spin = p.state === 'drill' ? Math.sin(p.anim * 40) * 2 : 0;
+    ctx.fillStyle = '#b8c2d8';
+    ctx.beginPath();
+    ctx.moveTo(12, -6 + spin); ctx.lineTo(28, 0); ctx.lineTo(12, 6 + spin);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#7d8aa6';
+    ctx.fillRect(9, -5, 5, 10);
+    ctx.restore();
+
+    // 体
+    ctx.fillStyle = '#e0453f';
+    roundRect(ctx, -11, -4, 22, 22, 7); ctx.fill();
+    ctx.fillStyle = '#ffd24d';
+    roundRect(ctx, -6, 2, 12, 8, 3); ctx.fill();
+
+    // 頭・ヘルメット
+    ctx.fillStyle = '#ffd9b3';
+    ctx.beginPath(); ctx.arc(0, -10, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffb03a';
+    ctx.beginPath(); ctx.arc(0, -12, 10, Math.PI, 0); ctx.fill();
+    ctx.fillRect(-10, -13, 20, 3);
+    ctx.fillStyle = '#fff6d8';
+    ctx.beginPath(); ctx.arc(4, -14, 2.5, 0, Math.PI * 2); ctx.fill();
+
+    // 目
+    ctx.fillStyle = '#22283a';
+    if (p.state === 'dead') {
+      ctx.lineWidth = 1.6; ctx.strokeStyle = '#22283a';
+      ctx.beginPath();
+      ctx.moveTo(2, -11); ctx.lineTo(7, -6); ctx.moveTo(7, -11); ctx.lineTo(2, -6);
+      ctx.stroke();
+    } else {
+      ctx.beginPath(); ctx.arc(4.5, -8.5, 1.8, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  },
+
+  /* ---------- メイン描画 ---------- */
+  draw: function (player, tt) {
+    var ctx = this.ctx;
+    var top = this.camY;
+    ctx.save();
+    if (this.shake > 0) {
+      ctx.translate((Math.random() - 0.5) * this.shake * 6, (Math.random() - 0.5) * this.shake * 6);
+    }
+    this.drawBg(ctx);
+
+    var L = Level;
+    var r0 = Math.floor(top / T) - 1, r1 = r0 + CFG.VIEW_ROWS + 3;
+    for (var r = r0; r <= r1; r++) {
+      for (var c = 0; c < CFG.COLS; c++) {
+        var b = L.at(c, r);
+        if (b) this.drawBlock(ctx, b, top);
+        var it = L.itemAt(c, r);
+        if (it) this.drawItem(ctx, c, r, top, tt);
+      }
+    }
+
+    // 岩盤
+    var by = CFG.BOTTOM_ROW * T - top;
+    if (by < this.H) {
+      ctx.fillStyle = '#3a3f52';
+      ctx.fillRect(0, by, this.W, this.H - by);
+      ctx.fillStyle = '#4c5268';
+      for (var i = 0; i < CFG.COLS; i++) ctx.fillRect(i * T + 2, by + 4, T - 4, 10);
+      ctx.fillStyle = '#ffd24d';
+      ctx.font = 'bold 16px Consolas, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('G O A L', this.W / 2, by + 34);
+    }
+
+    this.drawPlayer(ctx, player, top);
+
+    // ポップテキスト
+    ctx.textAlign = 'center';
+    for (var k = 0; k < this.pops.length; k++) {
+      var p = this.pops[k];
+      var a = 1 - p.t / 0.9;
+      ctx.globalAlpha = a;
+      ctx.fillStyle = p.color;
+      ctx.font = 'bold 15px Consolas, monospace';
+      ctx.fillText(p.text, p.x, p.y - top - p.t * 40);
+      ctx.globalAlpha = 1;
+    }
+
+    // 酸欠時の赤フラッシュ
+    if (player.air <= 20 && player.state !== 'dead') {
+      ctx.fillStyle = 'rgba(255,40,40,' + (0.12 + Math.sin(tt * 8) * 0.08) + ')';
+      ctx.fillRect(0, 0, this.W, this.H);
+    }
+    ctx.restore();
+  }
+};
+
+/* ============================================================
+   Main - ゲームループ / 入力 / HUD / 画面遷移
+   ============================================================ */
+var canvas = document.getElementById('gameCanvas');
+var el = {
+  depth: document.getElementById('depthVal'),
+  score: document.getElementById('scoreVal'),
+  airFill: document.getElementById('airFill'),
+  airVal: document.getElementById('airVal'),
+  title: document.getElementById('titleScreen'),
+  result: document.getElementById('resultScreen'),
+  resultTitle: document.getElementById('resultTitle'),
+  resultDepth: document.getElementById('resultDepth'),
+  resultScore: document.getElementById('resultScore'),
+  resultBest: document.getElementById('resultBest'),
+  startBtn: document.getElementById('startBtn'),
+  retryBtn: document.getElementById('retryBtn')
+};
+
+var input = { left: false, right: false, up: false, down: false };
+var state = 'title';     // title | play | over
+var score = 0;
+var lastTime = 0;
+var tt = 0;
+var endTimer = 0;
+
+/* ---------------- 入力 ---------------- */
+var KEYMAP = {
+  ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down',
+  a: 'left', d: 'right', w: 'up', s: 'down',
+  A: 'left', D: 'right', W: 'up', S: 'down'
+};
+
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'm' || e.key === 'M') { Sound.toggle(); return; }
+  var k = KEYMAP[e.key];
+  if (k) { input[k] = true; e.preventDefault(); }
+  if (e.key === ' ' || e.key === 'Enter') {
+    e.preventDefault();
+    if (state === 'title') start();
+    else if (state === 'over' && endTimer <= 0) start();
+  }
+});
+document.addEventListener('keyup', function (e) {
+  var k = KEYMAP[e.key];
+  if (k) { input[k] = false; e.preventDefault(); }
+});
+
+Array.prototype.forEach.call(document.querySelectorAll('.tbtn'), function (btn) {
+  var dir = btn.dataset.dir;
+  var on = function (e) { e.preventDefault(); Sound.unlock(); input[dir] = true; };
+  var off = function (e) { e.preventDefault(); input[dir] = false; };
+  btn.addEventListener('pointerdown', on);
+  btn.addEventListener('pointerup', off);
+  btn.addEventListener('pointerleave', off);
+  btn.addEventListener('pointercancel', off);
+});
+
+el.startBtn.addEventListener('click', start);
+el.retryBtn.addEventListener('click', function () { if (endTimer <= 0) start(); });
+
+/* ---------------- ゲーム開始 ---------------- */
+function start() {
+  Sound.unlock();
+  Sound.startBgm();
+  score = 0;
+  endTimer = 0;
+  input.left = input.right = input.up = input.down = false;
+  Level.generate();
+  Player.reset();
+  Render.init(canvas);
+  Render.camY = Player.pixelY() - CFG.TILE * 4.2;
+
+  Level.onClear = function (size, chain, cx, cy) {
+    var pts = size * 100 * chain;
+    score += pts;
+    Sound.play('clear', chain);
+    Render.addPop(cx, cy, (chain > 1 ? chain + 'CHAIN ' : '') + '+' + pts,
+                  chain > 1 ? '#ffd24d' : '#ffffff');
+    Render.shake = Math.min(1, 0.3 + chain * 0.15);
+  };
+  Level.onCrush = function () { Player.kill('crush'); };
+  Level.onLand = function () { Render.shake = Math.max(Render.shake, 0.25); };
+
+  Player.onDepth = function (m) { score += m * 10; };
+  Player.onCapsule = function () { Render.addPop(Player.col, Player.row, 'AIR+20', '#7ef0ff'); };
+  Player.onDeath = function () { Sound.stopBgm(); endTimer = 1.4; state = 'over'; };
+  Player.onGoal = function () { Sound.stopBgm(); score += 50000; endTimer = 1.4; state = 'over'; };
+
+  el.title.classList.add('hidden');
+  el.result.classList.add('hidden');
+  state = 'play';
+}
+
+/* ---------------- 終了画面 ---------------- */
+function showResult() {
+  var cleared = Player.state === 'goal';
+  var best = 0;
+  try { best = +(localStorage.getItem('mrdigger_best') || 0); } catch (e) {}
+  if (Player.maxDepth > best) {
+    best = Player.maxDepth;
+    try { localStorage.setItem('mrdigger_best', best); } catch (e) {}
+  }
+  el.resultTitle.textContent = cleared ? 'GOAL!!' : (Player.reason === 'air' ? 'OUT OF AIR' : 'CRUSHED');
+  el.resultTitle.className = 'result-title' + (cleared ? ' clear' : '');
+  el.resultDepth.textContent = Player.maxDepth + ' m';
+  el.resultScore.textContent = score.toLocaleString();
+  el.resultBest.textContent = 'BEST ' + best + ' m';
+  el.result.classList.remove('hidden');
+}
+
+/* ---------------- HUD ---------------- */
+function updateHud() {
+  el.depth.textContent = Player.maxDepth + ' m';
+  el.score.textContent = ('000000' + Math.floor(score)).slice(-6);
+  var a = Math.max(0, Player.air);
+  el.airFill.style.width = a + '%';
+  el.airFill.classList.toggle('low', a <= 25);
+  el.airVal.textContent = Math.ceil(a) + '%';
+}
+
+/* 物理演算は画面まわりのみ（遠方のブロックは静止扱い） */
+function winTop() { return Math.floor(Render.camY / CFG.TILE) - 4; }
+function winBot() { return Math.floor(Render.camY / CFG.TILE) + CFG.VIEW_ROWS + 5; }
+
+/* ---------------- ループ ---------------- */
+function loop(ts) {
+  requestAnimationFrame(loop);
+  if (!lastTime) lastTime = ts;
+  var dt = Math.min(0.05, (ts - lastTime) / 1000);
+  lastTime = ts;
+  tt += dt;
+
+  if (state === 'title') { drawIdle(dt); return; }
+
+  if (state === 'play' || state === 'over') {
+    if (state === 'play') Player.update(dt, input);
+    Level.update(dt, Player, winTop(), winBot());
+    Render.update(dt, Player);
+    Render.draw(Player, tt);
+    updateHud();
+
+    if (state === 'over' && endTimer > 0) {
+      endTimer -= dt;
+      if (endTimer <= 0) showResult();
+    }
+  }
+}
+
+function drawIdle(dt) {
+  if (!Level.blocks) { Level.generate(); Player.reset(); Render.init(canvas); }
+  Level.update(dt, null, winTop(), winBot());
+  Render.update(dt, Player);
+  Render.draw(Player, tt);
+  updateHud();
+}
+
+requestAnimationFrame(loop);
+
+// デバッグ／自動テスト用
+global.Game = { CFG: CFG, Level: Level, Player: Player, Render: Render, Sound: Sound,
+                start: start, input: input, getState: function () { return state; },
+                getScore: function () { return score; } };
+
+})(window);
+</script>
 </body>
 </html>
