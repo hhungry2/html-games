@@ -438,7 +438,7 @@ function buildField(){
   addObj(m,TOWN.x,TOWN.y,{kind:'struct',art:'town'});
   addWarp(m,TOWN.x,TOWN.y,'town',13,17);
   addObj(m,CAVE.x,CAVE.y,{kind:'struct',art:'cave'});
-  addWarp(m,CAVE.x,CAVE.y,'cave1',5,4);
+  addWarp(m,CAVE.x,CAVE.y,'cave1',5,5);
   addObj(m,DC.x,DC.y,{kind:'struct',art:'dcastle'});
   addWarp(m,DC.x,DC.y,'dcastle',14,21);
 
@@ -540,7 +540,7 @@ function buildCave1(){
   mFill(m,24,9,5,9,';');
   mFill(m,22,13,3,2,';');
   mSet(m,5,4,'<'); addWarp(m,5,4,'field',7,14);
-  mSet(m,5,17,'>'); addWarp(m,5,17,'cave2',5,4);
+  mSet(m,5,17,'>'); addWarp(m,5,17,'cave2',5,5);
   addObj(m,20,3,{kind:'chest',id:'c_cave1a',gold:90});
   addObj(m,26,16,{kind:'chest',id:'c_cave1b',item:'やくそう'});
   addObj(m,15,16,{kind:'chest',id:'c_cave1c',item:'まほうのせいすい'});
@@ -560,7 +560,7 @@ function buildCave2(){
   mFill(m,16,16,3,2,';');
   mFill(m,20,5,8,7,';');
   mFill(m,25,11,3,4,';');
-  mSet(m,5,4,'<'); addWarp(m,5,4,'cave1',5,17);
+  mSet(m,5,4,'<'); addWarp(m,5,4,'cave1',5,16);
   addObj(m,23,17,{kind:'chest',id:'c_lotosword',weapon:'ロトのつるぎ'});
   addObj(m,26,18,{kind:'chest',id:'c_rainbow',item:'にじのしずく'});
   addObj(m,24,7,{kind:'chest',id:'c_cave2a',gold:420});
@@ -1163,6 +1163,13 @@ function walkableAt(m,x,y){
   var c=mGet(m,Math.floor(x/TS),Math.floor(y/TS));
   return !solidChar(c);
 }
+function isBoxWalkable(m,x,y,hw,hh,oy){
+  hw=(hw===undefined)?5:hw; hh=(hh===undefined)?4:hh; oy=(oy===undefined)?3:oy;
+  var cy=y+oy;
+  if(x-hw<0||x+hw>=m.w*TS||cy-hh<0||cy+hh>=m.h*TS) return false;
+  return walkableAt(m,x-hw,cy-hh)&&walkableAt(m,x+hw,cy-hh)&&
+         walkableAt(m,x-hw,cy+hh)&&walkableAt(m,x+hw,cy+hh);
+}
 function tryMove(m,e,dx,dy,hw,hh,oy){
   hw=(hw===undefined)?5:hw; hh=(hh===undefined)?4:hh; oy=(oy===undefined)?3:oy;
   if(dx){
@@ -1172,6 +1179,16 @@ function tryMove(m,e,dx,dy,hw,hh,oy){
   if(dy){
     var ny=e.y+dy, ey=ny+oy+(dy>0?hh:-hh);
     if(walkableAt(m,e.x-hw,ey)&&walkableAt(m,e.x+hw,ey)) e.y=ny;
+  }
+}
+function unstuckEntity(m,e,hw,hh,oy){
+  hw=(hw===undefined)?5:hw; hh=(hh===undefined)?4:hh; oy=(oy===undefined)?3:oy;
+  if(isBoxWalkable(m,e.x,e.y,hw,hh,oy)) return;
+  for(var r=1;r<=24;r+=2){
+    for(var a=0;a<6.283;a+=0.785){
+      var tx=e.x+Math.cos(a)*r, ty=e.y+Math.sin(a)*r;
+      if(isBoxWalkable(m,tx,ty,hw,hh,oy)){ e.x=tx; e.y=ty; return; }
+    }
   }
 }
 
@@ -1817,11 +1834,26 @@ function updatePlayer(dt){
     tryMove(cur,P,P.kx*dt,0); tryMove(cur,P,0,P.ky*dt);
     P.kx*=Math.pow(0.0008,dt); P.ky*=Math.pow(0.0008,dt);
   } else { P.kx=P.ky=0; }
-  /* NPCと重ならない */
+  /* NPCと重なり判定・安全な押し出し */
   for(var i=0;i<cur.npcs.length;i++){
     var n=cur.npcs[i], dx=P.x-n.x, dy=(P.y+2)-n.y, d=Math.hypot(dx,dy);
-    if(d<14&&d>0.01){ P.x=n.x+dx/d*14; P.y=n.y+dy/d*14-2; }
+    var minDist=14;
+    if(d<minDist){
+      if(d<0.001){ dx=0; dy=1; d=1; }
+      var overlap=minDist-d;
+      var pushX=(dx/d)*overlap, pushY=(dy/d)*overlap;
+      var oldPx=P.x, oldPy=P.y;
+      tryMove(cur,P,pushX,0);
+      tryMove(cur,P,0,pushY);
+      var movedX=P.x-oldPx, movedY=P.y-oldPy;
+      var remX=pushX-movedX, remY=pushY-movedY;
+      if(Math.abs(remX)>0.001||Math.abs(remY)>0.001){
+        var nnx=n.x-remX, nny=n.y-remY;
+        if(walkableAt(cur,nnx,nny+3)){ n.x=nnx; n.y=nny; }
+      }
+    }
   }
+  unstuckEntity(cur,P);
   P.x=clamp(P.x,6,cur.w*TS-6); P.y=clamp(P.y,6,cur.h*TS-8);
 
   /* どくのぬま */
@@ -1887,8 +1919,16 @@ function updateNpcs(dt){
     if(n.mt>0){
       n.mt-=dt;
       var nx=n.x+n.vx*dt, ny=n.y+n.vy*dt;
-      if(Math.hypot(nx-n.hx,ny-n.hy)<44&&walkableAt(cur,nx,ny+3)&&Math.hypot(nx-P.x,ny-(P.y+2))>13){ n.x=nx; n.y=ny; }
-      else n.mt=0;
+      var hitNpc=false;
+      for(var j=0;j<cur.npcs.length;j++){
+        if(i===j) continue;
+        if(Math.hypot(nx-cur.npcs[j].x,ny-cur.npcs[j].y)<13){ hitNpc=true; break; }
+      }
+      if(!hitNpc && Math.hypot(nx-n.hx,ny-n.hy)<44 && walkableAt(cur,nx,ny+3) && Math.hypot(nx-P.x,ny-(P.y+2))>=14){
+        n.x=nx; n.y=ny;
+      } else {
+        n.mt=0; n.vx=0; n.vy=0;
+      }
     }
   }
 }
