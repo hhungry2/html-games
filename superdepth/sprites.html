@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Super Depth スプライト一覧</title>
+<style>
+  :root {
+    --bg: #0b1020;
+    --panel: #141b30;
+    --panel2: #1b2440;
+    --line: #2a3557;
+    --ink: #dbe4ff;
+    --dim: #8e9ac2;
+    --accent: #00c8e8;
+    --used: #3ddc84;
+    --unused: #6b7699;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif;
+    line-height: 1.7;
+  }
+  header {
+    padding: 28px 24px 20px;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, #101830, var(--bg));
+  }
+  header h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: .04em; }
+  header p { margin: 0; color: var(--dim); font-size: 14px; max-width: 78ch; }
+
+  .toolbar {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+    padding: 12px 24px;
+    background: rgba(11,16,32,.94);
+    backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--line);
+  }
+  .toolbar input[type=search] {
+    flex: 1 1 220px; min-width: 160px;
+    padding: 8px 12px;
+    background: var(--panel); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 6px;
+    font: inherit; font-size: 14px;
+  }
+  .toolbar label { font-size: 13px; color: var(--dim); display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .count { font-size: 13px; color: var(--dim); margin-left: auto; }
+
+  main { padding: 8px 24px 64px; }
+  section { margin: 34px 0 0; }
+  section > h2 {
+    margin: 0 0 4px; font-size: 18px;
+    padding-bottom: 6px; border-bottom: 2px solid var(--accent);
+    display: inline-block;
+  }
+  section > p.note { margin: 6px 0 16px; color: var(--dim); font-size: 14px; max-width: 84ch; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(228px, 1fr));
+    gap: 14px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .card.off { opacity: .55; }
+  .stage {
+    height: 132px;
+    display: flex; align-items: center; justify-content: center;
+    background:
+      linear-gradient(45deg, #1a2138 25%, transparent 25%, transparent 75%, #1a2138 75%),
+      linear-gradient(45deg, #1a2138 25%, #131a2c 25%, #131a2c 75%, #1a2138 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 8px 8px;
+  }
+  .stage canvas { image-rendering: pixelated; }
+  .body { padding: 10px 12px 12px; border-top: 1px solid var(--line); }
+  .name { font-weight: 600; font-size: 14px; word-break: break-all; }
+  .meta { font-size: 11.5px; color: var(--dim); font-family: ui-monospace, Consolas, monospace; margin: 2px 0 6px; }
+  .desc { font-size: 13px; color: #c3cdeb; }
+  .tag {
+    display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px;
+    vertical-align: 2px; margin-left: 6px; font-weight: 600;
+  }
+  .tag.y { background: rgba(61,220,132,.16); color: var(--used); }
+  .tag.n { background: rgba(107,118,153,.18); color: var(--unused); }
+  #status { padding: 40px 24px; color: var(--dim); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Super Depth スプライト一覧</h1>
+  <p>
+    <code>SuperDepth.swf</code> から取り出した 114 スプライトを、移植版と同じ手順
+    （グレースケールのマスク → パレット変換 → アニメフレームの合成）で焼き直して並べたものです。
+    絵はゲーム本体と同じ速度でアニメーションします。
+    「使用」バッジは、この移植版のコードが実際に描画しているかどうかを示します。
+  </p>
+</header>
+
+<div class="toolbar">
+  <input type="search" id="q" placeholder="名前・説明で絞り込み（例: 潜水艦, ボス, Waku）">
+  <label><input type="checkbox" id="onlyUsed"> 使用中のみ表示</label>
+  <span class="count" id="count"></span>
+</div>
+
+<div id="status">グラフィックを展開しています…</div>
+<main id="sheet" hidden></main>
+
+<script src="js/data.js"></script>
+<script src="js/assets.js"></script>
+<script src="js/gfx.js"></script>
+<script>
+// ---------------------------------------------------------------- 使用状況
+// js/stages.js と js/scenes.js が実際に描画しているスプライト。
+// 連番で参照しているもの（PowerUp_Blu + mode-1 など）は展開済み。
+const USED = new Set([
+  0, 1, 2,                       // 自機 3 種
+  3, 4, 5, 64,                   // DEEP の敵
+  14, 17, 18, 19,                // SKY の敵
+  20, 21, 22, 23,                // SPACE の敵
+  24,                            // アイテム運搬役
+  26, 28,                        // 自弾（通常 / パワー）
+  50, 51, 52, 53, 54, 55, 56,    // アイテム 7 種
+  65, 66, 72,                    // 敵弾（SKY / その他 / ボス）
+  74, 75, 76, 77, 78, 79,        // 爆発
+  80, 81, 82, 83, 84, 86, 90,    // 地球とボス
+  91, 95, 99, 105, 107,          // 背景と枠
+  111, 112, 113,                 // ロゴ・レーダー
+]);
+
+// ------------------------------------------------------------------- 説明
+const DESC = {
+  Yamaboku_DEEP: '自機。DEEP 面（1・5・9 面）の駆逐艦。海面に浮かんだまま左右にだけ動き、Z / X で艦尾・艦首から爆雷を落とす。',
+  Yamaboku_SKY: '自機。SKY 面（2・6・10 面）。DEEP と同じく左右移動のみ。',
+  Yamaboku_SPACE: '自機。SPACE 面（3・7・11 面）とボス面。SPACE 面では画面中央に固定され、上下移動と画面スクロールで戦う。',
+
+  Tiddler: 'DEEP の小型潜水艦。まっすぐ横切るだけの雑魚で 50 点。1 面から出る。',
+  Asthmatic: 'DEEP の大型潜水艦。上下に大きく波打ちながら進む。耐久 2、300 点。1 面から出る。',
+  Coypu: 'DEEP の高速艇。波打ちながら素早く横切る。耐久 1、200 点。3 面あたりから混ざる。',
+  Mine: 'DEEP の機雷（8px の最小スプライト）。海底から放たれてまっすぐゆっくり浮上し、海面のすぐ下で停止。そのまま数秒居座ってから消える。横には一切動かないので、通り道を塞ぐ置き物として効く。',
+
+  Eyewash_LL: 'ヘリコプターの傾き 5 段階のうち左いっぱい。原作は進行方向で描き分けていたが、移植では正面向きの Eyewash_M だけを使い、左右反転で向きを出している。',
+  Eyewash_L: 'ヘリコプターの傾き（左）。移植では未使用。',
+  Eyewash_M: 'SKY の小型ヘリコプター。正面向き。まっすぐ横切る雑魚で、SKY 面の 2 面から出る。',
+  Eyewash_R: 'ヘリコプターの傾き（右）。移植では未使用。',
+  Eyewash_RR: 'ヘリコプターの傾き（右いっぱい）。移植では未使用。',
+  Spooky: 'SKY のジェット機。上下に大きく波打ちながら飛ぶ。耐久 2、300 点。',
+  Fratricide: 'SKY の二重ローター砲台。自機を追いかけながら小さく上下に揺れる。耐久 2、200 点。',
+  Scourge: 'SKY の大型ミサイル。波打ちながら直進する。耐久 3、500 点。',
+
+  Mean: 'SPACE の円盤。波打ちながら飛ぶ。耐久 2。',
+  Chirstie: 'SPACE の連結衛星。自機を追う。耐久 2。',
+  Poppy: 'SPACE の小型機雷。直進する雑魚。',
+  Rob: 'SPACE の宇宙生物。耐久 4 で SPACE 面いちばんの硬さ。',
+  Strayed_Brain: 'クラゲ状の敵。原作の敵リストにはあるが、移植では出現させていない。',
+
+  Hoot: 'アイテム運搬役。全ステージ共通で 1 面から約 6 回に 1 回出現し、上下に大きく揺れながら横切る。倒すと必ずアイテムを落とす唯一の敵で、通常の敵はアイテムを落とさない。',
+
+  PowerUp_Blu: 'アイテム 1：スピードアップ。自機の移動速度 +2（最大 16）。',
+  PowerUp_Red: 'アイテム 2：弾倉拡張。同時に水中へ出せる爆雷が 1 発増える（最大 8）。',
+  PowerUp_Grn: 'アイテム 3：パワーショット。爆雷が赤くなり威力 2・連射も速くなる。2 コマ持っているが、切り替えずに 1 コマ目で固定して描いている。',
+  PowerUp_Ora: 'アイテム 4：フラッシュボム。取った瞬間に画面内の雑魚敵と敵弾を一斉に消し飛ばす（撃破点も入り、ノルマにも数える）。4 コマの点滅を持っているが、いちばん黄色い 2 コマ目（#BDAA00）で固定し、点滅させずに描いている。',
+  PowerUp_Pur: 'アイテム 5：3WAY。1 回の投下で 3 発ばらまく（弾倉も 3 発分消費する）。',
+  PowerUp_Cya: 'アイテム 6：フルパワー。パワーショット・3WAY・弾倉 8・速度 10 をまとめて付与。',
+  PowerUp_Whi: 'アイテム 7：1UP。残機が 1 増える。',
+
+  Bomb_Blu_M: '爆雷（通常）。Z / X で投下する自弾そのものであり、画面上部中央に並ぶ残弾アイコンにも同じ絵を使う。落下速度は 3.6px/frame。',
+  Bomb_Blu_LR: '爆雷の左右版。移植では中央版だけを使っている。',
+  Bomb_Red_M: 'パワーショット時の爆雷。威力 2。残弾アイコンも赤に変わる。',
+  Bomb_Red_LR: '赤い爆雷の左右版。未使用。',
+  Bomb_Grn_M: '緑の爆雷。原作でも出番が少なく、移植では未使用。',
+  Bomb_Grn_LR: '緑の爆雷の左右版。未使用。',
+  Bomb: '小型の投下爆弾（8px）。SKY 面の<b>敵弾</b>に使用。ほかのステージの敵弾は Bullet1。',
+
+  Bullet1: 'もとは自機のショット。自弾を爆雷に置き換えたため、現在は SKY 面をのぞく全ステージの<b>敵弾</b>として使っている（SKY 面は Bomb）。',
+  Bullet3: 'もとはパワーショット時の自機ショット。現在は<b>ボスの弾</b>に使用。',
+  Bullet2: '中間サイズの弾。移植では未使用。',
+  Laser_Beam: 'レーザー。原作のボス武装。移植では未使用。',
+  Fire_Breath: '火炎。原作のボス武装。移植では未使用。',
+  Energy_Beam_S: 'エネルギー弾（小）。原作はコードで直接描いていた武器で、移植では未使用。',
+  Energy_Beam_L: 'エネルギー弾（大）。同じく未使用。',
+  Barner: 'バーナー系のエフェクト。未使用。',
+
+  ExplosionL_1: '大型爆発 1。大きい敵や自機の撃沈時に、3 種からランダムで選ばれる。',
+  ExplosionL_2: '大型爆発 2。',
+  ExplosionL_3: '大型爆発 3。',
+  ExplosionS_1: '小型爆発 1。小さい敵の撃破時に 3 種からランダムで選ばれる。',
+  ExplosionS_2: '小型爆発 2。',
+  ExplosionS_3: '小型爆発 3。',
+
+  Earth: '地球。4x4 セル＝128px の最大スプライトで、専用の青緑ランプ（パレット変種 12）で焼いている。エンディングで使用。',
+  Eerie_Core: '1 周目（4 面）のボス本体。',
+  Lunatic_Noddle1: 'ボスの取り巻きポッド 1。本体の周りを楕円軌道で回る。',
+  Lunatic_Noddle2: 'ボスの取り巻きポッド 2。',
+  Lunatic_Noddle3: 'ボスの取り巻きポッド 3。',
+  Lunatic_NoddleS: '取り巻きの小型版。移植では未使用。',
+  Lunatic_NoddleH: '2 周目（8 面）のボス本体。',
+  BPSM_ArmT: '3 周目ボスの腕（上）。移植のボスは本体 1 枚で組んでいるため未使用。',
+  BPSM_ArmB: '3 周目ボスの腕（下）。未使用。',
+  BPSM_Core: '3 周目ボスのコア。未使用。',
+  BPSM_Body: '3 周目（12 面）のボス本体。2x4 セル＝64x128。',
+
+  Wigwam_B: '海底に据えられた砲台の土台。地形との当たり判定が未実装なので移植では未使用。',
+  Wigwam_T1: '海底砲台の可動部 1。未使用。',
+  Wigwam_T2: '海底砲台の可動部 2。未使用。',
+  Wigwam_T3: '海底砲台の可動部 3。未使用。',
+  Wigwam_T4: '海底砲台の可動部 4。未使用。',
+  Wigwam_T5: '海底砲台の可動部 5。未使用。',
+
+  Bottom1: '海底のタイル。タイトル画面の海底に横方向へ敷き詰めている。DEEP 面は海面を作り直した際に使わなくなった。',
+  Bottom2: '海底のタイル（別柄）。未使用。',
+  Align1: '位置合わせ用のタイル。未使用。',
+  Align2: '位置合わせ用のタイル。未使用。',
+  Horizon: '海面のライン。DEEP 面とタイトル画面で、空と海の境目に横方向へ敷き詰める。',
+  Cloud: '雲。SKY 面の背景を 5 枚が視差でゆっくり流れる。',
+
+  WakuU36: '36 ドット版の上枠。未使用。',
+  WakuB36: '36 ドット版の下枠。未使用。',
+  WakuUL: '枠の左上角。未使用。',
+  WakuUM: '枠の上辺。画面いちばん上のレールに 16px 間隔で敷き詰めている。',
+  WakuUR: '枠の右上角。未使用。',
+  WakuML: '枠の左辺。未使用。',
+  WakuMM: '枠の中央。未使用。',
+  WakuMR: '枠の右辺。未使用。',
+  WakuBL: '枠の左下角。未使用。',
+  WakuBM: '枠の下辺。プレイフィールドの下端（ステータス帯との境目）に敷き詰めている。',
+  WakuBR: '枠の右下角。未使用。',
+  Rader: 'レーダーの枠（160x48）。画面下ステータス帯の中央に置き、その内側へ自機（白）・敵（橙）・弾（赤）をプロットしている。',
+
+  Human1: '人物 1。エンディング用。移植では未使用。',
+  Human2: '人物 2。未使用。',
+  Human3: '人物 3。未使用。',
+  Logo: 'Bio_100% のロゴ。起動直後のロゴ画面で使用。',
+  Super: 'タイトルの「Super」ロゴ。タイトル画面で Depth ロゴの左上に重ねる。',
+
+  Missile1_UL: '9 方向ミサイル（上段・左）。原作は角度ごとに絵を持っていた。移植では敵弾を Bullet1 に統一したため未使用。',
+  Missile2_UL: '9 方向ミサイル（別デザイン）。未使用。',
+  MissileE_L3: '敵ミサイルの横方向 7 段階のうち左いっぱい。移植では敵弾を Bullet1 に統一したため未使用。',
+};
+
+// 連番グループはまとめて同じ説明を配る
+function fill(prefix, names, text) {
+  for (const n of names) if (!DESC[n]) DESC[n] = text;
+}
+fill('', ['Missile1_UM','Missile1_UR','Missile1_LU','Missile1_LM','Missile1_LB','Missile1_RU','Missile1_RM','Missile1_RB'],
+     '9 方向ミサイルの一枚。移植では敵弾を Bullet1 に統一したため未使用。');
+fill('', ['Missile2_UM','Missile2_UR','Missile2_LU','Missile2_LM','Missile2_LB','Missile2_RU','Missile2_RM','Missile2_RB'],
+     '9 方向ミサイル（別デザイン）の一枚。未使用。');
+fill('', ['MissileE_L2','MissileE_L1','MissileE_M','MissileE_R1','MissileE_R2','MissileE_R3'],
+     '敵ミサイルの横方向バリエーション。移植では敵弾を Bullet1 に統一したため未使用。');
+
+// ------------------------------------------------------------------ 章立て
+const range = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
+const GROUPS = [
+  { title: '自機', note: 'ステージ種別ごとに 3 枚。どれも 2x1 セル＝64x32 で、絵は左向きに描かれている。', ids: [0, 1, 2] },
+  { title: 'DEEP（海中）の敵', note: '1・5・9 面。潜水艦と機雷。', ids: [3, 4, 5, 64] },
+  { title: 'SKY（空）の敵', note: '2・6・10 面。ヘリコプターは原作では傾き 5 段階を持っていた。', ids: range(12, 19) },
+  { title: 'SPACE（宇宙）の敵', note: '3・7・11 面。', ids: [20, 21, 22, 23, 25] },
+  { title: 'アイテム運搬役とアイテム', note: 'Hoot を倒したときだけアイテムが出る。中身は原作の抽選表 Item_put で決まる。DEEP ではまっすぐ浮上、SKY ではまっすぐ落下する。', ids: [24, ...range(50, 56)] },
+  { title: '自弾（爆雷）', note: 'Z が艦尾から、X が艦首から落とす。同じ弾倉を共有し、初期値 4 発。画面から消えるまで枠が空かない。', ids: range(26, 31) },
+  { title: '敵弾', note: '自弾を爆雷に置き換えたぶん、もと自機ショットだった絵が敵弾に回っている。SKY 面だけは小型の Bomb。', ids: [66, 65, 72, 69, ...range(57, 63)] },
+  { title: '未使用の武器グラフィック', note: '原作にはあるが、この移植では描いていないもの。', ids: [67, 68, 70, 71, 73, ...range(32, 49)] },
+  { title: '爆発', note: '大小 3 種ずつ。倒した相手の大きさで大小を選び、3 種からランダムに 1 つ。', ids: range(74, 79) },
+  { title: 'ボスと地球', note: '4・8・12 面のボス。周回ごとに本体が変わる。', ids: [81, 86, 90, 82, 83, 84, 85, 87, 88, 89, 80] },
+  { title: '地形・背景', note: '海面・海底・雲。海底砲台（Wigwam）は当たり判定が未実装なので出していない。', ids: [95, 91, 92, 107, ...range(6, 11), 93, 94] },
+  { title: 'HUD の枠とレーダー', note: '枠は 9 分割タイルだが、使っているのは上辺と下辺の 2 枚だけ。', ids: [99, 105, 113, 96, 97, 98, 100, 101, 102, 103, 104, 106] },
+  { title: 'ロゴ・エンディング', note: 'ストリップではなく 1 枚絵として読み込んでいる画像。', ids: [111, 112, 108, 109, 110] },
+];
+
+// ---------------------------------------------------------------- 描画
+const canvases = [];   // {el, ctx, id, scale}
+
+function makeCard(id) {
+  const name = SD.SPRITE_NAMES[id];
+  const conv = SD.CONV[id];
+  const size = SD.Gfx.sizeOf(id);
+  const used = USED.has(id);
+  const frames = id >= SD.S.Logo ? 1 : conv[3];
+  const sheet = id >= SD.S.Logo ? 'PNG' : SD.SHEETS[conv[0] & 3];
+
+  const card = document.createElement('div');
+  card.className = 'card' + (used ? '' : ' off');
+  card.dataset.hay = (name + ' ' + (DESC[name] || '')).toLowerCase();
+  card.dataset.used = used ? '1' : '0';
+
+  const stage = document.createElement('div');
+  stage.className = 'stage';
+  const cv = document.createElement('canvas');
+  cv.width = size.w; cv.height = size.h;
+  const scale = Math.max(1, Math.min(4, Math.floor(Math.min(196 / size.w, 116 / size.h))));
+  cv.style.width = size.w * scale + 'px';
+  cv.style.height = size.h * scale + 'px';
+  stage.appendChild(cv);
+  canvases.push({ ctx: cv.getContext('2d'), id: id, w: size.w, h: size.h });
+
+  const body = document.createElement('div');
+  body.className = 'body';
+  body.innerHTML =
+    '<div class="name">' + name +
+      '<span class="tag ' + (used ? 'y">使用' : 'n">未使用') + '</span></div>' +
+    '<div class="meta">#' + id + ' &middot; ' + size.w + '&times;' + size.h +
+      ' &middot; ' + sheet + ' &middot; ' + frames + ' frame' + (frames > 1 ? 's' : '') + '</div>' +
+    '<div class="desc">' + (DESC[name] || '') + '</div>';
+
+  card.appendChild(stage);
+  card.appendChild(body);
+  return card;
+}
+
+function build() {
+  const sheet = document.getElementById('sheet');
+  const seen = new Set();
+  for (const g of GROUPS) {
+    const sec = document.createElement('section');
+    const h = document.createElement('h2'); h.textContent = g.title; sec.appendChild(h);
+    if (g.note) { const p = document.createElement('p'); p.className = 'note'; p.textContent = g.note; sec.appendChild(p); }
+    const grid = document.createElement('div'); grid.className = 'grid';
+    for (const id of g.ids) { seen.add(id); grid.appendChild(makeCard(id)); }
+    sec.appendChild(grid);
+    sheet.appendChild(sec);
+  }
+  // 章に入れ忘れたものがあれば最後にまとめて出す
+  const rest = [];
+  for (let id = 0; id < SD.CONV.length; id++) if (!seen.has(id)) rest.push(id);
+  if (rest.length) {
+    const sec = document.createElement('section');
+    sec.innerHTML = '<h2>その他</h2>';
+    const grid = document.createElement('div'); grid.className = 'grid';
+    for (const id of rest) grid.appendChild(makeCard(id));
+    sec.appendChild(grid);
+    sheet.appendChild(sec);
+  }
+}
+
+// ゲーム本体と同じ 30fps でフレームを送る
+let anim = 0, acc = 0, last = 0;
+function loop(t) {
+  if (!last) last = t;
+  acc += t - last; last = t;
+  if (acc >= 1000 / 30) {
+    acc = 0;
+    anim++;
+    for (const c of canvases) {
+      const img = SD.Gfx.frameOf(c.id, anim);
+      c.ctx.clearRect(0, 0, c.w, c.h);
+      if (img) c.ctx.drawImage(img, 0, 0);
+    }
+  }
+  requestAnimationFrame(loop);
+}
+
+function applyFilter() {
+  const q = document.getElementById('q').value.trim().toLowerCase();
+  const onlyUsed = document.getElementById('onlyUsed').checked;
+  let shown = 0;
+  for (const card of document.querySelectorAll('.card')) {
+    const ok = (!q || card.dataset.hay.includes(q)) && (!onlyUsed || card.dataset.used === '1');
+    card.hidden = !ok;
+    if (ok) shown++;
+  }
+  for (const sec of document.querySelectorAll('section')) {
+    sec.hidden = !sec.querySelector('.card:not([hidden])');
+  }
+  document.getElementById('count').textContent = shown + ' / ' + canvases.length + ' スプライト';
+}
+
+(async function () {
+  await SD.Gfx.load();
+  build();
+  document.getElementById('status').remove();
+  document.getElementById('sheet').hidden = false;
+  document.getElementById('q').addEventListener('input', applyFilter);
+  document.getElementById('onlyUsed').addEventListener('change', applyFilter);
+  applyFilter();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
