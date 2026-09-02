@@ -1,0 +1,1262 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>DOOR BANG! MOUSE COP - HTML5 マッピー風アクション</title>
+<meta name="description" content="HTML5 Canvasで作ったマッピー風のドールハウス・チェイスアクション。トランポリンで階を移動し、ドアを閉めて猫をしびれさせて捕まえる。全8ステージ+ループ・スマホ/PC対応。">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #14101f;
+  background-image:
+    radial-gradient(circle at 50% -10%, #2a2140 0%, transparent 60%),
+    radial-gradient(circle at 90% 110%, #3a1b2e 0%, transparent 55%);
+  color: #e9e6f5;
+  font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 8px;
+  overflow: hidden;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.wrap {
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ---------- 上部バー ---------- */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: "Consolas", monospace;
+  font-size: 11px;
+  color: #b0a8c8;
+}
+.topbar .title { flex: 1; letter-spacing: .1em; color: #ff9ec8; font-weight: 700; }
+.sbtn {
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.14);
+  color: #dcd6ef;
+  border-radius: 6px;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.sbtn:active { background: rgba(255,255,255,.18); }
+.sbtn.off { color: #6a6489; }
+
+/* ---------- HUD ---------- */
+.hud {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: "Consolas", monospace;
+  font-size: 11px;
+  color: #cfc8e6;
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 6px;
+  padding: 5px 9px;
+}
+.hud b { color: #ffd76a; }
+.hud .lives { margin-left: auto; letter-spacing: 1px; }
+
+/* ---------- 画面 ---------- */
+.screen { position: relative; width: 100%; }
+
+canvas#game {
+  display: block;
+  width: 100%;
+  background: #1a1430;
+  border: 2px solid #3a3350;
+  border-radius: 4px;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(10,8,16,.92);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px;
+  text-align: center;
+  overflow-y: auto;
+}
+.overlay.hidden { display: none; }
+
+.logo {
+  font-family: "Consolas", monospace;
+  font-size: clamp(18px, 6.4vw, 26px);
+  font-weight: 700;
+  letter-spacing: .06em;
+  color: #ff9ec8;
+  text-shadow: 0 3px 0 #7a2f56, 0 0 14px rgba(255,158,200,.35);
+}
+.sub {
+  font-size: 11px;
+  color: #a89cc8;
+  letter-spacing: .06em;
+  margin-top: -4px;
+}
+.rules {
+  list-style: none;
+  font-size: 10.5px;
+  line-height: 1.7;
+  color: #c6c0e0;
+  text-align: left;
+  max-width: 310px;
+}
+.rules b { color: #ffd76a; }
+.rules .ic { color: #7ad0e8; }
+
+.menu { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.btn {
+  background: linear-gradient(#ff9ec8, #d962a0);
+  border: 0;
+  border-radius: 8px;
+  box-shadow: 0 3px 0 #92285f;
+  color: #2a0a1a;
+  font-family: "Consolas", monospace;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  padding: 9px 16px;
+  cursor: pointer;
+}
+.btn:active { transform: translateY(3px); box-shadow: 0 0 0 #92285f; }
+.btn.sub2 {
+  background: linear-gradient(#4c5470, #363c52);
+  box-shadow: 0 3px 0 #22273a;
+  color: #e2e6f2;
+}
+.keys { font-family: "Consolas", monospace; font-size: 9.5px; color: #8a82ab; line-height: 1.6; }
+
+/* ---------- タッチ操作 ---------- */
+.pad {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 2px 4px 0;
+}
+.dpad {
+  display: grid;
+  grid-template-columns: repeat(3, 48px);
+  grid-template-rows: repeat(3, 48px);
+  gap: 4px;
+}
+.dbtn {
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.16);
+  color: #ecdfef;
+  border-radius: 10px;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: none;
+}
+.dbtn:active { background: rgba(255,158,200,.35); }
+.dbtn.up    { grid-area: 1 / 2; }
+.dbtn.left  { grid-area: 2 / 1; }
+.dbtn.right { grid-area: 2 / 3; }
+.dbtn.down  { grid-area: 3 / 2; }
+
+@media (max-width: 380px) {
+  .dpad { grid-template-columns: repeat(3, 42px); grid-template-rows: repeat(3, 42px); }
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <div class="topbar">
+    <span class="title">DOOR BANG! MOUSE COP</span>
+    <button class="sbtn" id="soundBtn">SOUND ON</button>
+    <button class="sbtn" id="pauseBtn">PAUSE</button>
+  </div>
+
+  <div class="hud">
+    <span>SCORE <b id="hudScore">0</b></span>
+    <span>STAGE <b id="hudStage">1</b></span>
+    <span>🧀 <b id="hudItems">0/0</b></span>
+    <span class="lives" id="hudLives">🐭🐭🐭</span>
+  </div>
+
+  <div class="screen">
+    <canvas id="game" width="260" height="372"></canvas>
+
+    <div class="overlay" id="titleScreen">
+      <h1 class="logo">DOOR BANG!<br>MOUSE COP</h1>
+      <p class="sub">- マッピー風ドールハウス・チェイス -</p>
+      <ul class="rules">
+        <li>各部屋の <span class="ic">🧀アイテム</span> を全部集めればステージクリア</li>
+        <li><b>ドア</b>に突っこむと開閉、<b>閉まる瞬間</b>に猫がいるとしびれる</li>
+        <li>しびれた猫にふれると<b>捕獲</b>！連続で捕まえると倍々ボーナス</li>
+        <li><b>トランポリン</b>の上で<span class="ic">↑</span>で上の階へバウンド／穴の上で<span class="ic">↓</span>で下へ落ちる</li>
+        <li>トランポリンは3回でこわれ、少しの間バウンド不可（落ちるのはOK）</li>
+        <li>元気な猫にふれるとミス。残機0でゲームオーバー</li>
+      </ul>
+      <div class="menu">
+        <button class="btn" id="startBtn">GAME START</button>
+      </div>
+      <p class="keys">矢印キー / WASD で移動・トランポリン上で↑↓<br>P: ポーズ　M: サウンド切替</p>
+    </div>
+
+    <div class="overlay hidden" id="stageClearScreen">
+      <h2 class="logo" id="clearTitle">STAGE CLEAR</h2>
+      <p class="sub" id="clearLine">BONUS 0</p>
+    </div>
+
+    <div class="overlay hidden" id="resultScreen">
+      <h2 class="logo" id="resultTitle">GAME OVER</h2>
+      <p class="sub" id="resultLine">STAGE 1 / SCORE 0</p>
+      <p class="keys" id="resultBest">HI-SCORE 0</p>
+      <div class="menu">
+        <button class="btn" id="retryBtn">RETRY</button>
+        <button class="btn sub2" id="titleBtn">TITLE</button>
+      </div>
+    </div>
+
+    <div class="overlay hidden" id="pauseScreen">
+      <h2 class="logo">PAUSE</h2>
+      <div class="menu">
+        <button class="btn" id="resumeBtn">RESUME</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="pad">
+    <div class="dpad">
+      <div class="dbtn up"    data-dir="up">▲</div>
+      <div class="dbtn left"  data-dir="left">◀</div>
+      <div class="dbtn right" data-dir="right">▶</div>
+      <div class="dbtn down"  data-dir="down">▼</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ============================================================
+   DOOR BANG! MOUSE COP - マッピー風 ドールハウス・チェイス
+   sound / stage生成 / trampoline / door / cat AI / render を1ファイルに統合
+   ============================================================ */
+(function (global) {
+'use strict';
+
+/* ============================================================
+   定数
+   ============================================================ */
+var VIEW_W = 260, VIEW_H = 372;
+var COLS = 11, TILE = 22, WALL = 9;
+var ROW_H = 42, TOP_MARGIN = 20, BOTTOM_MARGIN = 16, MAX_FLOORS = 8;
+var HALF_W = 8;
+var MIN_X = WALL + HALF_W;
+var MAX_X = WALL + COLS * TILE - HALF_W;
+var PLAYER_SPEED = 80;
+var TRAMP_CHARGE = 3;
+var TRAMP_BREAK_TIME = 6.5;
+var TRANSITION_TIME = 0.22;
+var DOOR_OPEN_T = 0.14, DOOR_HOLD_T = 0.28, DOOR_CLOSE_T = 0.14, DOOR_COOLDOWN = 0.45;
+var DOOR_CATCH_RANGE = TILE * 0.85;
+var HIT_FREEZE_T = 0.7;
+var INVINCIBLE_T = 2.0;
+var COMBO_WINDOW = 3.0;
+var CHASE_RANGE = 120;
+var RESPAWN_SAFE_RANGE = 90;
+var CAT_COLORS = ['#e0603a', '#7a5ad0', '#3aa0c9', '#e0a53a', '#5ac98a', '#c9507a'];
+
+function colX(c) { return WALL + (c + 0.5) * TILE; }
+function floorY(f) { return TOP_MARGIN + f * ROW_H + (ROW_H - 10); }
+
+/* ============================================================
+   Sound - Web Audio API による効果音合成
+   ============================================================ */
+var Sound = (function () {
+  var ctx = null, master = null, enabled = true, ready = false;
+
+  function init() {
+    if (ready) return;
+    var AC = global.AudioContext || global.webkitAudioContext;
+    if (!AC) { enabled = false; ready = true; return; }
+    try { ctx = new AC(); } catch (e) { enabled = false; ready = true; return; }
+    master = ctx.createGain();
+    master.gain.value = 0.32;
+    master.connect(ctx.destination);
+    ready = true;
+  }
+  function now() { return ctx.currentTime; }
+
+  function tone(opt) {
+    if (!ctx || !enabled) return;
+    var at = opt.at || 0;
+    var o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = opt.type || 'square';
+    o.frequency.setValueAtTime(opt.freq, now() + at);
+    if (opt.to) o.frequency.exponentialRampToValueAtTime(opt.to, now() + at + opt.dur);
+    g.gain.setValueAtTime(0.0001, now() + at);
+    g.gain.exponentialRampToValueAtTime(opt.vol || 0.2, now() + at + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, now() + at + opt.dur);
+    o.connect(g); g.connect(master);
+    o.start(now() + at);
+    o.stop(now() + at + opt.dur + 0.03);
+  }
+
+  function noise(dur, vol, freq, q, type) {
+    if (!ctx || !enabled) return;
+    var len = Math.max(1, Math.floor(ctx.sampleRate * dur));
+    var buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    var d = buf.getChannelData(0);
+    for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    var src = ctx.createBufferSource(); src.buffer = buf;
+    var f = ctx.createBiquadFilter();
+    f.type = type || 'bandpass';
+    f.frequency.value = freq || 900;
+    f.Q.value = q || 1.0;
+    var g = ctx.createGain(); g.gain.value = vol;
+    src.connect(f); f.connect(g); g.connect(master);
+    src.start();
+  }
+
+  function seq(list, type) {
+    for (var i = 0; i < list.length; i++) {
+      tone({ freq: list[i][0], dur: list[i][1], vol: 0.16, at: list[i][2], type: type });
+    }
+  }
+
+  var SFX = {
+    bounce:  function () { tone({ freq: 260, to: 620, dur: 0.14, vol: 0.16, type: 'triangle' }); },
+    denied:  function () { tone({ freq: 140, dur: 0.09, vol: 0.1, type: 'square' }); },
+    slam:    function () { noise(0.09, 0.28, 800, 1.2, 'lowpass'); tone({ freq: 180, to: 70, dur: 0.09, vol: 0.14, type: 'square' }); },
+    item:    function () { seq([[660, 0.06, 0], [880, 0.09, 0.06]]); },
+    stun:    function () { seq([[520, 0.06, 0], [400, 0.06, 0.06], [300, 0.09, 0.12]], 'triangle'); },
+    capture: function (combo) {
+      var base = 440 + combo * 90;
+      seq([[base, 0.07, 0], [base * 1.25, 0.07, 0.07], [base * 1.6, 0.14, 0.14]]);
+    },
+    floorClear: function () { seq([[523, 0.09, 0], [659, 0.09, 0.09], [784, 0.16, 0.18]]); },
+    hit:     function () { noise(0.3, 0.3, 260, 0.8, 'lowpass'); tone({ freq: 180, to: 60, dur: 0.28, vol: 0.16, type: 'sawtooth' }); },
+    start:   function () { seq([[392, 0.1, 0], [523, 0.1, 0.11], [659, 0.2, 0.22]]); },
+    clear:   function () { seq([[523, 0.14, 0], [659, 0.14, 0.12], [784, 0.14, 0.24], [1046, 0.28, 0.36]]); },
+    over:    function () { seq([[392, 0.24, 0], [330, 0.24, 0.17], [262, 0.24, 0.34], [196, 0.4, 0.51]], 'triangle'); },
+    extra:   function () { seq([[659, 0.08, 0], [784, 0.08, 0.08], [988, 0.08, 0.16], [1318, 0.22, 0.24]]); }
+  };
+
+  return {
+    init: init,
+    play: function (n, arg) {
+      if (!enabled || !ctx) return;
+      if (ctx.state === 'suspended') ctx.resume();
+      if (SFX[n]) SFX[n](arg);
+    },
+    toggle: function () { enabled = !enabled; return enabled; },
+    isOn: function () { return enabled; }
+  };
+})();
+
+/* ============================================================
+   乱数（ステージ生成を再現可能にする）
+   ============================================================ */
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    var t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+/* ============================================================
+   ステージ生成
+   ============================================================ */
+function buildStage(stageNum) {
+  var rnd = mulberry32(1000 + stageNum * 97);
+  var floors = Math.min(MAX_FLOORS, 4 + Math.floor((stageNum - 1) / 2));
+  var connectors = [], doors = [], items = [];
+  var used = [];
+  for (var f = 0; f < floors; f++) used.push({});
+
+  function pickCol(sets, avoid) {
+    var col = -1, tries = 0;
+    while (tries < 50) {
+      var c = Math.floor(rnd() * COLS);
+      var ok = true;
+      for (var i = 0; i < sets.length; i++) if (sets[i][c]) ok = false;
+      if (avoid && avoid[c]) ok = false;
+      if (ok) { col = c; break; }
+      tries++;
+    }
+    return col;
+  }
+
+  /* トランポリン: 隣接する階すべてに最低1つ */
+  for (var r = 1; r < floors; r++) {
+    var count = (stageNum >= 3 && rnd() < 0.4) ? 2 : 1;
+    var chosen = {};
+    for (var k = 0; k < count; k++) {
+      var col = pickCol([used[r - 1], used[r]], chosen);
+      if (col < 0) continue;
+      chosen[col] = true;
+      used[r - 1][col] = true; used[r][col] = true;
+      connectors.push({ r: r, col: col, x: colX(col), charge: TRAMP_CHARGE, maxCharge: TRAMP_CHARGE, broken: false, respawnT: 0, bounceT: 0 });
+    }
+  }
+
+  /* ドア: 各階2つ */
+  for (var f2 = 0; f2 < floors; f2++) {
+    for (var d = 0; d < 2; d++) {
+      var dc = pickCol([used[f2]]);
+      if (dc < 0) continue;
+      used[f2][dc] = true;
+      doors.push({ floor: f2, col: dc, x: colX(dc), state: 'closed', t: 0, cooldown: 0 });
+    }
+  }
+
+  /* アイテム: 残った列に配置（最大3階ごと） */
+  var kinds = 4;
+  for (var f3 = 0; f3 < floors; f3++) {
+    var avail = [];
+    for (var c2 = 0; c2 < COLS; c2++) if (!used[f3][c2]) avail.push(c2);
+    for (var i2 = avail.length - 1; i2 > 0; i2--) {
+      var j = Math.floor(rnd() * (i2 + 1));
+      var tmp = avail[i2]; avail[i2] = avail[j]; avail[j] = tmp;
+    }
+    var n = Math.min(3, avail.length);
+    for (var i3 = 0; i3 < n; i3++) {
+      var col3 = avail[i3];
+      used[f3][col3] = true;
+      items.push({ floor: f3, col: col3, x: colX(col3), collected: false, kind: (f3 * 3 + col3) % kinds });
+    }
+  }
+
+  var catCount = Math.min(6, 2 + Math.floor((stageNum - 1) / 2));
+  var catSpeedBase = 40 + Math.min(34, stageNum * 3.4);
+  var startFloor = floors - 1;
+  var startX = colX(0);
+  var spawns = [];
+  for (var i4 = 0; i4 < catCount; i4++) {
+    var sf, sx, tries2 = 0;
+    do {
+      sf = Math.floor(rnd() * floors);
+      sx = MIN_X + rnd() * (MAX_X - MIN_X);
+      tries2++;
+    } while (sf === startFloor && Math.abs(sx - startX) < 100 && tries2 < 20);
+    spawns.push({ floor: sf, x: sx });
+  }
+
+  return {
+    stageNum: stageNum, floors: floors, connectors: connectors, doors: doors, items: items,
+    catCount: catCount, catSpeedBase: catSpeedBase, startFloor: startFloor, startX: startX, spawns: spawns
+  };
+}
+
+/* ============================================================
+   ゲーム状態
+   ============================================================ */
+var canvas = document.getElementById('game');
+var ctx2d = canvas.getContext('2d');
+var state = 'title'; /* title | playing | stageclear | gameover | paused */
+var score = 0, hiScore = 0, lives = 3, stageNum = 1;
+var stageData = null;
+var connectors = [], doors = [], items = [], cats = [];
+var floorItemTotal = [], floorItemDone = [];
+var comboCount = 0, comboT = 0;
+var nextExtraLifeScore = 20000;
+var popups = [];
+var shakeT = 0;
+
+var player = {
+  floor: 0, x: 0, dir: 1, moving: false,
+  transitioning: false, fromFloor: 0, toFloor: 0, tT: 0,
+  vLatchUp: false, vLatchDown: false, invincibleT: 0, freezeT: 0, blinkT: 0
+};
+
+try { hiScore = parseInt(localStorage.getItem('mappyHiScore') || '0', 10) || 0; } catch (e) { hiScore = 0; }
+
+/* ---------- 入力 ---------- */
+var keys = { left: false, right: false, up: false, down: false };
+var touch = { left: false, right: false, up: false, down: false };
+function inputState(name) { return keys[name] || touch[name]; }
+
+function keyAction(e) {
+  var k = (e.key || '').toLowerCase();
+  switch (k) {
+    case 'arrowleft': case 'a': return ['left'];
+    case 'arrowright': case 'd': return ['right'];
+    case 'arrowup': case 'w': return ['up'];
+    case 'arrowdown': case 's': return ['down'];
+    case 'p': case 'escape': return ['pause'];
+    case 'm': return ['mute'];
+    case 'enter': return ['enter'];
+  }
+  return null;
+}
+document.addEventListener('keydown', function (e) {
+  var a = keyAction(e);
+  if (!a) return;
+  if (a[0] === 'left' || a[0] === 'right' || a[0] === 'up' || a[0] === 'down') {
+    e.preventDefault(); keys[a[0]] = true;
+  } else if (a[0] === 'pause') {
+    e.preventDefault(); togglePause();
+  } else if (a[0] === 'mute') {
+    toggleSound();
+  } else if (a[0] === 'enter') {
+    if (state === 'title') doStart();
+    else if (state === 'gameover') doStart();
+  }
+});
+document.addEventListener('keyup', function (e) {
+  var a = keyAction(e);
+  if (!a) return;
+  if (a[0] === 'left' || a[0] === 'right' || a[0] === 'up' || a[0] === 'down') keys[a[0]] = false;
+});
+function bindTouch() {
+  var dbtns = document.querySelectorAll('.dbtn');
+  Array.prototype.forEach.call(dbtns, function (el) {
+    var dir = el.dataset.dir;
+    el.addEventListener('pointerdown', function (ev) { ev.preventDefault(); touch[dir] = true; Sound.init(); });
+    var off = function () { touch[dir] = false; };
+    el.addEventListener('pointerup', off);
+    el.addEventListener('pointerleave', off);
+    el.addEventListener('pointercancel', off);
+  });
+}
+bindTouch();
+
+/* ============================================================
+   ステージ開始・進行
+   ============================================================ */
+function loadStage(n) {
+  stageData = buildStage(n);
+  connectors = stageData.connectors;
+  doors = stageData.doors;
+  items = stageData.items;
+  floorItemTotal = new Array(stageData.floors).fill(0);
+  floorItemDone = new Array(stageData.floors).fill(0);
+  items.forEach(function (it) { floorItemTotal[it.floor]++; });
+
+  cats = stageData.spawns.map(function (sp, i) {
+    return {
+      floor: sp.floor, x: sp.x, dir: 1, color: CAT_COLORS[i % CAT_COLORS.length],
+      state: 'patrol', dizzyT: 0, goalFloor: sp.floor, goalT: 0,
+      transitioning: false, fromFloor: 0, toFloor: 0, tT: 0,
+      speed: stageData.catSpeedBase * (0.85 + 0.3 * ((i * 37) % 10) / 10),
+      wobble: Math.random() * 10
+    };
+  });
+
+  player.floor = stageData.startFloor;
+  player.x = stageData.startX;
+  player.dir = 1;
+  player.transitioning = false;
+  player.invincibleT = 1.2;
+  player.freezeT = 0;
+
+  popups = [];
+  comboCount = 0; comboT = 0;
+  document.getElementById('hudStage').textContent = n;
+  updateHud();
+}
+
+function itemsRemaining() {
+  var n = 0;
+  for (var i = 0; i < items.length; i++) if (!items[i].collected) n++;
+  return n;
+}
+
+function addScore(v) {
+  score += v;
+  if (score >= nextExtraLifeScore) {
+    lives++;
+    nextExtraLifeScore += 20000;
+    Sound.play('extra');
+    addPopup(player.x, floorY(player.floor) - 30, '1UP', '#ffd76a');
+  }
+  updateHud();
+}
+
+function addPopup(x, y, text, color) {
+  popups.push({ x: x, y: y, text: text, color: color, t: 1.1 });
+}
+
+function updateHud() {
+  document.getElementById('hudScore').textContent = score;
+  document.getElementById('hudItems').textContent = (items.length - itemsRemaining()) + '/' + items.length;
+  var s = '';
+  for (var i = 0; i < Math.max(0, lives); i++) s += '🐭';
+  document.getElementById('hudLives').textContent = s;
+}
+
+/* ============================================================
+   プレイヤー更新
+   ============================================================ */
+function updatePlayer(dt) {
+  if (player.freezeT > 0) {
+    player.freezeT -= dt;
+    return;
+  }
+  if (player.invincibleT > 0) player.invincibleT -= dt;
+
+  if (player.transitioning) {
+    player.tT += dt;
+    if (player.tT >= TRANSITION_TIME) {
+      player.transitioning = false;
+      player.floor = player.toFloor;
+    }
+    return;
+  }
+
+  var left = inputState('left'), right = inputState('right');
+  var vx = 0;
+  if (left && !right) vx = -1;
+  else if (right && !left) vx = 1;
+  if (vx !== 0) player.dir = vx;
+  player.moving = vx !== 0;
+  player.x += vx * PLAYER_SPEED * dt;
+  if (player.x < MIN_X) player.x = MIN_X;
+  if (player.x > MAX_X) player.x = MAX_X;
+
+  var up = inputState('up'), down = inputState('down');
+  if (up) {
+    if (!player.vLatchUp) { player.vLatchUp = true; tryBounceUp(); }
+  } else {
+    player.vLatchUp = false;
+  }
+  if (down) {
+    if (!player.vLatchDown) { player.vLatchDown = true; tryDropDown(); }
+  } else {
+    player.vLatchDown = false;
+  }
+}
+
+function tryBounceUp() {
+  for (var i = 0; i < connectors.length; i++) {
+    var c = connectors[i];
+    if (c.r === player.floor && Math.abs(c.x - player.x) < TILE * 0.75) {
+      if (c.broken) { Sound.play('denied'); return; }
+      c.charge--;
+      c.bounceT = 0.3;
+      if (c.charge <= 0) { c.broken = true; c.respawnT = TRAMP_BREAK_TIME; }
+      startTransition(player.floor, c.r - 1);
+      Sound.play('bounce');
+      return;
+    }
+  }
+}
+function tryDropDown() {
+  for (var i = 0; i < connectors.length; i++) {
+    var c = connectors[i];
+    if (c.r - 1 === player.floor && Math.abs(c.x - player.x) < TILE * 0.75) {
+      c.bounceT = 0.3;
+      startTransition(player.floor, c.r);
+      Sound.play('bounce');
+      return;
+    }
+  }
+}
+function startTransition(from, to) {
+  player.transitioning = true;
+  player.fromFloor = from;
+  player.toFloor = to;
+  player.tT = 0;
+}
+
+/* ============================================================
+   ドア更新
+   ============================================================ */
+function updateDoors(dt) {
+  for (var i = 0; i < doors.length; i++) {
+    var d = doors[i];
+    if (d.cooldown > 0) d.cooldown -= dt;
+    if (d.state === 'closed') {
+      if (d.cooldown <= 0 && player.floor === d.floor && !player.transitioning &&
+          Math.abs(player.x - d.x) < TILE * 0.6) {
+        d.state = 'opening'; d.t = 0;
+      }
+    } else if (d.state === 'opening') {
+      d.t += dt;
+      if (d.t >= DOOR_OPEN_T) { d.state = 'hold'; d.t = 0; }
+    } else if (d.state === 'hold') {
+      d.t += dt;
+      if (d.t >= DOOR_HOLD_T) { d.state = 'closing'; d.t = 0; }
+    } else if (d.state === 'closing') {
+      d.t += dt;
+      if (d.t >= DOOR_CLOSE_T) {
+        d.state = 'closed'; d.t = 0; d.cooldown = DOOR_COOLDOWN;
+        slamCatch(d);
+      }
+    }
+  }
+}
+function slamCatch(door) {
+  var caught = false;
+  for (var i = 0; i < cats.length; i++) {
+    var c = cats[i];
+    if (c.floor === door.floor && !c.transitioning && c.state !== 'dizzy' &&
+        Math.abs(c.x - door.x) < DOOR_CATCH_RANGE) {
+      c.state = 'dizzy';
+      c.dizzyT = 4.2;
+      caught = true;
+    }
+  }
+  if (caught) Sound.play('stun'); else Sound.play('slam');
+}
+
+/* ============================================================
+   トランポリン復活
+   ============================================================ */
+function updateConnectors(dt) {
+  for (var i = 0; i < connectors.length; i++) {
+    var c = connectors[i];
+    if (c.bounceT > 0) c.bounceT -= dt;
+    if (c.broken) {
+      c.respawnT -= dt;
+      if (c.respawnT <= 0) { c.broken = false; c.charge = c.maxCharge; }
+    }
+  }
+}
+
+/* ============================================================
+   猫AI
+   ============================================================ */
+function updateCats(dt) {
+  for (var i = 0; i < cats.length; i++) {
+    var c = cats[i];
+
+    if (c.state === 'dizzy') {
+      c.dizzyT -= dt;
+      if (c.dizzyT <= 0) { c.state = 'patrol'; c.goalT = 0; }
+      continue;
+    }
+
+    if (c.transitioning) {
+      c.tT += dt;
+      if (c.tT >= TRANSITION_TIME) { c.transitioning = false; c.floor = c.toFloor; }
+      continue;
+    }
+
+    c.goalT -= dt;
+    if (c.goalT <= 0) {
+      c.goalT = 1.2 + Math.random() * 1.0;
+      if (!player.transitioning && Math.random() < 0.65) c.goalFloor = player.floor;
+      else c.goalFloor = Math.floor(Math.random() * stageData.floors);
+    }
+    var canSeePlayer = c.floor === player.floor && !player.transitioning &&
+      Math.abs(c.x - player.x) < CHASE_RANGE;
+    c.state = canSeePlayer ? 'chase' : 'patrol';
+
+    if (c.floor === c.goalFloor) {
+      var targetX;
+      if (c.state === 'chase') targetX = player.x;
+      else targetX = colX(Math.floor((c.wobble + performance.now() / 900) % COLS));
+      var dx = targetX - c.x;
+      var sp = c.speed * (c.state === 'chase' ? 1 : 0.55);
+      if (Math.abs(dx) > 2) {
+        c.dir = dx > 0 ? 1 : -1;
+        c.x += c.dir * sp * dt;
+      }
+      if (c.x < MIN_X) c.x = MIN_X;
+      if (c.x > MAX_X) c.x = MAX_X;
+    } else {
+      var needR = c.goalFloor < c.floor ? c.floor : c.floor + 1;
+      var best = null, bestD = 1e9;
+      for (var j = 0; j < connectors.length; j++) {
+        var cc = connectors[j];
+        if (cc.r === needR) {
+          var dd = Math.abs(cc.x - c.x);
+          if (dd < bestD) { bestD = dd; best = cc; }
+        }
+      }
+      if (best) {
+        var dx2 = best.x - c.x;
+        if (Math.abs(dx2) > 3) {
+          c.dir = dx2 > 0 ? 1 : -1;
+          c.x += c.dir * c.speed * 0.7 * dt;
+          if (c.x < MIN_X) c.x = MIN_X;
+          if (c.x > MAX_X) c.x = MAX_X;
+        } else {
+          var toF = c.goalFloor < c.floor ? c.floor - 1 : c.floor + 1;
+          c.transitioning = true; c.fromFloor = c.floor; c.toFloor = toF; c.tT = 0;
+        }
+      }
+    }
+  }
+}
+
+/* ============================================================
+   当たり判定・アイテム
+   ============================================================ */
+function checkCollisions() {
+  if (player.transitioning || player.freezeT > 0) return;
+
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    if (it.collected || it.floor !== player.floor) continue;
+    if (Math.abs(it.x - player.x) < 13) {
+      it.collected = true;
+      addScore(100);
+      Sound.play('item');
+      addPopup(it.x, floorY(it.floor) - 26, '+100', '#9be3ff');
+      floorItemDone[it.floor]++;
+      if (floorItemDone[it.floor] === floorItemTotal[it.floor] && floorItemTotal[it.floor] > 0) {
+        addScore(1000);
+        Sound.play('floorClear');
+        addPopup(colX(Math.floor(COLS / 2)), floorY(it.floor) - 26, 'ROOM CLEAR +1000', '#ffd76a');
+      }
+    }
+  }
+
+  for (var k = 0; k < cats.length; k++) {
+    var c = cats[k];
+    if (c.floor !== player.floor || c.transitioning) continue;
+    if (Math.abs(c.x - player.x) < 15) {
+      if (c.state === 'dizzy') {
+        comboT = COMBO_WINDOW;
+        var pts = 200 * Math.pow(2, Math.min(4, comboCount));
+        comboCount++;
+        addScore(pts);
+        Sound.play('capture', comboCount);
+        addPopup(c.x, floorY(c.floor) - 26, '+' + pts, '#ffb3e6');
+        c.state = 'patrol';
+        c.dizzyT = 0;
+        c.goalT = 0;
+        var far = MIN_X + Math.random() * (MAX_X - MIN_X);
+        c.x = Math.abs(far - player.x) > 60 ? far : MIN_X;
+      } else if (player.invincibleT <= 0) {
+        onPlayerHit();
+        return;
+      }
+    }
+  }
+
+  if (itemsRemaining() === 0 && items.length > 0 && state === 'playing') {
+    beginStageClear();
+  }
+}
+
+function onPlayerHit() {
+  lives--;
+  shakeT = 0.35;
+  Sound.play('hit');
+  updateHud();
+  if (lives <= 0) {
+    state = 'gameover';
+    if (score > hiScore) {
+      hiScore = score;
+      try { localStorage.setItem('mappyHiScore', String(hiScore)); } catch (e) {}
+    }
+    document.getElementById('resultLine').textContent = 'STAGE ' + stageNum + ' / SCORE ' + score;
+    document.getElementById('resultBest').textContent = 'HI-SCORE ' + hiScore;
+    show('resultScreen');
+    Sound.play('over');
+    return;
+  }
+  player.freezeT = HIT_FREEZE_T;
+  player.floor = stageData.startFloor;
+  player.x = stageData.startX;
+  player.transitioning = false;
+  player.invincibleT = INVINCIBLE_T;
+  comboCount = 0; comboT = 0;
+
+  for (var i = 0; i < cats.length; i++) {
+    var c = cats[i];
+    if (c.floor === player.floor && !c.transitioning && c.state !== 'dizzy' &&
+        Math.abs(c.x - player.x) < RESPAWN_SAFE_RANGE) {
+      c.x = (player.x < (MIN_X + MAX_X) / 2) ? MAX_X : MIN_X;
+      c.state = 'patrol';
+      c.goalT = 1.5 + Math.random();
+    }
+  }
+}
+
+function beginStageClear() {
+  state = 'stageclear';
+  var bonus = 500 + lives * 200;
+  addScore(bonus);
+  document.getElementById('clearTitle').textContent = 'STAGE ' + stageNum + ' CLEAR';
+  document.getElementById('clearLine').textContent = 'BONUS +' + bonus;
+  show('stageClearScreen');
+  Sound.play('clear');
+  setTimeout(function () {
+    if (state !== 'stageclear') return;
+    stageNum++;
+    loadStage(stageNum);
+    hide('stageClearScreen');
+    state = 'playing';
+  }, 2200);
+}
+
+/* ============================================================
+   メインループ
+   ============================================================ */
+function update(dt) {
+  if (state !== 'playing') return;
+  if (comboT > 0) { comboT -= dt; if (comboT <= 0) comboCount = 0; }
+  if (shakeT > 0) shakeT -= dt;
+  updatePlayer(dt);
+  updateDoors(dt);
+  updateConnectors(dt);
+  updateCats(dt);
+  checkCollisions();
+  for (var i = popups.length - 1; i >= 0; i--) {
+    popups[i].t -= dt;
+    popups[i].y -= dt * 18;
+    if (popups[i].t <= 0) popups.splice(i, 1);
+  }
+}
+
+/* ---------- 描画補助 ---------- */
+function drawMouse(x, y, dir, invincible, blink) {
+  ctx2d.save();
+  ctx2d.translate(x, y);
+  if (dir < 0) ctx2d.scale(-1, 1);
+  if (invincible && blink) { ctx2d.restore(); return; }
+  ctx2d.fillStyle = '#f4efe0';
+  ctx2d.fillRect(-7, -18, 14, 14);
+  ctx2d.beginPath();
+  ctx2d.arc(-6, -22, 3.4, 0, Math.PI * 2);
+  ctx2d.arc(1, -22, 3.4, 0, Math.PI * 2);
+  ctx2d.fill();
+  ctx2d.fillStyle = '#ffd0e0';
+  ctx2d.beginPath();
+  ctx2d.arc(-6, -22, 1.6, 0, Math.PI * 2);
+  ctx2d.arc(1, -22, 1.6, 0, Math.PI * 2);
+  ctx2d.fill();
+  ctx2d.fillStyle = '#3a6ad4';
+  ctx2d.fillRect(-8, -20, 16, 5);
+  ctx2d.fillStyle = '#274ea0';
+  ctx2d.fillRect(-8, -16, 16, 2);
+  ctx2d.fillStyle = '#ffd76a';
+  ctx2d.beginPath();
+  ctx2d.arc(0, -18, 1.6, 0, Math.PI * 2);
+  ctx2d.fill();
+  ctx2d.fillStyle = '#2a2438';
+  ctx2d.fillRect(2, -15, 2, 2);
+  ctx2d.fillStyle = '#ffb3c6';
+  ctx2d.fillRect(6, -12, 3, 3);
+  ctx2d.fillStyle = '#f4efe0';
+  ctx2d.fillRect(-6, -4, 5, 4);
+  ctx2d.fillRect(2, -4, 5, 4);
+  ctx2d.restore();
+}
+
+function drawCat(x, y, color, dir, state2, wobble) {
+  ctx2d.save();
+  ctx2d.translate(x, y);
+  if (dir < 0) ctx2d.scale(-1, 1);
+  var bob = state2 === 'dizzy' ? Math.sin(wobble * 8) * 1.5 : 0;
+  ctx2d.translate(0, bob);
+  ctx2d.fillStyle = color;
+  ctx2d.fillRect(-7, -16, 14, 13);
+  ctx2d.beginPath();
+  ctx2d.moveTo(-7, -16); ctx2d.lineTo(-4, -21); ctx2d.lineTo(-2, -16); ctx2d.closePath(); ctx2d.fill();
+  ctx2d.beginPath();
+  ctx2d.moveTo(2, -16); ctx2d.lineTo(4, -21); ctx2d.lineTo(7, -16); ctx2d.closePath(); ctx2d.fill();
+  ctx2d.fillStyle = '#2a2438';
+  if (state2 === 'dizzy') {
+    ctx2d.font = '7px monospace';
+    ctx2d.fillText('x', -5, -10);
+    ctx2d.fillText('x', 1, -10);
+  } else {
+    ctx2d.fillRect(-5, -11, 2, 2);
+    ctx2d.fillRect(2, -11, 2, 2);
+  }
+  ctx2d.strokeStyle = 'rgba(0,0,0,.25)';
+  ctx2d.lineWidth = 1;
+  ctx2d.beginPath();
+  ctx2d.moveTo(6, -6); ctx2d.quadraticCurveTo(12, -8, 10, -14);
+  ctx2d.stroke();
+  if (state2 === 'dizzy') {
+    ctx2d.fillStyle = '#ffd76a';
+    for (var s = 0; s < 3; s++) {
+      var ang = wobble * 4 + s * 2.1;
+      ctx2d.beginPath();
+      ctx2d.arc(Math.cos(ang) * 8, -22 + Math.sin(ang) * 2, 1.6, 0, Math.PI * 2);
+      ctx2d.fill();
+    }
+  }
+  ctx2d.restore();
+}
+
+function drawItem(x, y, kind) {
+  ctx2d.save();
+  ctx2d.translate(x, y);
+  if (kind === 0) {
+    ctx2d.fillStyle = '#f4c430';
+    ctx2d.beginPath();
+    ctx2d.moveTo(-7, 6); ctx2d.lineTo(7, 6); ctx2d.lineTo(0, -7); ctx2d.closePath(); ctx2d.fill();
+    ctx2d.fillStyle = '#c99a1a';
+    ctx2d.beginPath(); ctx2d.arc(-1, 2, 1.4, 0, Math.PI * 2); ctx2d.fill();
+    ctx2d.beginPath(); ctx2d.arc(2, -1, 1.1, 0, Math.PI * 2); ctx2d.fill();
+  } else if (kind === 1) {
+    ctx2d.fillStyle = '#5aa8e0';
+    ctx2d.beginPath();
+    ctx2d.ellipse(0, 0, 7, 4, 0, 0, Math.PI * 2); ctx2d.fill();
+    ctx2d.beginPath();
+    ctx2d.moveTo(6, 0); ctx2d.lineTo(10, -3); ctx2d.lineTo(10, 3); ctx2d.closePath(); ctx2d.fill();
+    ctx2d.fillStyle = '#fff';
+    ctx2d.beginPath(); ctx2d.arc(-3, -1, 1, 0, Math.PI * 2); ctx2d.fill();
+  } else if (kind === 2) {
+    ctx2d.fillStyle = '#a9784a';
+    ctx2d.beginPath();
+    ctx2d.moveTo(-6, -6); ctx2d.lineTo(6, -6); ctx2d.lineTo(7, 7); ctx2d.lineTo(-7, 7); ctx2d.closePath(); ctx2d.fill();
+    ctx2d.fillStyle = '#ffd76a';
+    ctx2d.font = 'bold 9px monospace';
+    ctx2d.textAlign = 'center';
+    ctx2d.fillText('$', 0, 3);
+  } else {
+    ctx2d.fillStyle = '#d05a8a';
+    ctx2d.fillRect(-7, -5, 14, 10);
+    ctx2d.fillStyle = '#fff2f8';
+    ctx2d.beginPath(); ctx2d.arc(-2, 0, 2.6, 0, Math.PI * 2); ctx2d.fill();
+    ctx2d.fillStyle = '#d05a8a';
+    ctx2d.fillRect(3, -3, 3, 6);
+  }
+  ctx2d.restore();
+}
+
+function drawDoor(d) {
+  var y0 = floorY(d.floor) - 24, y1 = floorY(d.floor);
+  var openAmt = 0;
+  if (d.state === 'opening') openAmt = d.t / DOOR_OPEN_T;
+  else if (d.state === 'hold') openAmt = 1;
+  else if (d.state === 'closing') openAmt = 1 - d.t / DOOR_CLOSE_T;
+  var w = TILE * 0.42;
+  ctx2d.fillStyle = '#5a4a72';
+  ctx2d.fillRect(d.x - w - 2, y0 - 2, 2, y1 - y0 + 2);
+  ctx2d.fillRect(d.x + w, y0 - 2, 2, y1 - y0 + 2);
+  ctx2d.fillStyle = '#b98ad0';
+  ctx2d.fillRect(d.x - w - openAmt * w, y0, w, y1 - y0);
+  ctx2d.fillRect(d.x + openAmt * w, y0, w, y1 - y0);
+  ctx2d.fillStyle = '#7a5a96';
+  ctx2d.fillRect(d.x - w - openAmt * w, y0, w, 3);
+  ctx2d.fillRect(d.x + openAmt * w, y0, w, 3);
+}
+
+function drawConnector(c) {
+  var yLow = floorY(c.r), yHigh = floorY(c.r - 1);
+  var hw = TILE * 0.5;
+  ctx2d.fillStyle = 'rgba(150,130,200,.14)';
+  ctx2d.fillRect(c.x - hw, yHigh - 2, hw * 2, yLow - yHigh + 2);
+  var matY = yLow - 8;
+  var squish = c.bounceT > 0 ? (c.bounceT / 0.3) * 3 : 0;
+  if (c.broken) {
+    ctx2d.fillStyle = '#5a5468';
+    ctx2d.fillRect(c.x - hw, yLow - 4, hw * 2, 4);
+    ctx2d.strokeStyle = '#3a3448';
+    ctx2d.lineWidth = 1;
+    ctx2d.beginPath();
+    ctx2d.moveTo(c.x - hw + 2, yLow - 4); ctx2d.lineTo(c.x + hw - 2, yLow - 1);
+    ctx2d.moveTo(c.x - hw + 2, yLow - 1); ctx2d.lineTo(c.x + hw - 2, yLow - 4);
+    ctx2d.stroke();
+  } else {
+    ctx2d.fillStyle = '#ff9ec8';
+    ctx2d.fillRect(c.x - hw, matY + squish, hw * 2, 8 - squish);
+    ctx2d.strokeStyle = '#d962a0';
+    ctx2d.lineWidth = 1;
+    for (var i = -1; i <= 1; i++) {
+      ctx2d.beginPath();
+      ctx2d.moveTo(c.x + i * hw * 0.6 - 4, matY + squish);
+      ctx2d.lineTo(c.x + i * hw * 0.6 + 4, yLow);
+      ctx2d.stroke();
+    }
+    for (var p = 0; p < c.maxCharge; p++) {
+      ctx2d.fillStyle = p < c.charge ? '#ffd76a' : 'rgba(255,255,255,.15)';
+      ctx2d.beginPath();
+      ctx2d.arc(c.x - hw + 4 + p * 6, yHigh + 8, 1.6, 0, Math.PI * 2);
+      ctx2d.fill();
+    }
+  }
+}
+
+function draw() {
+  ctx2d.clearRect(0, 0, VIEW_W, VIEW_H);
+  var sx = 0, sy = 0;
+  if (shakeT > 0) {
+    sx = (Math.random() - 0.5) * 4 * (shakeT / 0.35);
+    sy = (Math.random() - 0.5) * 4 * (shakeT / 0.35);
+  }
+  ctx2d.save();
+  ctx2d.translate(sx, sy);
+
+  var bg = ctx2d.createLinearGradient(0, 0, 0, VIEW_H);
+  bg.addColorStop(0, '#241c3a');
+  bg.addColorStop(1, '#160f26');
+  ctx2d.fillStyle = bg;
+  ctx2d.fillRect(0, 0, VIEW_W, VIEW_H);
+
+  if (stageData) {
+    var floors = stageData.floors;
+
+    for (var f = 0; f < floors; f++) {
+      var y = floorY(f);
+      var hue = 260 + f * 14;
+      ctx2d.fillStyle = 'hsla(' + hue + ',35%,' + (f % 2 === 0 ? 20 : 16) + '%,1)';
+      ctx2d.fillRect(WALL, TOP_MARGIN + f * ROW_H, COLS * TILE, ROW_H);
+    }
+
+    /* 使われていない下層は基礎として塗りつぶす（8階未満のステージ向け） */
+    var usedBottom = TOP_MARGIN + floors * ROW_H;
+    if (usedBottom < VIEW_H) {
+      ctx2d.fillStyle = '#100b1c';
+      ctx2d.fillRect(WALL, usedBottom, COLS * TILE, VIEW_H - usedBottom);
+      ctx2d.strokeStyle = 'rgba(255,255,255,.05)';
+      ctx2d.lineWidth = 1;
+      for (var hx = WALL + 6; hx < WALL + COLS * TILE; hx += 12) {
+        ctx2d.beginPath();
+        ctx2d.moveTo(hx, usedBottom + 4);
+        ctx2d.lineTo(hx - 8, VIEW_H - 2);
+        ctx2d.stroke();
+      }
+    }
+
+    ctx2d.fillStyle = '#5a4a72';
+    ctx2d.fillRect(0, TOP_MARGIN - 6, WALL, VIEW_H - TOP_MARGIN + 6);
+    ctx2d.fillRect(WALL + COLS * TILE, TOP_MARGIN - 6, WALL, VIEW_H - TOP_MARGIN + 6);
+    ctx2d.fillStyle = '#3a3350';
+    ctx2d.fillRect(0, TOP_MARGIN - 10, VIEW_W, 6);
+    ctx2d.fillRect(0, VIEW_H - 4, VIEW_W, 4);
+
+    for (var f2 = 0; f2 < floors; f2++) {
+      var yy = floorY(f2);
+      var holes = [];
+      for (var i = 0; i < connectors.length; i++) {
+        if (connectors[i].r === f2 + 1) {
+          holes.push([connectors[i].x - TILE * 0.55, connectors[i].x + TILE * 0.55]);
+        }
+      }
+      holes.sort(function (a, b) { return a[0] - b[0]; });
+      var segX = WALL;
+      ctx2d.fillStyle = '#8a6a4a';
+      for (var h = 0; h < holes.length; h++) {
+        if (holes[h][0] > segX) ctx2d.fillRect(segX, yy, holes[h][0] - segX, 8);
+        segX = Math.max(segX, holes[h][1]);
+      }
+      ctx2d.fillRect(segX, yy, WALL + COLS * TILE - segX, 8);
+      ctx2d.fillStyle = 'rgba(0,0,0,.2)';
+      ctx2d.fillRect(WALL, yy + 6, COLS * TILE, 2);
+    }
+
+    for (var c2 = 0; c2 < connectors.length; c2++) drawConnector(connectors[c2]);
+    for (var d2 = 0; d2 < doors.length; d2++) drawDoor(doors[d2]);
+    for (var it2 = 0; it2 < items.length; it2++) {
+      if (!items[it2].collected) drawItem(items[it2].x, floorY(items[it2].floor) - 12, items[it2].kind);
+    }
+
+    for (var ci = 0; ci < cats.length; ci++) {
+      var cat = cats[ci];
+      var cy;
+      if (cat.transitioning) {
+        var tt = cat.tT / TRANSITION_TIME;
+        cy = floorY(cat.fromFloor) + (floorY(cat.toFloor) - floorY(cat.fromFloor)) * tt;
+      } else cy = floorY(cat.floor);
+      drawCat(cat.x, cy, cat.color, cat.dir, cat.state, cat.wobble + performance.now() / 200);
+    }
+
+    var py;
+    if (player.transitioning) {
+      var pt = player.tT / TRANSITION_TIME;
+      var arc = Math.sin(pt * Math.PI) * 10;
+      py = floorY(player.fromFloor) + (floorY(player.toFloor) - floorY(player.fromFloor)) * pt - arc;
+    } else py = floorY(player.floor);
+    var blink = player.invincibleT > 0 && Math.floor(performance.now() / 90) % 2 === 0;
+    drawMouse(player.x, py, player.dir, player.invincibleT > 0, blink);
+
+    for (var pi = 0; pi < popups.length; pi++) {
+      var pu = popups[pi];
+      ctx2d.globalAlpha = Math.max(0, Math.min(1, pu.t));
+      ctx2d.fillStyle = pu.color;
+      ctx2d.font = 'bold 9px "Consolas", monospace';
+      ctx2d.textAlign = 'center';
+      ctx2d.fillText(pu.text, pu.x, pu.y);
+      ctx2d.globalAlpha = 1;
+    }
+
+    if (comboCount > 0 && comboT > 0) {
+      ctx2d.fillStyle = '#ffd76a';
+      ctx2d.font = 'bold 10px "Consolas", monospace';
+      ctx2d.textAlign = 'left';
+      ctx2d.fillText('COMBO x' + comboCount, WALL + 2, VIEW_H - 4);
+    }
+  }
+  ctx2d.restore();
+}
+
+/* ============================================================
+   状態遷移
+   ============================================================ */
+function show(id) { document.getElementById(id).classList.remove('hidden'); }
+function hide(id) { document.getElementById(id).classList.add('hidden'); }
+function hideAllOverlays() {
+  ['titleScreen', 'stageClearScreen', 'resultScreen', 'pauseScreen'].forEach(hide);
+}
+
+function doStart() {
+  Sound.init();
+  hideAllOverlays();
+  score = 0; lives = 3; stageNum = 1; nextExtraLifeScore = 20000;
+  loadStage(stageNum);
+  state = 'playing';
+  updateHud();
+  Sound.play('start');
+}
+
+function togglePause() {
+  if (state === 'playing') { state = 'paused'; show('pauseScreen'); }
+  else if (state === 'paused') { state = 'playing'; hide('pauseScreen'); }
+}
+
+function toggleSound() {
+  var on = Sound.toggle();
+  var btn = document.getElementById('soundBtn');
+  btn.textContent = on ? 'SOUND ON' : 'SOUND OFF';
+  btn.classList.toggle('off', !on);
+}
+
+document.getElementById('startBtn').addEventListener('click', doStart);
+document.getElementById('retryBtn').addEventListener('click', doStart);
+document.getElementById('titleBtn').addEventListener('click', function () {
+  state = 'title'; hideAllOverlays(); show('titleScreen');
+});
+document.getElementById('resumeBtn').addEventListener('click', togglePause);
+document.getElementById('pauseBtn').addEventListener('click', togglePause);
+document.getElementById('soundBtn').addEventListener('click', toggleSound);
+
+/* ============================================================
+   メインループ起動
+   ============================================================ */
+var lastT = null;
+function frame(ts) {
+  if (lastT === null) lastT = ts;
+  var dt = Math.min(0.033, (ts - lastT) / 1000);
+  lastT = ts;
+  update(dt);
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+})(window);
+</script>
+</body>
+</html>
