@@ -579,6 +579,7 @@ var BAUMGARTE = 0.22;
 var VEL_ITER = 11;
 var POS_ITER = 3;
 var MAX_CORRECT_VEL = 320;   /* めり込み解消速度の上限（吹き飛び防止） */
+var MAX_BLAST_SPEED = 2600;  /* 爆風で与える速度の上限（すり抜け防止） */
 var SLEEP_LIN = 12, SLEEP_ANG = 0.45, SLEEP_TIME = 0.55;
 
 /* 眠っている物体を起こす資格があるか。
@@ -850,8 +851,16 @@ function applyRadial(b, cx, cy, power, radius) {
   var n = dist > 1e-6 ? vmul(d, 1 / dist) : { x: 0, y: -1 };
   var mag = power * falloff;
   b.awake = true; b.sleepT = 0; b.mv = true;
-  b.vx += n.x * mag * b.invMass * 60;
-  b.vy += n.y * mag * b.invMass * 60;
+  /* 力積 ÷ 質量 ＝ 速度変化。以前ここに余分な *60 が掛かっていて、
+     爆風で 19万px/s まで加速し、壁をすり抜けてワールド外へ消えていた */
+  b.vx += n.x * mag * b.invMass;
+  b.vy += n.y * mag * b.invMass;
+  /* 念のため上限を設ける（1サブステップの移動量を壁の厚みより小さく保つ） */
+  var sp = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
+  if (sp > MAX_BLAST_SPEED) {
+    b.vx *= MAX_BLAST_SPEED / sp;
+    b.vy *= MAX_BLAST_SPEED / sp;
+  }
   b.av += (Math.random() - 0.5) * 8 * falloff;
   return falloff;
 }
@@ -1137,6 +1146,7 @@ function buildLevel(idx) {
   activeBird = null;
   powerUsed = false;
   shakeT = 0;
+  camManual = false;
 
   var L = LEVELS[idx];
 
@@ -1206,6 +1216,7 @@ function launchBird(vx, vy) {
   activeBird.av = vx * 0.008;
   birdsQueue.shift();
   state = 'fly';
+  camManual = false;
   launchT = 0;
   trail = [];
   Sound.play('launch');
@@ -1373,6 +1384,35 @@ function processDamage() {
   }
 }
 
+/* ワールド外へ出てしまった物体の後始末。
+   これが無いと、飛ばされたブタが画面外で生き残り「ブタが残っている」のに
+   どこにも見えない＝クリア不能になる */
+function cullEscaped() {
+  var i, bd;
+  for (i = pigs.length - 1; i >= 0; i--) {
+    bd = pigs[i];
+    if (bd.x < WORLD_L - 30 || bd.x > WORLD_R + 30 || bd.y > 420 || bd.y < -2600 ||
+        !isFinite(bd.x) || !isFinite(bd.y)) {
+      pigs.splice(i, 1);
+      World.remove(bd);
+      if (isFinite(bd.x) && isFinite(bd.y)) {
+        addScore(5000, clamp(bd.x, WORLD_L, WORLD_R), clamp(bd.y, -600, 0));
+      } else {
+        addScore(5000);
+      }
+      Sound.play('pig');
+    }
+  }
+  for (i = blocks.length - 1; i >= 0; i--) {
+    bd = blocks[i];
+    if (bd.x < WORLD_L - 30 || bd.x > WORLD_R + 30 || bd.y > 420 || bd.y < -2600 ||
+        !isFinite(bd.x) || !isFinite(bd.y)) {
+      blocks.splice(i, 1);
+      World.remove(bd);
+    }
+  }
+}
+
 function addScore(v, x, y) {
   score += v;
   if (x !== undefined) addFloater(x, y, '+' + v, v >= 5000 ? '#ffcf4a' : '#eaf2fa');
@@ -1470,6 +1510,7 @@ function updateGame(dt) {
     acc -= h; n++;
   }
   processDamage();
+  cullEscaped();
   updateBirds(dt);
 
   if (state === 'fly') {
@@ -1521,7 +1562,32 @@ function updateCamera(dt) {
     cam.ty = clamp(activeBird.y - 40, -520, -120);
     cam.tz = 0.92;
   } else if (state === 'aim') {
-    cam.tx = 640; cam.ty = -170; cam.tz = 0.8;
+    /* パチンコと「残っているブタ・建物」が必ず画面に収まるようにする。
+       固定位置だと、右へ転がっていったブタが見えないまま
+       「ブタが残っている」状態になってしまう。
+       ただし手動スクロール中は上書きしない */
+    if (!camManual) {
+      var minX = SLING.x - 130, maxX = SLING.x + 130;
+      var minY = SLING.y - 70, maxY = 20;
+      var k2;
+      for (k2 = 0; k2 < pigs.length; k2++) {
+        if (pigs[k2].x - 70 < minX) minX = pigs[k2].x - 70;
+        if (pigs[k2].x + 70 > maxX) maxX = pigs[k2].x + 70;
+        if (pigs[k2].y - 70 < minY) minY = pigs[k2].y - 70;
+      }
+      for (k2 = 0; k2 < blocks.length; k2++) {
+        if (blocks[k2].x - 50 < minX) minX = blocks[k2].x - 50;
+        if (blocks[k2].x + 50 > maxX) maxX = blocks[k2].x + 50;
+        if (blocks[k2].y - 50 < minY) minY = blocks[k2].y - 50;
+      }
+      minX = Math.max(minX, WORLD_L); maxX = Math.min(maxX, WORLD_R);
+      var zx = view.w / Math.max(430, maxX - minX);
+      var zy = view.h / Math.max(300, maxY - minY);
+      cam.tz = clamp(Math.min(zx, zy), 0.5, 0.84);
+      cam.tx = (minX + maxX) / 2;
+      var halfA = (view.h / 2) / cam.tz;
+      cam.ty = clamp((minY + maxY) / 2, 30 - halfA, -120);
+    }
   } else if (state === 'settle' || state === 'clear' || state === 'fail') {
     var sx = 0, sy = 0, cnt = 0;
     for (var i = 0; i < pigs.length; i++) { sx += pigs[i].x; sy += pigs[i].y; cnt++; }
@@ -2028,6 +2094,35 @@ function draw() {
   }
 
   cx.restore();
+
+  /* 画面外にいるブタを、ふちのマーカーで知らせる */
+  for (i = 0; i < pigs.length; i++) {
+    var pg2 = pigs[i];
+    var px2 = (pg2.x - cam.x) * cam.zoom + view.w / 2 + shx;
+    var py2 = (pg2.y - cam.y) * cam.zoom + view.h / 2 + shy;
+    var m2 = 18;
+    if (px2 >= m2 && px2 <= view.w - m2 && py2 >= m2 && py2 <= view.h - m2) continue;
+    var ex = clamp(px2, m2, view.w - m2);
+    var ey = clamp(py2, m2, view.h - m2);
+    cx.save();
+    cx.translate(ex, ey);
+    cx.fillStyle = 'rgba(12,22,32,.62)';
+    cx.beginPath(); cx.arc(0, 0, 13, 0, Math.PI * 2); cx.fill();
+    cx.fillStyle = '#7cc44c';
+    cx.beginPath(); cx.arc(0, 0, 8.5, 0, Math.PI * 2); cx.fill();
+    cx.fillStyle = '#2a2a2a';
+    cx.beginPath();
+    cx.arc(-3, -1.5, 1.6, 0, Math.PI * 2);
+    cx.arc(3, -1.5, 1.6, 0, Math.PI * 2);
+    cx.fill();
+    var ang2 = Math.atan2(py2 - ey, px2 - ex);
+    cx.rotate(ang2);
+    cx.fillStyle = '#ffcf4a';
+    cx.beginPath();
+    cx.moveTo(17, 0); cx.lineTo(10, -5); cx.lineTo(10, 5);
+    cx.closePath(); cx.fill();
+    cx.restore();
+  }
 }
 
 /* ============================================================
@@ -2049,6 +2144,9 @@ function getPull() {
 }
 
 var panning = false, panStart = null, panCam = 0;
+/* 手動でスクロールした間は自動フレーミングを止める
+   （毎フレーム上書きされるとドラッグしても戻されてしまう） */
+var camManual = false;
 
 canvas.addEventListener('pointerdown', function (ev) {
   ev.preventDefault();
@@ -2068,7 +2166,7 @@ canvas.addEventListener('pointerdown', function (ev) {
     Sound.play('stretch');
     try { canvas.setPointerCapture(ev.pointerId); } catch (e) {}
   } else {
-    panning = true; panStart = lp.x; panCam = cam.tx;
+    panning = true; panStart = lp.x; panCam = cam.tx; camManual = true;
   }
 });
 
