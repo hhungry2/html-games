@@ -1,0 +1,2163 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ANGRY WINGS - HTML5 アングリーバード風 物理パズル</title>
+<meta name="description" content="HTML5 Canvasで作ったアングリーバード風の物理パズルゲーム。回転する剛体physics（SAT衝突＋逐次インパルス）を自作し、木・氷・石の砦が本当に崩れる。5種類の鳥の特殊能力・全10ステージ・スマホ/PC対応。">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #101821;
+  background-image:
+    radial-gradient(circle at 50% -10%, #1e3247 0%, transparent 60%),
+    radial-gradient(circle at 90% 110%, #2a2418 0%, transparent 55%);
+  color: #e8eef5;
+  font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 6px;
+  overflow: hidden;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.wrap {
+  width: 100%;
+  max-width: 940px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ---------- 上部バー ---------- */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: "Consolas", monospace;
+  font-size: 11px;
+  color: #93a4b8;
+}
+.topbar .title { flex: 1; letter-spacing: .12em; color: #ffcf4a; font-weight: 700; }
+.sbtn {
+  background: rgba(255,255,255,.07);
+  border: 1px solid rgba(255,255,255,.15);
+  color: #d5dfea;
+  border-radius: 6px;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.sbtn:active { background: rgba(255,255,255,.2); }
+.sbtn.off { color: #64748b; }
+
+/* ---------- 画面 ---------- */
+.screen { position: relative; width: 100%; }
+
+canvas#game {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  /* 横長・低い画面でも画面外にはみ出さない（描画側は実サイズから
+     表示範囲を計算するので、比率が変わっても絵は歪まない） */
+  max-height: calc(100vh - 72px);
+  background: #7ec8e8;
+  border: 2px solid #2c3e50;
+  border-radius: 6px;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+/* ---------- HUD（キャンバス上に重ねる） ---------- */
+.hudbar {
+  position: absolute;
+  top: 8px; left: 10px; right: 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  pointer-events: none;
+  font-family: "Consolas", monospace;
+  font-size: 12px;
+  text-shadow: 0 2px 3px rgba(0,0,0,.45);
+}
+.hudchip {
+  background: rgba(12,22,32,.55);
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 999px;
+  padding: 4px 11px;
+  color: #eaf2fa;
+  letter-spacing: .05em;
+}
+.hudchip b { color: #ffcf4a; }
+.hudbar .right { margin-left: auto; display: flex; gap: 6px; }
+
+.powerhint {
+  position: absolute;
+  left: 50%; bottom: 10px;
+  transform: translateX(-50%);
+  background: rgba(12,22,32,.6);
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-family: "Consolas", monospace;
+  font-size: 11.5px;
+  color: #ffe08a;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .2s;
+  white-space: nowrap;
+}
+.powerhint.on { opacity: 1; }
+
+/* ---------- オーバーレイ ---------- */
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(8,14,20,.9);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 16px;
+  text-align: center;
+  overflow-y: auto;
+}
+.overlay.hidden { display: none; }
+
+.logo {
+  font-family: "Consolas", monospace;
+  font-size: clamp(22px, 5.6vw, 40px);
+  font-weight: 700;
+  letter-spacing: .05em;
+  color: #ffcf4a;
+  text-shadow: 0 4px 0 #8a5a10, 0 0 18px rgba(255,207,74,.35);
+}
+.sub { font-size: 12px; color: #9fb0c4; letter-spacing: .06em; margin-top: -4px; }
+
+.rules {
+  list-style: none;
+  font-size: 11.5px;
+  line-height: 1.8;
+  color: #c3d0de;
+  text-align: left;
+  max-width: 460px;
+}
+.rules b { color: #ffcf4a; }
+.rules .ic { color: #7ee8c8; }
+
+.menu { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.btn {
+  background: linear-gradient(#ffcf4a, #e0a020);
+  border: 0;
+  border-radius: 9px;
+  box-shadow: 0 3px 0 #96660c;
+  color: #2a1c02;
+  font-family: "Consolas", monospace;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  padding: 10px 20px;
+  cursor: pointer;
+}
+.btn:active { transform: translateY(3px); box-shadow: 0 0 0 #96660c; }
+.btn.sub2 {
+  background: linear-gradient(#4a5a6e, #35424f);
+  box-shadow: 0 3px 0 #212b35;
+  color: #e5edf5;
+}
+.keys { font-family: "Consolas", monospace; font-size: 10px; color: #7d8ea3; line-height: 1.7; }
+
+/* ---------- ステージ選択 ---------- */
+.levels {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 7px;
+  max-width: 430px;
+  width: 100%;
+}
+.lvl {
+  background: rgba(255,255,255,.07);
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 8px;
+  padding: 7px 3px 5px;
+  cursor: pointer;
+  font-family: "Consolas", monospace;
+  color: #e3ecf5;
+}
+.lvl:active { background: rgba(255,207,74,.28); }
+.lvl .n { font-size: 14px; font-weight: 700; }
+.lvl .st { font-size: 9px; color: #ffcf4a; letter-spacing: 1px; min-height: 12px; }
+.lvl.locked { opacity: .34; }
+
+.stars { font-size: 30px; letter-spacing: 6px; color: #ffcf4a; }
+.starsdim { color: #47535f; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <div class="topbar">
+    <span class="title">ANGRY WINGS</span>
+    <button class="sbtn" id="soundBtn">SOUND ON</button>
+    <button class="sbtn" id="restartBtn">RESTART</button>
+    <button class="sbtn" id="menuBtn">STAGE</button>
+  </div>
+
+  <div class="screen">
+    <canvas id="game"></canvas>
+
+    <div class="hudbar" id="hudbar">
+      <span class="hudchip">STAGE <b id="hudStage">1</b></span>
+      <span class="hudchip">SCORE <b id="hudScore">0</b></span>
+      <div class="right">
+        <span class="hudchip">🐦 <b id="hudBirds">0</b></span>
+        <span class="hudchip">🐷 <b id="hudPigs">0</b></span>
+      </div>
+    </div>
+
+    <div class="powerhint" id="powerhint">タップで とくしゅのうりょく！</div>
+
+    <div class="overlay" id="titleScreen">
+      <h1 class="logo">ANGRY WINGS</h1>
+      <p class="sub">- パチンコ物理パズル -</p>
+      <ul class="rules">
+        <li><b>鳥をドラッグ</b>して引っぱり、はなすと飛んでいく（引くほど強い）</li>
+        <li>飛んでいる間に<b>もう一度タップ</b>すると鳥ごとの<span class="ic">とくしゅのうりょく</span></li>
+        <li>🐷ブタを<b>全部たおせばクリア</b>。鳥がなくなる前にどうぞ</li>
+        <li><span class="ic">木</span>はふつう／<span class="ic">氷</span>はもろい／<span class="ic">石</span>はかたい・重い</li>
+        <li>土台をくずして<b>上から落とす</b>のがコツ。残った鳥はボーナス点</li>
+      </ul>
+      <div class="menu">
+        <button class="btn" id="startBtn">GAME START</button>
+      </div>
+      <p class="keys">マウス／指でドラッグ　R: リトライ　M: サウンド切替</p>
+    </div>
+
+    <div class="overlay hidden" id="levelScreen">
+      <h2 class="logo" style="font-size:clamp(18px,4.4vw,28px)">SELECT STAGE</h2>
+      <div class="levels" id="levelGrid"></div>
+      <p class="keys">TOTAL SCORE <b id="totalScore">0</b></p>
+      <div class="menu"><button class="btn sub2" id="lvBackBtn">BACK</button></div>
+    </div>
+
+    <div class="overlay hidden" id="clearScreen">
+      <h2 class="logo" id="clearTitle">STAGE CLEAR!</h2>
+      <div class="stars" id="clearStars">★★★</div>
+      <p class="sub" id="clearLine">SCORE 0</p>
+      <p class="keys" id="clearBest">BEST 0</p>
+      <div class="menu">
+        <button class="btn" id="nextBtn">NEXT</button>
+        <button class="btn sub2" id="againBtn">RETRY</button>
+      </div>
+    </div>
+
+    <div class="overlay hidden" id="failScreen">
+      <h2 class="logo" style="color:#ff8a6a;text-shadow:0 4px 0 #8a2f10">LEVEL FAILED</h2>
+      <p class="sub" id="failLine">ブタが のこっている！</p>
+      <div class="menu">
+        <button class="btn" id="retryBtn">RETRY</button>
+        <button class="btn sub2" id="failMenuBtn">STAGE</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ============================================================
+   ANGRY WINGS - アングリーバード風 物理パズル
+   自作2D剛体物理（SAT + 逐次インパルス + ウォームスタート + スリープ）
+   ============================================================ */
+(function (global) {
+'use strict';
+
+/* ============================================================
+   ベクトル演算
+   ============================================================ */
+function vadd(a, b) { return { x: a.x + b.x, y: a.y + b.y }; }
+function vsub(a, b) { return { x: a.x - b.x, y: a.y - b.y }; }
+function vmul(a, s) { return { x: a.x * s, y: a.y * s }; }
+function vdot(a, b) { return a.x * b.x + a.y * b.y; }
+function vcross(a, b) { return a.x * b.y - a.y * b.x; }
+function vcrossSV(s, a) { return { x: -s * a.y, y: s * a.x }; }
+function vlen(a) { return Math.sqrt(a.x * a.x + a.y * a.y); }
+function vlen2(a) { return a.x * a.x + a.y * a.y; }
+function vnorm(a) { var l = vlen(a); return l > 1e-9 ? { x: a.x / l, y: a.y / l } : { x: 0, y: 0 }; }
+function vrot(a, ang) {
+  var c = Math.cos(ang), s = Math.sin(ang);
+  return { x: a.x * c - a.y * s, y: a.x * s + a.y * c };
+}
+function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+/* ============================================================
+   マテリアル
+   ============================================================ */
+var MAT = {
+  wood:  { density: 0.0013, rest: 0.14, fric: 0.62, hp: 900,  color: '#c08a44', dark: '#8d5f26', name: 'wood' },
+  ice:   { density: 0.0009, rest: 0.10, fric: 0.22, hp: 480,  color: '#a8e0f2', dark: '#6fb6d4', name: 'ice' },
+  stone: { density: 0.0026, rest: 0.08, fric: 0.72, hp: 2300, color: '#9aa3ad', dark: '#6d757e', name: 'stone' },
+  pig:   { density: 0.0011, rest: 0.24, fric: 0.55, hp: 620,  color: '#7cc44c', dark: '#4f8c2c', name: 'pig' },
+  bird:  { density: 0.0042, rest: 0.34, fric: 0.52, hp: 1e9,  color: '#e2483c', dark: '#a82a20', name: 'bird' },
+  ground:{ density: 0,      rest: 0.12, fric: 0.85, hp: 1e9,  color: '#6aa832', dark: '#4a7a20', name: 'ground' }
+};
+/* ダメージは「接触の相対接近速度」で決める。
+   累積インパルスで判定すると、重い建物が“自分の重さ”だけで壊れてしまう
+   （静止していても支点には mg 分のインパルスが出続けるため）。 */
+var DAMAGE_MIN_SPEED = 90;    /* これ以下の接近速度では傷つかない */
+var DAMAGE_K = 1.0;
+
+/* ============================================================
+   剛体
+   ============================================================ */
+var bodyIdSeq = 1;
+
+function baseBody(mat, isStatic) {
+  return {
+    id: bodyIdSeq++,
+    type: 'poly',
+    mat: mat,
+    x: 0, y: 0, angle: 0,
+    vx: 0, vy: 0, av: 0,
+    invMass: 0, invI: 0, mass: 0, mv: false,
+    rest: mat.rest, fric: mat.fric,
+    isStatic: !!isStatic,
+    awake: true, sleepT: 0,
+    hp: mat.hp, maxHp: mat.hp,
+    dmg: 0, dead: false,
+    kind: mat.name,
+    wv: null, wn: null, dirty: true
+  };
+}
+
+/* 多角形の質量・慣性・重心（密度一様） */
+function polyMassData(verts, density) {
+  var area = 0, cx = 0, cy = 0, I = 0;
+  for (var i = 0; i < verts.length; i++) {
+    var p1 = verts[i], p2 = verts[(i + 1) % verts.length];
+    var cr = vcross(p1, p2);
+    var a = cr * 0.5;
+    area += a;
+    cx += (p1.x + p2.x) * cr / 6;
+    cy += (p1.y + p2.y) * cr / 6;
+    var ix = p1.x * p1.x + p1.x * p2.x + p2.x * p2.x;
+    var iy = p1.y * p1.y + p1.y * p2.y + p2.y * p2.y;
+    I += cr * (ix + iy) / 12;
+  }
+  if (Math.abs(area) < 1e-9) return { mass: 0, inertia: 0, cx: 0, cy: 0 };
+  cx /= area; cy /= area;
+  var mass = density * Math.abs(area);
+  var inertia = density * Math.abs(I) - mass * (cx * cx + cy * cy);
+  return { mass: mass, inertia: Math.abs(inertia), cx: cx, cy: cy };
+}
+
+function makePoly(matKey, x, y, verts, angle, isStatic) {
+  var mat = MAT[matKey];
+  var b = baseBody(mat, isStatic);
+  b.type = 'poly';
+  b.x = x; b.y = y; b.angle = angle || 0;
+  var md = polyMassData(verts, mat.density);
+  /* 重心が原点にくるように頂点をずらす */
+  var local = verts.map(function (p) { return { x: p.x - md.cx, y: p.y - md.cy }; });
+  var off = vrot({ x: md.cx, y: md.cy }, b.angle);
+  b.x += off.x; b.y += off.y;
+  b.verts = local;
+  if (isStatic) { b.invMass = 0; b.invI = 0; b.mass = 0; }
+  else {
+    b.mass = md.mass;
+    b.invMass = md.mass > 0 ? 1 / md.mass : 0;
+    b.invI = md.inertia > 0 ? 1 / md.inertia : 0;
+  }
+  return b;
+}
+
+function makeBox(matKey, cx, cy, w, h, angle, isStatic) {
+  var hw = w / 2, hh = h / 2;
+  var b = makePoly(matKey, cx, cy, [
+    { x: -hw, y: -hh }, { x: hw, y: -hh }, { x: hw, y: hh }, { x: -hw, y: hh }
+  ], angle, isStatic);
+  b.w = w; b.h = h;
+  return b;
+}
+
+function makeCircle(matKey, cx, cy, r, isStatic) {
+  var mat = MAT[matKey];
+  var b = baseBody(mat, isStatic);
+  b.type = 'circle';
+  b.x = cx; b.y = cy; b.r = r;
+  if (isStatic) { b.invMass = 0; b.invI = 0; }
+  else {
+    var m = mat.density * Math.PI * r * r;
+    b.mass = m;
+    b.invMass = 1 / m;
+    b.invI = 1 / (0.5 * m * r * r);
+  }
+  return b;
+}
+
+/* ワールド座標の頂点・法線を更新 */
+function updateVerts(b) {
+  if (b.type !== 'poly') return;
+  if (!b.dirty && b.wv) return;
+  var n = b.verts.length;
+  var wv = new Array(n), wn = new Array(n);
+  for (var i = 0; i < n; i++) {
+    var p = vrot(b.verts[i], b.angle);
+    wv[i] = { x: p.x + b.x, y: p.y + b.y };
+  }
+  for (var j = 0; j < n; j++) {
+    var a = wv[j], c = wv[(j + 1) % n];
+    var e = vsub(c, a);
+    wn[j] = vnorm({ x: e.y, y: -e.x });
+  }
+  b.wv = wv; b.wn = wn; b.dirty = false;
+}
+
+function aabb(b) {
+  if (b.type === 'circle') {
+    return { l: b.x - b.r, r: b.x + b.r, t: b.y - b.r, b: b.y + b.r };
+  }
+  updateVerts(b);
+  var l = Infinity, r = -Infinity, t = Infinity, bo = -Infinity;
+  for (var i = 0; i < b.wv.length; i++) {
+    var p = b.wv[i];
+    if (p.x < l) l = p.x;
+    if (p.x > r) r = p.x;
+    if (p.y < t) t = p.y;
+    if (p.y > bo) bo = p.y;
+  }
+  return { l: l, r: r, t: t, b: bo };
+}
+
+/* ============================================================
+   衝突判定
+   ============================================================ */
+function circleCircle(A, B) {
+  var d = vsub({ x: B.x, y: B.y }, { x: A.x, y: A.y });
+  var dist = vlen(d);
+  var sep = dist - (A.r + B.r);
+  if (sep >= 0) return null;
+  var n = dist > 1e-9 ? vmul(d, 1 / dist) : { x: 0, y: -1 };
+  return {
+    normal: n,
+    points: [{ p: vadd({ x: A.x, y: A.y }, vmul(n, A.r)), sep: sep }]
+  };
+}
+
+/* A=circle, B=poly。法線は A→B */
+function circlePoly(A, B) {
+  updateVerts(B);
+  var n = B.wv.length;
+  var best = -Infinity, bestI = 0;
+  for (var i = 0; i < n; i++) {
+    var s = vdot(B.wn[i], vsub({ x: A.x, y: A.y }, B.wv[i]));
+    if (s > A.r) return null;
+    if (s > best) { best = s; bestI = i; }
+  }
+  var v1 = B.wv[bestI], v2 = B.wv[(bestI + 1) % n];
+  var normal, sep, cp;
+  if (best < 1e-6) {
+    /* 中心が多角形の内側 */
+    normal = vmul(B.wn[bestI], -1);
+    sep = best - A.r;
+    cp = vadd({ x: A.x, y: A.y }, vmul(vmul(B.wn[bestI], -1), A.r));
+    return { normal: vmul(normal, -1), points: [{ p: cp, sep: sep }] };
+  }
+  var c = { x: A.x, y: A.y };
+  var e = vsub(v2, v1);
+  var t = clamp(vdot(vsub(c, v1), e) / vlen2(e), 0, 1);
+  var closest = vadd(v1, vmul(e, t));
+  var d = vsub(c, closest);
+  var dist = vlen(d);
+  if (dist > A.r) return null;
+  var nn = dist > 1e-9 ? vmul(d, 1 / dist) : B.wn[bestI];
+  /* nn は B→A 向き。A→B にそろえる */
+  return {
+    normal: vmul(nn, -1),
+    points: [{ p: closest, sep: dist - A.r }]
+  };
+}
+
+function axisLeastPenetration(A, B) {
+  updateVerts(A); updateVerts(B);
+  var best = -Infinity, bestI = 0;
+  for (var i = 0; i < A.wv.length; i++) {
+    var n = A.wn[i];
+    /* B の -n 方向のサポート点 */
+    var sup = null, bestD = Infinity;
+    for (var j = 0; j < B.wv.length; j++) {
+      var d = vdot(n, B.wv[j]);
+      if (d < bestD) { bestD = d; sup = B.wv[j]; }
+    }
+    var s = vdot(n, vsub(sup, A.wv[i]));
+    if (s > best) { best = s; bestI = i; }
+  }
+  return { sep: best, idx: bestI };
+}
+
+function incidentFace(ref, refN, inc) {
+  var n = inc.wv.length, bestI = 0, bestD = Infinity;
+  for (var i = 0; i < n; i++) {
+    var d = vdot(refN, inc.wn[i]);
+    if (d < bestD) { bestD = d; bestI = i; }
+  }
+  return [inc.wv[bestI], inc.wv[(bestI + 1) % n]];
+}
+
+/* 平面 dot(n,p) <= c で線分をクリップ */
+function clipSeg(n, c, face) {
+  var out = [];
+  var d1 = vdot(n, face[0]) - c;
+  var d2 = vdot(n, face[1]) - c;
+  if (d1 <= 0) out.push(face[0]);
+  if (d2 <= 0) out.push(face[1]);
+  if (d1 * d2 < 0) {
+    var t = d1 / (d1 - d2);
+    out.push(vadd(face[0], vmul(vsub(face[1], face[0]), t)));
+  }
+  return out.length >= 2 ? [out[0], out[1]] : null;
+}
+
+function polyPoly(A, B) {
+  var a = axisLeastPenetration(A, B);
+  if (a.sep >= 0) return null;
+  var b = axisLeastPenetration(B, A);
+  if (b.sep >= 0) return null;
+
+  var ref, inc, refIdx, flip;
+  if (a.sep >= b.sep - 0.0008) { ref = A; inc = B; refIdx = a.idx; flip = false; }
+  else { ref = B; inc = A; refIdx = b.idx; flip = true; }
+
+  updateVerts(ref); updateVerts(inc);
+  var refN = ref.wn[refIdx];
+  var rv1 = ref.wv[refIdx], rv2 = ref.wv[(refIdx + 1) % ref.wv.length];
+  var sideDir = vnorm(vsub(rv2, rv1));
+
+  var face = incidentFace(ref, refN, inc);
+  face = clipSeg(vmul(sideDir, -1), vdot(vmul(sideDir, -1), rv1), face);
+  if (!face) return null;
+  face = clipSeg(sideDir, vdot(sideDir, rv2), face);
+  if (!face) return null;
+
+  var refC = vdot(refN, rv1);
+  var pts = [];
+  for (var i = 0; i < face.length; i++) {
+    var sep = vdot(refN, face[i]) - refC;
+    if (sep <= 0) pts.push({ p: face[i], sep: sep });
+  }
+  if (!pts.length) return null;
+
+  /* 法線は常に A→B にそろえる */
+  return { normal: flip ? vmul(refN, -1) : refN, points: pts };
+}
+
+function collide(A, B) {
+  if (A.type === 'circle' && B.type === 'circle') return circleCircle(A, B);
+  if (A.type === 'circle' && B.type === 'poly') return circlePoly(A, B);
+  if (A.type === 'poly' && B.type === 'circle') {
+    var m = circlePoly(B, A);
+    if (!m) return null;
+    return { normal: vmul(m.normal, -1), points: m.points };
+  }
+  return polyPoly(A, B);
+}
+
+/* ============================================================
+   物理ワールド
+   ============================================================ */
+var GRAVITY = 1180;
+var SLOP = 0.45;
+var BAUMGARTE = 0.22;
+var VEL_ITER = 11;
+var SLEEP_LIN = 12, SLEEP_ANG = 0.45, SLEEP_TIME = 0.55;
+
+/* 眠っている物体を起こす資格があるか。
+   その場の速度で判定すると、ステップ冒頭の重力加算（GRAVITY/120 ≒ 9.8px/s）だけで
+   静止中の物体まで「動いている」ことになり、起こし合いが無限に続いてしまう。
+   そのため solver 後（= 静止していれば ほぼ 0）に確定した b.mv を使う。 */
+function isMoving(b) { return !!b.mv; }
+
+var World = {
+  bodies: [],
+  contacts: [],
+  cache: {},
+
+  clear: function () {
+    this.bodies = [];
+    this.contacts = [];
+    this.cache = {};
+  },
+  add: function (b) { this.bodies.push(b); return b; },
+  remove: function (b) {
+    var i = this.bodies.indexOf(b);
+    if (i >= 0) this.bodies.splice(i, 1);
+  },
+
+  wakeArea: function (x, y, r) {
+    var r2 = r * r;
+    for (var i = 0; i < this.bodies.length; i++) {
+      var b = this.bodies[i];
+      if (b.isStatic) continue;
+      var dx = b.x - x, dy = b.y - y;
+      if (dx * dx + dy * dy < r2) { b.awake = true; b.sleepT = 0; b.mv = true; }
+    }
+  },
+
+  step: function (dt) {
+    var bodies = this.bodies, i, j, b;
+
+    /* 1. 速度積分（重力・減衰） */
+    for (i = 0; i < bodies.length; i++) {
+      b = bodies[i];
+      if (b.isStatic || !b.awake) continue;
+      b.vy += GRAVITY * dt;
+      b.vx *= (1 - 0.16 * dt);
+      b.vy *= (1 - 0.16 * dt);
+      b.av *= (1 - 0.9 * dt);
+    }
+
+    /* 2. 衝突検出 */
+    var contacts = [];
+    for (i = 0; i < bodies.length; i++) {
+      for (j = i + 1; j < bodies.length; j++) {
+        var A = bodies[i], B = bodies[j];
+        if (A.isStatic && B.isStatic) continue;
+        if (!A.awake && !B.awake) continue;
+        var ba = aabb(A), bb = aabb(B);
+        if (ba.r < bb.l || bb.r < ba.l || ba.b < bb.t || bb.b < ba.t) continue;
+        var m = collide(A, B);
+        if (!m) continue;
+        /* 眠っている側を起こす。「実際に動いている」相手だけが起こせる
+           （静止した者どうしが起こし合って永久に眠れなくなるのを防ぐ） */
+        if (!B.awake && !B.isStatic && A.awake && isMoving(A)) { B.awake = true; B.sleepT = 0; }
+        if (!A.awake && !A.isStatic && B.awake && isMoving(B)) { A.awake = true; A.sleepT = 0; }
+        contacts.push({
+          a: A, b: B, normal: m.normal, points: m.points,
+          key: A.id + ':' + B.id,
+          e: Math.min(A.rest, B.rest),
+          mu: Math.sqrt(A.fric * B.fric)
+        });
+      }
+    }
+    this.contacts = contacts;
+
+    /* 3. プリステップ（有効質量・バイアス・ウォームスタート） */
+    var newCache = {};
+    for (i = 0; i < contacts.length; i++) {
+      var c = contacts[i];
+      var A2 = c.a, B2 = c.b;
+      var n = c.normal;
+      var tan = { x: -n.y, y: n.x };
+      var old = this.cache[c.key];
+      c.approach = 0;
+      for (j = 0; j < c.points.length; j++) {
+        var cp = c.points[j];
+        cp.ra = vsub(cp.p, { x: A2.x, y: A2.y });
+        cp.rb = vsub(cp.p, { x: B2.x, y: B2.y });
+        var rnA = vcross(cp.ra, n), rnB = vcross(cp.rb, n);
+        var kn = A2.invMass + B2.invMass + A2.invI * rnA * rnA + B2.invI * rnB * rnB;
+        cp.massN = kn > 0 ? 1 / kn : 0;
+        var rtA = vcross(cp.ra, tan), rtB = vcross(cp.rb, tan);
+        var kt = A2.invMass + B2.invMass + A2.invI * rtA * rtA + B2.invI * rtB * rtB;
+        cp.massT = kt > 0 ? 1 / kt : 0;
+        cp.bias = -BAUMGARTE / dt * Math.min(0, cp.sep + SLOP);
+
+        /* 反発（接近速度が大きいときだけ） */
+        var dv = vsub(
+          vadd({ x: B2.vx, y: B2.vy }, vcrossSV(B2.av, cp.rb)),
+          vadd({ x: A2.vx, y: A2.vy }, vcrossSV(A2.av, cp.ra))
+        );
+        var vn = vdot(dv, n);
+        cp.bounce = (vn < -140) ? c.e * vn : 0;
+        /* solver 前の接近速度＝実際の衝突の激しさ */
+        if (-vn > c.approach) c.approach = -vn;
+
+        /* ウォームスタート */
+        var op = old && old[j];
+        cp.pn = op ? op.pn : 0;
+        cp.pt = op ? op.pt : 0;
+        var P = vadd(vmul(n, cp.pn), vmul(tan, cp.pt));
+        applyImpulse(A2, vmul(P, -1), cp.ra);
+        applyImpulse(B2, P, cp.rb);
+      }
+      c.tan = tan;
+    }
+
+    /* 4. 速度反復 */
+    for (var it = 0; it < VEL_ITER; it++) {
+      for (i = 0; i < contacts.length; i++) {
+        var ct = contacts[i];
+        var a = ct.a, bb2 = ct.b, nn = ct.normal, tt = ct.tan;
+        for (j = 0; j < ct.points.length; j++) {
+          var p = ct.points[j];
+
+          /* 法線方向 */
+          var dv1 = vsub(
+            vadd({ x: bb2.vx, y: bb2.vy }, vcrossSV(bb2.av, p.rb)),
+            vadd({ x: a.vx, y: a.vy }, vcrossSV(a.av, p.ra))
+          );
+          var vn1 = vdot(dv1, nn);
+          var dPn = p.massN * (-vn1 + p.bias - p.bounce);
+          var oldPn = p.pn;
+          p.pn = Math.max(oldPn + dPn, 0);
+          dPn = p.pn - oldPn;
+          var Pn = vmul(nn, dPn);
+          applyImpulse(a, vmul(Pn, -1), p.ra);
+          applyImpulse(bb2, Pn, p.rb);
+
+          /* 摩擦 */
+          var dv2 = vsub(
+            vadd({ x: bb2.vx, y: bb2.vy }, vcrossSV(bb2.av, p.rb)),
+            vadd({ x: a.vx, y: a.vy }, vcrossSV(a.av, p.ra))
+          );
+          var vt = vdot(dv2, tt);
+          var dPt = p.massT * (-vt);
+          var maxPt = ct.mu * p.pn;
+          var oldPt = p.pt;
+          p.pt = clamp(oldPt + dPt, -maxPt, maxPt);
+          dPt = p.pt - oldPt;
+          var Pt = vmul(tt, dPt);
+          applyImpulse(a, vmul(Pt, -1), p.ra);
+          applyImpulse(bb2, Pt, p.rb);
+        }
+      }
+    }
+
+    /* 5. 位置積分 */
+    for (i = 0; i < bodies.length; i++) {
+      b = bodies[i];
+      if (b.isStatic || !b.awake) continue;
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      b.angle += b.av * dt;
+      b.dirty = true;
+    }
+
+    /* 6. ダメージ集計 + 衝撃インパルスのキャッシュ保存 */
+    for (i = 0; i < contacts.length; i++) {
+      var cc = contacts[i];
+      var store = [];
+      for (j = 0; j < cc.points.length; j++) {
+        store.push({ pn: cc.points[j].pn, pt: cc.points[j].pt });
+      }
+      newCache[cc.key] = store;
+      if (cc.approach > DAMAGE_MIN_SPEED) {
+        /* 換算質量 × 超過接近速度 ≒ 衝突で受け止めた運動量 */
+        var invSum = cc.a.invMass + cc.b.invMass;
+        if (invSum > 0) {
+          var hit = (1 / invSum) * (cc.approach - DAMAGE_MIN_SPEED) * DAMAGE_K;
+          cc.a.dmg += hit;
+          cc.b.dmg += hit;
+          cc.impulse = hit;
+        }
+      }
+    }
+    this.cache = newCache;
+
+    /* 7. スリープ判定（solver 後の確定速度で判断する） */
+    for (i = 0; i < bodies.length; i++) {
+      b = bodies[i];
+      if (b.isStatic || !b.awake) continue;
+      var sp2 = b.vx * b.vx + b.vy * b.vy;
+      b.mv = sp2 > SLEEP_LIN * SLEEP_LIN * 0.5 || Math.abs(b.av) > SLEEP_ANG * 0.7;
+      if (sp2 > SLEEP_LIN * SLEEP_LIN || Math.abs(b.av) > SLEEP_ANG) {
+        b.sleepT = 0;
+      } else {
+        b.sleepT += dt;
+        if (b.sleepT > SLEEP_TIME) {
+          b.awake = false;
+          b.mv = false;
+          b.vx = 0; b.vy = 0; b.av = 0;
+        }
+      }
+    }
+  }
+};
+
+function applyImpulse(b, P, r) {
+  if (b.isStatic || !b.awake) return;
+  b.invMass && (b.vx += P.x * b.invMass, b.vy += P.y * b.invMass);
+  b.av += b.invI * vcross(r, P);
+}
+
+function applyRadial(b, cx, cy, power, radius) {
+  if (b.isStatic) return 0;
+  var d = vsub({ x: b.x, y: b.y }, { x: cx, y: cy });
+  var dist = vlen(d);
+  if (dist > radius) return 0;
+  var falloff = 1 - dist / radius;
+  var n = dist > 1e-6 ? vmul(d, 1 / dist) : { x: 0, y: -1 };
+  var mag = power * falloff;
+  b.awake = true; b.sleepT = 0; b.mv = true;
+  b.vx += n.x * mag * b.invMass * 60;
+  b.vy += n.y * mag * b.invMass * 60;
+  b.av += (Math.random() - 0.5) * 8 * falloff;
+  return falloff;
+}
+
+/* ============================================================
+   Sound - Web Audio 合成
+   ============================================================ */
+var Sound = (function () {
+  var ctx = null, master = null, enabled = true, ready = false;
+
+  function init() {
+    if (ready) return;
+    var AC = global.AudioContext || global.webkitAudioContext;
+    if (!AC) { enabled = false; ready = true; return; }
+    try { ctx = new AC(); } catch (e) { enabled = false; ready = true; return; }
+    master = ctx.createGain();
+    master.gain.value = 0.3;
+    master.connect(ctx.destination);
+    ready = true;
+  }
+  function now() { return ctx.currentTime; }
+
+  function tone(o) {
+    if (!ctx || !enabled) return;
+    var at = o.at || 0;
+    var osc = ctx.createOscillator(), g = ctx.createGain();
+    osc.type = o.type || 'square';
+    osc.frequency.setValueAtTime(o.freq, now() + at);
+    if (o.to) osc.frequency.exponentialRampToValueAtTime(o.to, now() + at + o.dur);
+    g.gain.setValueAtTime(0.0001, now() + at);
+    g.gain.exponentialRampToValueAtTime(o.vol || 0.2, now() + at + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, now() + at + o.dur);
+    osc.connect(g); g.connect(master);
+    osc.start(now() + at); osc.stop(now() + at + o.dur + 0.03);
+  }
+
+  function noise(dur, vol, freq, q, type) {
+    if (!ctx || !enabled) return;
+    var len = Math.max(1, Math.floor(ctx.sampleRate * dur));
+    var buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    var d = buf.getChannelData(0);
+    for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    var src = ctx.createBufferSource(); src.buffer = buf;
+    var f = ctx.createBiquadFilter();
+    f.type = type || 'bandpass';
+    f.frequency.value = freq || 900;
+    f.Q.value = q || 1;
+    var g = ctx.createGain(); g.gain.value = vol;
+    src.connect(f); f.connect(g); g.connect(master);
+    src.start();
+  }
+
+  function seq(list, type) {
+    for (var i = 0; i < list.length; i++) {
+      tone({ freq: list[i][0], dur: list[i][1], vol: 0.15, at: list[i][2], type: type });
+    }
+  }
+
+  var SFX = {
+    stretch: function () { tone({ freq: 180, to: 320, dur: 0.16, vol: 0.06, type: 'sawtooth' }); },
+    launch:  function () { tone({ freq: 700, to: 180, dur: 0.2, vol: 0.14, type: 'triangle' }); noise(0.16, 0.12, 1800, 0.8); },
+    thud:    function (v) { noise(0.09, Math.min(0.3, 0.06 + v * 0.00006), 220, 0.7, 'lowpass'); },
+    wood:    function () { noise(0.16, 0.24, 640, 1.1); tone({ freq: 220, to: 90, dur: 0.12, vol: 0.1, type: 'square' }); },
+    ice:     function () { noise(0.22, 0.2, 4200, 2.6); seq([[1800, 0.05, 0], [2400, 0.05, 0.04], [1500, 0.07, 0.09]], 'sine'); },
+    stone:   function () { noise(0.24, 0.3, 300, 0.6, 'lowpass'); tone({ freq: 130, to: 60, dur: 0.2, vol: 0.14, type: 'square' }); },
+    pig:     function () { seq([[520, 0.06, 0], [720, 0.06, 0.05], [420, 0.1, 0.11]], 'square'); noise(0.1, 0.12, 900, 1.2); },
+    boom:    function () { noise(0.55, 0.4, 240, 0.5, 'lowpass'); tone({ freq: 130, to: 40, dur: 0.45, vol: 0.2, type: 'triangle' }); },
+    power:   function () { tone({ freq: 400, to: 1200, dur: 0.16, vol: 0.14, type: 'square' }); },
+    split:   function () { seq([[700, 0.05, 0], [900, 0.05, 0.04], [1100, 0.08, 0.08]]); },
+    clear:   function () { seq([[523, 0.13, 0], [659, 0.13, 0.12], [784, 0.13, 0.24], [1046, 0.32, 0.36]]); },
+    fail:    function () { seq([[392, 0.22, 0], [330, 0.22, 0.16], [247, 0.36, 0.32]], 'triangle'); },
+    star:    function () { seq([[880, 0.07, 0], [1174, 0.07, 0.07], [1568, 0.16, 0.14]]); }
+  };
+
+  return {
+    init: init,
+    play: function (n, a) {
+      if (!enabled || !ctx) return;
+      if (ctx.state === 'suspended') ctx.resume();
+      if (SFX[n]) SFX[n](a);
+    },
+    toggle: function () { enabled = !enabled; return enabled; },
+    isOn: function () { return enabled; }
+  };
+})();
+
+/* ============================================================
+   鳥の種類
+   ============================================================ */
+var BIRDS = {
+  red:    { r: 15, color: '#e2483c', dark: '#a82a20', belly: '#f6c6b0', power: 'none',
+            hint: 'あかどり：とくしゅのうりょくなし', mass: 1 },
+  yellow: { r: 14, color: '#f5c518', dark: '#c08c06', belly: '#fbe6a2', power: 'dash',
+            hint: 'きいろどり：タップで一気に加速！', mass: 0.95 },
+  blue:   { r: 11, color: '#4aa8e0', dark: '#2a6f9c', belly: '#cbe9fa', power: 'split',
+            hint: 'あおどり：タップで3羽にぶんれつ！', mass: 0.7 },
+  black:  { r: 16, color: '#3a3a44', dark: '#1c1c22', belly: '#8a8a96', power: 'bomb',
+            hint: 'くろどり：タップで大ばくはつ！', mass: 1.5 },
+  white:  { r: 16, color: '#f2f2ee', dark: '#c2c2ba', belly: '#ffffff', power: 'egg',
+            hint: 'しろどり：タップでタマゴを落として急上昇！', mass: 1.2 }
+};
+
+/* ============================================================
+   ステージデータ
+   b(mat, x, bottom, w, h, angle)  bottom = 地面からの高さ
+   p(x, bottom, r)                 ブタ
+   ============================================================ */
+function b(mat, x, bottom, w, h, a) { return { t: 'b', mat: mat, x: x, bo: bottom, w: w, h: h, a: a || 0 }; }
+function p(x, bottom, r) { return { t: 'p', x: x, bo: bottom, r: r || 20 }; }
+
+var LEVELS = [
+  { /* 1 */
+    name: 'はじめの砦', birds: ['red', 'red', 'red'], par: 22000,
+    parts: [
+      b('wood', 960, 0, 18, 92), b('wood', 1064, 0, 18, 92),
+      b('wood', 1012, 92, 136, 18),
+      p(1012, 0, 20)
+    ]
+  },
+  { /* 2 */
+    name: 'こおりの塔', birds: ['red', 'yellow', 'red'], par: 34000,
+    parts: [
+      b('ice', 980, 0, 18, 92), b('ice', 1084, 0, 18, 92),
+      b('wood', 1032, 92, 136, 18),
+      b('ice', 1000, 110, 18, 72), b('ice', 1064, 110, 18, 72),
+      b('wood', 1032, 182, 100, 18),
+      p(1032, 0, 20), p(1032, 110, 17)
+    ]
+  },
+  { /* 3 */
+    name: 'いしのピラミッド', birds: ['red', 'red', 'yellow', 'red'], par: 42000,
+    parts: [
+      b('stone', 940, 0, 20, 84), b('stone', 1012, 0, 20, 84), b('stone', 1084, 0, 20, 84),
+      b('wood', 1012, 84, 180, 18),
+      b('wood', 980, 102, 18, 64), b('wood', 1046, 102, 18, 64),
+      b('wood', 1012, 166, 108, 18),
+      b('stone', 1012, 184, 64, 20),
+      p(976, 0, 20), p(1048, 0, 20)
+    ]
+  },
+  { /* 4 */
+    name: 'ふたごの塔', birds: ['red', 'blue', 'yellow', 'red'], par: 50000,
+    parts: [
+      b('wood', 900, 0, 18, 100), b('wood', 992, 0, 18, 100),
+      b('wood', 946, 100, 120, 18),
+      b('ice', 946, 118, 46, 46),
+      b('wood', 1120, 0, 18, 100), b('wood', 1212, 0, 18, 100),
+      b('wood', 1166, 100, 120, 18),
+      b('ice', 1166, 118, 46, 46),
+      b('stone', 1056, 0, 20, 70),
+      p(946, 0, 20), p(1166, 0, 20), p(1056, 70, 16)
+    ]
+  },
+  { /* 5 */
+    name: 'いしのとりで', birds: ['yellow', 'black', 'red'], par: 46000,
+    parts: [
+      b('stone', 960, 0, 22, 120), b('stone', 1100, 0, 22, 120),
+      b('stone', 1030, 120, 164, 22),
+      b('wood', 1000, 0, 16, 60), b('wood', 1060, 0, 16, 60),
+      b('wood', 1030, 60, 76, 16),
+      b('ice', 1030, 142, 44, 44),
+      b('stone', 1030, 186, 90, 20),
+      p(1030, 0, 20), p(1030, 76, 17)
+    ]
+  },
+  { /* 6 */
+    name: 'こおりの大聖堂', birds: ['red', 'yellow', 'blue', 'yellow'], par: 58000,
+    parts: [
+      b('ice', 920, 0, 18, 110), b('ice', 1010, 0, 18, 110),
+      b('ice', 1100, 0, 18, 110), b('ice', 1190, 0, 18, 110),
+      b('wood', 965, 110, 122, 18), b('wood', 1145, 110, 122, 18),
+      b('ice', 965, 128, 18, 80), b('ice', 1145, 128, 18, 80),
+      b('wood', 1055, 128, 122, 18),
+      b('stone', 1055, 146, 60, 22),
+      b('wood', 1055, 208, 240, 18),
+      p(965, 0, 20), p(1145, 0, 20), p(1055, 0, 20)
+    ]
+  },
+  { /* 7 */
+    name: 'ちていのすみか', birds: ['black', 'yellow', 'blue', 'red'], par: 62000,
+    parts: [
+      b('stone', 930, 0, 24, 120), b('stone', 1230, 0, 24, 120),
+      b('stone', 1080, 120, 324, 24),
+      b('wood', 1000, 0, 16, 56), b('wood', 1160, 0, 16, 56),
+      b('wood', 1080, 56, 180, 16),
+      b('ice', 1040, 72, 40, 40), b('ice', 1120, 72, 40, 40),
+      b('wood', 1080, 144, 18, 70), b('wood', 1080, 214, 120, 18),
+      p(1080, 0, 20), p(1000, 72, 16), p(1160, 72, 16), p(1080, 232, 18)
+    ]
+  },
+  { /* 8 */
+    name: 'かたむいた塔', birds: ['red', 'yellow', 'white', 'blue'], par: 60000,
+    parts: [
+      b('wood', 950, 0, 18, 110), b('wood', 1050, 0, 18, 110),
+      b('wood', 1000, 110, 130, 18),
+      b('wood', 970, 128, 18, 90, -0.12), b('wood', 1035, 128, 18, 90, 0.12),
+      b('wood', 1002, 218, 130, 18),
+      b('ice', 1002, 236, 50, 50),
+      b('stone', 1180, 0, 22, 90), b('stone', 1180, 90, 90, 20),
+      p(1000, 0, 20), p(1002, 128, 17), p(1180, 110, 18)
+    ]
+  },
+  { /* 9 */
+    name: 'てっぺきの城', birds: ['black', 'red', 'yellow', 'blue', 'red'], par: 72000,
+    parts: [
+      b('stone', 900, 0, 24, 130), b('stone', 1060, 0, 24, 130), b('stone', 1220, 0, 24, 130),
+      b('stone', 980, 130, 156, 22), b('stone', 1140, 130, 156, 22),
+      b('wood', 940, 0, 16, 60), b('wood', 1020, 0, 16, 60),
+      b('wood', 1100, 0, 16, 60), b('wood', 1180, 0, 16, 60),
+      b('wood', 980, 60, 100, 16), b('wood', 1140, 60, 100, 16),
+      b('ice', 980, 152, 44, 44), b('ice', 1140, 152, 44, 44),
+      b('wood', 1060, 152, 18, 44), b('stone', 1060, 196, 200, 22),
+      p(980, 0, 20), p(1140, 0, 20), p(980, 76, 16), p(1060, 218, 18)
+    ]
+  },
+  { /* 10 */
+    name: 'さいごの要塞', birds: ['black', 'yellow', 'blue', 'white', 'red', 'red'], par: 88000,
+    parts: [
+      b('stone', 890, 0, 24, 140), b('stone', 1060, 0, 24, 140), b('stone', 1230, 0, 24, 140),
+      b('stone', 975, 140, 166, 24), b('stone', 1145, 140, 166, 24),
+      b('wood', 930, 0, 16, 66), b('wood', 1020, 0, 16, 66),
+      b('wood', 1100, 0, 16, 66), b('wood', 1190, 0, 16, 66),
+      b('wood', 975, 66, 110, 16), b('wood', 1145, 66, 110, 16),
+      b('ice', 950, 82, 40, 40), b('ice', 1000, 82, 40, 40),
+      b('ice', 1120, 82, 40, 40), b('ice', 1170, 82, 40, 40),
+      b('stone', 1060, 164, 70, 24),
+      b('wood', 975, 164, 18, 76), b('wood', 1145, 164, 18, 76),
+      b('wood', 1060, 240, 260, 18),
+      p(975, 0, 20), p(1145, 0, 20),
+      p(1005, 164, 16), p(1115, 164, 16),
+      p(1060, 188, 17), p(1060, 258, 18)
+    ]
+  }
+];
+
+/* ============================================================
+   ゲーム状態
+   ============================================================ */
+var GROUND_Y = 0;
+var WORLD_L = -200, WORLD_R = 1800;
+var SLING = { x: 250, y: -150, r: 118 };
+
+var canvas = document.getElementById('game');
+var cx = canvas.getContext('2d');
+var view = { w: 900, h: 506 };
+var dpr = 1;
+
+var state = 'title';           /* title | levels | aim | fly | settle | clear | fail */
+var levelIndex = 0;
+var score = 0;
+var blocks = [], pigs = [], birdsQueue = [], activeBird = null, extraBirds = [];
+var particles = [], trail = [], floaters = [];
+var groundBody = null;
+var drag = { on: false, x: 0, y: 0 };
+var cam = { x: 700, y: -160, zoom: 0.82, tx: 700, ty: -160, tz: 0.82 };
+var settleT = 0, launchT = 0, shakeT = 0, shakeMag = 0;
+var powerUsed = false;
+var best = {};
+
+try { best = JSON.parse(localStorage.getItem('angryWingsBest') || '{}') || {}; } catch (e) { best = {}; }
+
+function saveBest() {
+  try { localStorage.setItem('angryWingsBest', JSON.stringify(best)); } catch (e) {}
+}
+function totalScore() {
+  var t = 0;
+  for (var k in best) if (best.hasOwnProperty(k)) t += best[k].score || 0;
+  return t;
+}
+function unlockedUpTo() {
+  var n = 0;
+  while (n < LEVELS.length && best[n] && best[n].stars > 0) n++;
+  return Math.min(n, LEVELS.length - 1);
+}
+
+/* ============================================================
+   ステージ構築
+   ============================================================ */
+function buildLevel(idx) {
+  World.clear();
+  blocks = []; pigs = []; extraBirds = [];
+  particles = []; trail = []; floaters = [];
+  activeBird = null;
+  powerUsed = false;
+  shakeT = 0;
+
+  var L = LEVELS[idx];
+
+  /* 地面 */
+  groundBody = makeBox('ground', 800, GROUND_Y + 400, 4200, 800, 0, true);
+  World.add(groundBody);
+  /* 左右の見えない壁（物が転がって消えないように、遠くに置く） */
+  World.add(makeBox('ground', WORLD_L - 60, -400, 120, 1400, 0, true));
+  World.add(makeBox('ground', WORLD_R + 60, -400, 120, 1400, 0, true));
+
+  for (var i = 0; i < L.parts.length; i++) {
+    var q = L.parts[i];
+    if (q.t === 'b') {
+      var bd = makeBox(q.mat, q.x, -(q.bo + q.h / 2), q.w, q.h, q.a, false);
+      bd.awake = false; bd.sleepT = SLEEP_TIME + 1;
+      World.add(bd); blocks.push(bd);
+    } else {
+      var pg = makeCircle('pig', q.x, -(q.bo + q.r), q.r, false);
+      pg.awake = false; pg.sleepT = SLEEP_TIME + 1;
+      pg.face = Math.random() < 0.5 ? 0 : 1;
+      World.add(pg); pigs.push(pg);
+    }
+  }
+
+  birdsQueue = L.birds.slice();
+  levelIndex = idx;
+  score = 0;
+  state = 'aim';
+  settleT = 0;
+  loadNextBird();
+  cam.tx = 640; cam.ty = -170; cam.tz = 0.8;
+  cam.x = cam.tx; cam.y = cam.ty; cam.zoom = cam.tz;
+  updateHud();
+}
+
+function loadNextBird() {
+  activeBird = null;
+  powerUsed = false;
+  if (!birdsQueue.length) return false;
+  var kind = birdsQueue[0];
+  var def = BIRDS[kind];
+  var bd = makeCircle('bird', SLING.x, SLING.y - 6, def.r, false);
+  bd.kind = 'bird';
+  bd.birdType = kind;
+  bd.def = def;
+  bd.launched = false;
+  bd.invMass /= def.mass;
+  bd.awake = false;
+  bd.sleepT = 0;
+  bd.aliveT = 0;
+  activeBird = bd;
+  World.add(bd);
+  state = 'aim';
+  setHint(def.power !== 'none' ? def.hint : '');
+  updateHud();
+  return true;
+}
+
+function launchBird(vx, vy) {
+  if (!activeBird) return;
+  activeBird.launched = true;
+  activeBird.awake = true;
+  activeBird.sleepT = 0;
+  activeBird.mv = true;
+  activeBird.vx = vx;
+  activeBird.vy = vy;
+  activeBird.av = vx * 0.008;
+  birdsQueue.shift();
+  state = 'fly';
+  launchT = 0;
+  trail = [];
+  Sound.play('launch');
+  updateHud();
+  if (activeBird.def.power !== 'none') setHint('タップで とくしゅのうりょく！');
+}
+
+/* ============================================================
+   とくしゅのうりょく
+   ============================================================ */
+function usePower() {
+  if (!activeBird || !activeBird.launched || powerUsed || state !== 'fly') return;
+  var bd = activeBird, def = bd.def;
+  if (def.power === 'none') return;
+  powerUsed = true;
+  setHint('');
+
+  if (def.power === 'dash') {
+    var sp = vlen({ x: bd.vx, y: bd.vy });
+    var n = sp > 1 ? { x: bd.vx / sp, y: bd.vy / sp } : { x: 1, y: 0 };
+    bd.vx = n.x * (sp * 1.6 + 620);
+    bd.vy = n.y * (sp * 1.6 + 620);
+    bd.dashT = 0.5;
+    Sound.play('power');
+    burst(bd.x, bd.y, 14, '#f5c518', 260);
+
+  } else if (def.power === 'split') {
+    Sound.play('split');
+    for (var i = -1; i <= 1; i += 2) {
+      var nb = makeCircle('bird', bd.x, bd.y, def.r, false);
+      nb.kind = 'bird';
+      nb.birdType = 'blue';
+      nb.def = def;
+      nb.launched = true;
+      nb.invMass /= def.mass;
+      var v = vrot({ x: bd.vx, y: bd.vy }, i * 0.30);
+      nb.vx = v.x * 1.02; nb.vy = v.y * 1.02;
+      nb.awake = true;
+      World.add(nb);
+      extraBirds.push(nb);
+    }
+    burst(bd.x, bd.y, 10, '#4aa8e0', 200);
+
+  } else if (def.power === 'bomb') {
+    explode(bd.x, bd.y, 168, 5600, 2300);
+    bd.dead = true;
+
+  } else if (def.power === 'egg') {
+    var egg = makeCircle('bird', bd.x, bd.y + def.r + 8, 9, false);
+    egg.kind = 'bird';
+    egg.birdType = 'egg';
+    egg.def = { r: 9, color: '#fffdf4', dark: '#d8d2bc', belly: '#fff', power: 'none' };
+    egg.launched = true;
+    egg.isEgg = true;
+    egg.vx = bd.vx * 0.35;
+    egg.vy = Math.max(bd.vy, 60) + 340;
+    egg.awake = true;
+    World.add(egg);
+    extraBirds.push(egg);
+    bd.vx *= 0.32;
+    bd.vy = -560;
+    Sound.play('power');
+  }
+}
+
+function explode(x, y, radius, power, damage) {
+  Sound.play('boom');
+  shake(0.45, 16);
+  burst(x, y, 46, '#ffcf4a', 620);
+  burst(x, y, 22, '#ff7a3a', 460);
+  floaters.push({ x: x, y: y, t: 0.5, max: 0.5, r: radius, kind: 'shock' });
+  var all = World.bodies.slice();
+  for (var i = 0; i < all.length; i++) {
+    var bd = all[i];
+    if (bd.isStatic) continue;
+    var f = applyRadial(bd, x, y, power, radius);
+    if (f > 0 && bd !== activeBird) bd.dmg += damage * f;
+  }
+}
+
+function shake(t, m) { shakeT = Math.max(shakeT, t); shakeMag = Math.max(shakeMag, m); }
+
+/* ============================================================
+   パーティクル
+   ============================================================ */
+function burst(x, y, n, color, speed) {
+  for (var i = 0; i < n; i++) {
+    var a = Math.random() * Math.PI * 2;
+    var s = speed * (0.35 + Math.random() * 0.65);
+    particles.push({
+      x: x, y: y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60,
+      life: 0.5 + Math.random() * 0.6, max: 1.1,
+      size: 2 + Math.random() * 4, color: color, spin: (Math.random() - 0.5) * 12, ang: 0
+    });
+  }
+}
+function debris(bd, color, n) {
+  var r = bd.type === 'circle' ? bd.r : Math.max(bd.w, bd.h) * 0.4;
+  for (var i = 0; i < n; i++) {
+    var a = Math.random() * Math.PI * 2;
+    var s = 90 + Math.random() * 260;
+    particles.push({
+      x: bd.x + (Math.random() - 0.5) * r, y: bd.y + (Math.random() - 0.5) * r,
+      vx: Math.cos(a) * s + bd.vx * 0.3, vy: Math.sin(a) * s - 90 + bd.vy * 0.3,
+      life: 0.6 + Math.random() * 0.7, max: 1.3,
+      size: 3 + Math.random() * 5, color: color, spin: (Math.random() - 0.5) * 14, ang: 0
+    });
+  }
+}
+function addFloater(x, y, text, color) {
+  floaters.push({ x: x, y: y, text: text, color: color, t: 1.2, max: 1.2, kind: 'text' });
+}
+
+/* ============================================================
+   破壊処理
+   ============================================================ */
+function processDamage() {
+  var i, bd;
+
+  for (i = blocks.length - 1; i >= 0; i--) {
+    bd = blocks[i];
+    if (bd.dmg <= 0) continue;
+    var d = bd.dmg; bd.dmg = 0;
+    bd.hp -= d;
+    if (bd.hp <= 0) {
+      blocks.splice(i, 1);
+      World.remove(bd);
+      World.wakeArea(bd.x, bd.y, 150);
+      var m = MAT[bd.mat.name];
+      debris(bd, m.color, 12);
+      debris(bd, m.dark, 6);
+      Sound.play(bd.mat.name === 'ice' ? 'ice' : (bd.mat.name === 'stone' ? 'stone' : 'wood'));
+      addScore(500, bd.x, bd.y);
+      shake(0.12, 4);
+    } else if (d > 420) {
+      if (!bd.sndT || bd.sndT <= 0) { Sound.play('thud', d); bd.sndT = 0.09; }
+      debris(bd, bd.mat.color, 2);
+    }
+  }
+
+  for (i = pigs.length - 1; i >= 0; i--) {
+    bd = pigs[i];
+    if (bd.dmg <= 0) continue;
+    var pd = bd.dmg; bd.dmg = 0;
+    bd.hp -= pd;
+    if (bd.hp <= 0) {
+      pigs.splice(i, 1);
+      World.remove(bd);
+      World.wakeArea(bd.x, bd.y, 130);
+      burst(bd.x, bd.y, 22, '#7cc44c', 300);
+      burst(bd.x, bd.y, 10, '#4f8c2c', 220);
+      Sound.play('pig');
+      addScore(5000, bd.x, bd.y);
+      shake(0.18, 6);
+    } else if (pd > 380) {
+      if (!bd.sndT || bd.sndT <= 0) { Sound.play('thud', pd); bd.sndT = 0.09; }
+    }
+  }
+
+  /* 鳥自身のダメージは無効化（消耗しない）＋クールダウン */
+  for (i = 0; i < World.bodies.length; i++) {
+    var w = World.bodies[i];
+    w.dmg = 0;
+    if (w.sndT > 0) w.sndT -= 1 / 60;
+  }
+}
+
+function addScore(v, x, y) {
+  score += v;
+  if (x !== undefined) addFloater(x, y, '+' + v, v >= 5000 ? '#ffcf4a' : '#eaf2fa');
+  updateHud();
+}
+
+/* ============================================================
+   鳥の管理
+   ============================================================ */
+function outOfWorld(bd) {
+  return bd.x < WORLD_L - 40 || bd.x > WORLD_R + 40 || bd.y > 500 || bd.y < -2200;
+}
+
+function updateBirds(dt) {
+  var i, bd;
+
+  if (activeBird && activeBird.launched) {
+    activeBird.aliveT += dt;
+    if (activeBird.dashT > 0) activeBird.dashT -= dt;
+    if (activeBird.dead || outOfWorld(activeBird) ||
+        (!activeBird.awake && activeBird.aliveT > 0.6) || activeBird.aliveT > 9) {
+      if (!activeBird.dead) burst(activeBird.x, activeBird.y, 6, '#ffffff', 90);
+      World.remove(activeBird);
+      activeBird = null;
+      /* クリア／失敗が確定したあとに 'settle' へ戻すと finishLevel が二重に走り、
+         のこり鳥ボーナスを二回加算してしまう */
+      if (state === 'fly') { state = 'settle'; settleT = 0; }
+      setHint('');
+    }
+  }
+
+  for (i = extraBirds.length - 1; i >= 0; i--) {
+    bd = extraBirds[i];
+    bd.aliveT = (bd.aliveT || 0) + dt;
+    if (bd.dead || outOfWorld(bd) || (!bd.awake && bd.aliveT > 0.6) || bd.aliveT > 9) {
+      World.remove(bd);
+      extraBirds.splice(i, 1);
+    }
+  }
+}
+
+function worldSettled() {
+  for (var i = 0; i < World.bodies.length; i++) {
+    var b2 = World.bodies[i];
+    if (b2.isStatic) continue;
+    if (b2.awake) return false;
+  }
+  return true;
+}
+
+/* ============================================================
+   勝敗判定
+   ============================================================ */
+function finishLevel(win) {
+  if (state === 'clear' || state === 'fail') return;
+  if (win) {
+    state = 'clear';
+    var bonus = birdsQueue.length * 10000;
+    if (bonus > 0) { score += bonus; }
+    var L = LEVELS[levelIndex];
+    var stars = score >= L.par ? 3 : (score >= L.par * 0.72 ? 2 : 1);
+    var prev = best[levelIndex];
+    if (!prev || score > prev.score) { best[levelIndex] = { score: score, stars: stars }; saveBest(); }
+    else if (prev && stars > prev.stars) { best[levelIndex].stars = stars; saveBest(); }
+    document.getElementById('clearTitle').textContent = 'STAGE ' + (levelIndex + 1) + ' CLEAR!';
+    var sHtml = '';
+    for (var i = 0; i < 3; i++) sHtml += i < stars ? '★' : '<span class="starsdim">★</span>';
+    document.getElementById('clearStars').innerHTML = sHtml;
+    document.getElementById('clearLine').textContent =
+      'SCORE ' + score + (bonus ? '（のこり鳥ボーナス +' + bonus + '）' : '');
+    document.getElementById('clearBest').textContent = 'BEST ' + (best[levelIndex] ? best[levelIndex].score : score);
+    document.getElementById('nextBtn').style.display = levelIndex < LEVELS.length - 1 ? '' : 'none';
+    Sound.play('clear');
+    setTimeout(function () { Sound.play('star'); }, 380);
+    setTimeout(function () { show('clearScreen'); }, 700);
+  } else {
+    state = 'fail';
+    document.getElementById('failLine').textContent = 'ブタが ' + pigs.length + '匹 のこっている！';
+    Sound.play('fail');
+    setTimeout(function () { show('failScreen'); }, 600);
+  }
+  updateHud();
+}
+
+/* ============================================================
+   更新
+   ============================================================ */
+function updateGame(dt) {
+  if (state === 'title' || state === 'levels') return;
+
+  var acc = dt, n = 0;
+  while (acc > 1e-6 && n < 6) {
+    var h = Math.min(1 / 120, acc);
+    World.step(h);
+    acc -= h; n++;
+  }
+  processDamage();
+  updateBirds(dt);
+
+  if (state === 'fly') {
+    launchT += dt;
+    if (activeBird) {
+      trail.push({ x: activeBird.x, y: activeBird.y });
+      if (trail.length > 110) trail.shift();
+    }
+  }
+
+  if (state === 'fly' || state === 'settle') {
+    if (pigs.length === 0) {
+      settleT += dt;
+      if (settleT > 0.7) finishLevel(true);
+    } else if (state === 'settle') {
+      settleT += dt;
+      if (worldSettled() || settleT > 3.2) {
+        if (birdsQueue.length > 0) loadNextBird();
+        else finishLevel(false);
+      }
+    }
+  }
+
+  /* パーティクル */
+  for (var i = particles.length - 1; i >= 0; i--) {
+    var pt = particles[i];
+    pt.vy += GRAVITY * 0.55 * dt;
+    pt.x += pt.vx * dt; pt.y += pt.vy * dt;
+    pt.vx *= (1 - 1.4 * dt);
+    pt.ang += pt.spin * dt;
+    pt.life -= dt;
+    if (pt.y > 4 && pt.vy > 0) { pt.y = 4; pt.vy *= -0.32; pt.vx *= 0.6; }
+    if (pt.life <= 0) particles.splice(i, 1);
+  }
+  for (var j = floaters.length - 1; j >= 0; j--) {
+    var fl = floaters[j];
+    fl.t -= dt;
+    if (fl.kind === 'text') fl.y -= dt * 34;
+    if (fl.t <= 0) floaters.splice(j, 1);
+  }
+  if (shakeT > 0) shakeT -= dt;
+
+  updateCamera(dt);
+}
+
+function updateCamera(dt) {
+  if (state === 'fly' && activeBird) {
+    cam.tx = clamp(activeBird.x + 90, 420, WORLD_R - 340);
+    cam.ty = clamp(activeBird.y - 40, -520, -120);
+    cam.tz = 0.92;
+  } else if (state === 'aim') {
+    cam.tx = 640; cam.ty = -170; cam.tz = 0.8;
+  } else if (state === 'settle' || state === 'clear' || state === 'fail') {
+    var sx = 0, sy = 0, cnt = 0;
+    for (var i = 0; i < pigs.length; i++) { sx += pigs[i].x; sy += pigs[i].y; cnt++; }
+    if (!cnt) { for (var j = 0; j < blocks.length; j++) { sx += blocks[j].x; sy += blocks[j].y; cnt++; } }
+    cam.tz = 0.86;
+    if (cnt) {
+      /* 残りが塔の上のほうだけになると、カメラが上がりすぎて地面が
+         画面外に出てしまうので、地面が見える範囲までしか上げない */
+      var halfH = (view.h / 2) / cam.tz;
+      var highest = Math.max(-520, 30 - halfH);
+      cam.tx = clamp(sx / cnt, 420, WORLD_R - 340);
+      cam.ty = clamp(sy / cnt - 60, highest, -120);
+    }
+  }
+  var k = 1 - Math.pow(0.0016, dt);
+  cam.x += (cam.tx - cam.x) * k;
+  cam.y += (cam.ty - cam.y) * k;
+  cam.zoom += (cam.tz - cam.zoom) * k;
+}
+
+/* ============================================================
+   描画
+   ============================================================ */
+function resize() {
+  var rect = canvas.getBoundingClientRect();
+  if (rect.width < 2) return;
+  dpr = Math.min(2, global.devicePixelRatio || 1);
+  canvas.width = Math.max(2, Math.round(rect.width * dpr));
+  canvas.height = Math.max(2, Math.round(rect.height * dpr));
+  view.scale = canvas.width / 900;
+  view.w = 900;
+  view.h = canvas.height / view.scale;
+}
+
+function toWorld(lx, ly) {
+  return { x: cam.x + (lx - view.w / 2) / cam.zoom, y: cam.y + (ly - view.h / 2) / cam.zoom };
+}
+
+function roundRect(x, y, w, h, r) {
+  cx.beginPath();
+  cx.moveTo(x + r, y);
+  cx.arcTo(x + w, y, x + w, y + h, r);
+  cx.arcTo(x + w, y + h, x, y + h, r);
+  cx.arcTo(x, y + h, x, y, r);
+  cx.arcTo(x, y, x + w, y, r);
+  cx.closePath();
+}
+
+function drawSky() {
+  var g = cx.createLinearGradient(0, 0, 0, view.h);
+  g.addColorStop(0, '#5fb4dd');
+  g.addColorStop(0.55, '#9fd8ee');
+  g.addColorStop(1, '#d8eec8');
+  cx.fillStyle = g;
+  cx.fillRect(0, 0, view.w, view.h);
+
+  /* 雲（パララックス） */
+  cx.fillStyle = 'rgba(255,255,255,.72)';
+  for (var i = 0; i < 7; i++) {
+    var bx = ((i * 337 - cam.x * 0.18) % 1400 + 1400) % 1400 - 200;
+    var by = 40 + (i % 3) * 46;
+    var s = 0.7 + (i % 4) * 0.18;
+    cx.beginPath();
+    cx.ellipse(bx, by, 42 * s, 17 * s, 0, 0, Math.PI * 2);
+    cx.ellipse(bx + 30 * s, by - 8 * s, 30 * s, 15 * s, 0, 0, Math.PI * 2);
+    cx.ellipse(bx - 30 * s, by + 3 * s, 26 * s, 12 * s, 0, 0, Math.PI * 2);
+    cx.fill();
+  }
+
+  /* 遠景の丘 */
+  var horizon = view.h * 0.72;
+  cx.fillStyle = 'rgba(122,178,120,.5)';
+  cx.beginPath();
+  cx.moveTo(0, horizon + 40);
+  for (var x = 0; x <= view.w; x += 40) {
+    var h = Math.sin((x + cam.x * 0.3) * 0.004) * 26 + Math.sin((x + cam.x * 0.3) * 0.011) * 12;
+    cx.lineTo(x, horizon - 10 + h);
+  }
+  cx.lineTo(view.w, horizon + 60);
+  cx.closePath();
+  cx.fill();
+}
+
+function drawGround() {
+  var L = WORLD_L - 900, R = WORLD_R + 900;
+  cx.fillStyle = '#8a6a3a';
+  cx.fillRect(L, 0, R - L, 900);
+  cx.fillStyle = '#6aa832';
+  cx.fillRect(L, 0, R - L, 22);
+  cx.fillStyle = '#57902a';
+  cx.fillRect(L, 20, R - L, 5);
+  /* 草 */
+  cx.strokeStyle = '#7dc03c';
+  cx.lineWidth = 2;
+  cx.beginPath();
+  for (var x = L; x < R; x += 26) {
+    cx.moveTo(x, 0); cx.lineTo(x + 4, -8);
+    cx.moveTo(x + 12, 0); cx.lineTo(x + 9, -6);
+  }
+  cx.stroke();
+  /* 土の模様 */
+  cx.fillStyle = 'rgba(0,0,0,.08)';
+  for (var i = 0; i < 60; i++) {
+    var px = L + ((i * 271) % (R - L));
+    var py = 40 + ((i * 97) % 300);
+    cx.fillRect(px, py, 16, 5);
+  }
+}
+
+function drawSlingshot(front) {
+  var sx = SLING.x, sy = SLING.y;
+  if (!front) {
+    cx.strokeStyle = '#7a4a24';
+    cx.lineWidth = 13;
+    cx.lineCap = 'round';
+    cx.beginPath();
+    cx.moveTo(sx, 0); cx.lineTo(sx, sy + 30);
+    cx.stroke();
+    cx.lineWidth = 11;
+    cx.beginPath();
+    cx.moveTo(sx, sy + 34); cx.lineTo(sx - 20, sy - 6);
+    cx.moveTo(sx, sy + 34); cx.lineTo(sx + 20, sy - 6);
+    cx.stroke();
+    cx.strokeStyle = '#5e3418';
+    cx.lineWidth = 3;
+    cx.beginPath();
+    cx.moveTo(sx - 3, 0); cx.lineTo(sx - 3, sy + 26);
+    cx.stroke();
+  }
+  /* ゴムバンド */
+  var bird = activeBird;
+  var px = bird && !bird.launched ? bird.x : sx;
+  var py = bird && !bird.launched ? bird.y : sy - 6;
+  cx.strokeStyle = '#3c2a16';
+  cx.lineWidth = 7;
+  cx.lineCap = 'round';
+  cx.beginPath();
+  if (front) { cx.moveTo(sx + 20, sy - 6); cx.lineTo(px, py); }
+  else { cx.moveTo(sx - 20, sy - 6); cx.lineTo(px, py); }
+  cx.stroke();
+}
+
+function drawBlock(bd) {
+  cx.save();
+  cx.translate(bd.x, bd.y);
+  cx.rotate(bd.angle);
+  var w = bd.w, h = bd.h, m = bd.mat;
+  var hw = w / 2, hh = h / 2;
+  var dmgRatio = 1 - bd.hp / bd.maxHp;
+
+  cx.fillStyle = m.color;
+  if (m.name === 'ice') { cx.globalAlpha = 0.72; }
+  roundRect(-hw, -hh, w, h, Math.min(4, Math.min(w, h) * 0.22));
+  cx.fill();
+  cx.globalAlpha = 1;
+
+  cx.strokeStyle = m.dark;
+  cx.lineWidth = 2;
+  roundRect(-hw, -hh, w, h, Math.min(4, Math.min(w, h) * 0.22));
+  cx.stroke();
+
+  cx.save();
+  cx.beginPath();
+  roundRect(-hw, -hh, w, h, Math.min(4, Math.min(w, h) * 0.22));
+  cx.clip();
+  if (m.name === 'wood') {
+    cx.strokeStyle = 'rgba(110,70,26,.42)';
+    cx.lineWidth = 1.5;
+    cx.beginPath();
+    for (var i = -hh + 5; i < hh; i += 7) { cx.moveTo(-hw, i); cx.lineTo(hw, i + 1.5); }
+    cx.stroke();
+    cx.fillStyle = 'rgba(255,255,255,.16)';
+    cx.fillRect(-hw, -hh, w, 3);
+  } else if (m.name === 'ice') {
+    cx.strokeStyle = 'rgba(255,255,255,.75)';
+    cx.lineWidth = 3;
+    cx.beginPath();
+    cx.moveTo(-hw + 3, hh - 3); cx.lineTo(hw - 5, -hh + 4);
+    cx.moveTo(-hw + 3, hh * 0.2); cx.lineTo(-hw * 0.1, -hh + 3);
+    cx.stroke();
+    cx.fillStyle = 'rgba(255,255,255,.3)';
+    cx.fillRect(-hw, -hh, w, 3);
+  } else if (m.name === 'stone') {
+    cx.fillStyle = 'rgba(0,0,0,.16)';
+    for (var k = 0; k < 9; k++) {
+      var rx = -hw + ((k * 53) % Math.max(1, w));
+      var ry = -hh + ((k * 37) % Math.max(1, h));
+      cx.beginPath(); cx.arc(rx, ry, 2.2, 0, Math.PI * 2); cx.fill();
+    }
+    cx.fillStyle = 'rgba(255,255,255,.2)';
+    cx.fillRect(-hw, -hh, w, 3);
+  }
+  /* ひび */
+  if (dmgRatio > 0.18) {
+    cx.strokeStyle = 'rgba(30,20,10,' + Math.min(0.72, dmgRatio) + ')';
+    cx.lineWidth = 1.6;
+    cx.beginPath();
+    cx.moveTo(-hw * 0.5, -hh); cx.lineTo(-hw * 0.15, 0); cx.lineTo(-hw * 0.45, hh);
+    if (dmgRatio > 0.5) {
+      cx.moveTo(hw * 0.5, -hh); cx.lineTo(hw * 0.2, hh * 0.2);
+      cx.moveTo(hw * 0.2, hh * 0.2); cx.lineTo(hw * 0.6, hh);
+    }
+    cx.stroke();
+  }
+  cx.restore();
+  cx.restore();
+}
+
+function drawPig(bd) {
+  cx.save();
+  cx.translate(bd.x, bd.y);
+  cx.rotate(bd.angle);
+  var r = bd.r;
+  var hurt = 1 - bd.hp / bd.maxHp;
+
+  /* 耳 */
+  cx.fillStyle = '#5fa838';
+  cx.beginPath();
+  cx.moveTo(-r * 0.62, -r * 0.72); cx.lineTo(-r * 0.24, -r * 1.18); cx.lineTo(-r * 0.1, -r * 0.7);
+  cx.closePath(); cx.fill();
+  cx.beginPath();
+  cx.moveTo(r * 0.62, -r * 0.72); cx.lineTo(r * 0.24, -r * 1.18); cx.lineTo(r * 0.1, -r * 0.7);
+  cx.closePath(); cx.fill();
+
+  /* 体 */
+  var g = cx.createRadialGradient(-r * 0.3, -r * 0.35, r * 0.15, 0, 0, r);
+  g.addColorStop(0, '#9ad863');
+  g.addColorStop(1, '#69ae3c');
+  cx.fillStyle = g;
+  cx.beginPath(); cx.arc(0, 0, r, 0, Math.PI * 2); cx.fill();
+  cx.strokeStyle = '#4f8c2c';
+  cx.lineWidth = 2;
+  cx.stroke();
+
+  /* 鼻 */
+  cx.fillStyle = '#8ccb52';
+  cx.beginPath(); cx.ellipse(0, r * 0.18, r * 0.42, r * 0.31, 0, 0, Math.PI * 2); cx.fill();
+  cx.strokeStyle = '#5b9a30';
+  cx.lineWidth = 1.4;
+  cx.stroke();
+  cx.fillStyle = '#3f7020';
+  cx.beginPath();
+  cx.ellipse(-r * 0.16, r * 0.18, r * 0.09, r * 0.12, 0, 0, Math.PI * 2);
+  cx.ellipse(r * 0.16, r * 0.18, r * 0.09, r * 0.12, 0, 0, Math.PI * 2);
+  cx.fill();
+
+  /* 目 */
+  cx.fillStyle = '#fff';
+  cx.beginPath();
+  cx.arc(-r * 0.34, -r * 0.24, r * 0.25, 0, Math.PI * 2);
+  cx.arc(r * 0.34, -r * 0.24, r * 0.25, 0, Math.PI * 2);
+  cx.fill();
+  cx.fillStyle = '#2a2a2a';
+  if (hurt > 0.55) {
+    cx.lineWidth = 2.2;
+    cx.strokeStyle = '#2a2a2a';
+    cx.beginPath();
+    cx.moveTo(-r * 0.46, -r * 0.36); cx.lineTo(-r * 0.22, -r * 0.12);
+    cx.moveTo(-r * 0.22, -r * 0.36); cx.lineTo(-r * 0.46, -r * 0.12);
+    cx.moveTo(r * 0.22, -r * 0.36); cx.lineTo(r * 0.46, -r * 0.12);
+    cx.moveTo(r * 0.46, -r * 0.36); cx.lineTo(r * 0.22, -r * 0.12);
+    cx.stroke();
+  } else {
+    cx.beginPath();
+    cx.arc(-r * 0.3, -r * 0.24, r * 0.12, 0, Math.PI * 2);
+    cx.arc(r * 0.38, -r * 0.24, r * 0.12, 0, Math.PI * 2);
+    cx.fill();
+  }
+  /* 眉（ダメージで怒る） */
+  if (hurt > 0.2) {
+    cx.strokeStyle = '#3a6a1e';
+    cx.lineWidth = 2.4;
+    cx.beginPath();
+    cx.moveTo(-r * 0.58, -r * 0.58); cx.lineTo(-r * 0.16, -r * 0.44);
+    cx.moveTo(r * 0.58, -r * 0.58); cx.lineTo(r * 0.16, -r * 0.44);
+    cx.stroke();
+  }
+  /* 傷 */
+  if (hurt > 0.35) {
+    cx.strokeStyle = 'rgba(60,40,20,.5)';
+    cx.lineWidth = 1.6;
+    cx.beginPath();
+    cx.moveTo(-r * 0.75, r * 0.25); cx.lineTo(-r * 0.45, r * 0.5);
+    cx.stroke();
+  }
+  cx.restore();
+}
+
+function drawBird(bd) {
+  var def = bd.def, r = bd.r;
+  cx.save();
+  cx.translate(bd.x, bd.y);
+  cx.rotate(bd.angle);
+
+  if (bd.isEgg) {
+    cx.fillStyle = '#fffdf4';
+    cx.beginPath(); cx.ellipse(0, 0, r * 0.82, r, 0, 0, Math.PI * 2); cx.fill();
+    cx.strokeStyle = '#d8d2bc'; cx.lineWidth = 1.6; cx.stroke();
+    cx.restore();
+    return;
+  }
+
+  /* ダッシュ時の残像 */
+  if (bd.dashT > 0) {
+    cx.save();
+    cx.globalAlpha = 0.32;
+    cx.fillStyle = def.color;
+    for (var t = 1; t <= 3; t++) {
+      cx.beginPath();
+      cx.arc(-bd.vx * 0.006 * t, -bd.vy * 0.006 * t, r * (1 - t * 0.12), 0, Math.PI * 2);
+      cx.fill();
+    }
+    cx.restore();
+  }
+
+  /* 尾羽 */
+  cx.fillStyle = def.dark;
+  cx.beginPath();
+  cx.moveTo(-r * 0.7, -r * 0.15);
+  cx.lineTo(-r * 1.5, -r * 0.62);
+  cx.lineTo(-r * 1.32, -r * 0.05);
+  cx.lineTo(-r * 1.5, r * 0.5);
+  cx.closePath(); cx.fill();
+
+  /* 体 */
+  var g = cx.createRadialGradient(-r * 0.28, -r * 0.32, r * 0.15, 0, 0, r * 1.05);
+  g.addColorStop(0, def.color);
+  g.addColorStop(1, def.dark);
+  cx.fillStyle = g;
+  cx.beginPath(); cx.arc(0, 0, r, 0, Math.PI * 2); cx.fill();
+
+  /* お腹 */
+  cx.fillStyle = def.belly;
+  cx.beginPath(); cx.ellipse(r * 0.08, r * 0.42, r * 0.5, r * 0.34, 0, 0, Math.PI * 2); cx.fill();
+
+  /* 頭の羽 */
+  cx.strokeStyle = def.dark;
+  cx.lineWidth = Math.max(2, r * 0.16);
+  cx.lineCap = 'round';
+  cx.beginPath();
+  cx.moveTo(-r * 0.1, -r * 0.95); cx.lineTo(-r * 0.3, -r * 1.42);
+  cx.moveTo(r * 0.14, -r * 0.95); cx.lineTo(r * 0.1, -r * 1.45);
+  cx.stroke();
+
+  /* 目 */
+  cx.fillStyle = '#fff';
+  cx.beginPath();
+  cx.arc(r * 0.12, -r * 0.28, r * 0.3, 0, Math.PI * 2);
+  cx.arc(r * 0.6, -r * 0.24, r * 0.24, 0, Math.PI * 2);
+  cx.fill();
+  cx.fillStyle = '#2a2a2a';
+  cx.beginPath();
+  cx.arc(r * 0.2, -r * 0.28, r * 0.13, 0, Math.PI * 2);
+  cx.arc(r * 0.64, -r * 0.24, r * 0.11, 0, Math.PI * 2);
+  cx.fill();
+
+  /* 怒り眉 */
+  cx.strokeStyle = '#2a2a2a';
+  cx.lineWidth = Math.max(2, r * 0.17);
+  cx.beginPath();
+  cx.moveTo(-r * 0.24, -r * 0.72); cx.lineTo(r * 0.36, -r * 0.5);
+  cx.moveTo(r * 0.86, -r * 0.56); cx.lineTo(r * 0.46, -r * 0.46);
+  cx.stroke();
+
+  /* くちばし */
+  cx.fillStyle = '#f4a020';
+  cx.beginPath();
+  cx.moveTo(r * 0.5, r * 0.06);
+  cx.lineTo(r * 1.28, r * 0.2);
+  cx.lineTo(r * 0.5, r * 0.42);
+  cx.closePath(); cx.fill();
+  cx.strokeStyle = '#c67c0c'; cx.lineWidth = 1.2; cx.stroke();
+
+  /* くろどりの導火線 */
+  if (bd.birdType === 'black' && !powerUsed) {
+    cx.strokeStyle = '#c9a06a';
+    cx.lineWidth = 2;
+    cx.beginPath();
+    cx.moveTo(0, -r * 0.98); cx.quadraticCurveTo(r * 0.3, -r * 1.5, r * 0.05, -r * 1.75);
+    cx.stroke();
+    var fl = 0.5 + Math.sin(performance.now() / 60) * 0.5;
+    cx.fillStyle = 'rgba(255,' + Math.floor(140 + fl * 100) + ',40,.95)';
+    cx.beginPath(); cx.arc(r * 0.05, -r * 1.8, 2.6 + fl * 1.8, 0, Math.PI * 2); cx.fill();
+  }
+  cx.restore();
+}
+
+function drawTrajectory() {
+  if (!drag.on || !activeBird) return;
+  var pull = getPull();
+  var vx = (SLING.x - pull.x) * 11.5;
+  var vy = (SLING.y - pull.y) * 11.5;
+  var px = pull.x, py = pull.y;
+  var dt = 1 / 60;
+  cx.fillStyle = 'rgba(255,255,255,.62)';
+  for (var i = 0; i < 150; i++) {
+    vy += GRAVITY * dt;
+    vx *= (1 - 0.16 * dt); vy *= (1 - 0.16 * dt);
+    px += vx * dt; py += vy * dt;
+    if (py > 0) break;
+    if (i % 6 === 0) {
+      var sz = 3.2 - i * 0.012;
+      cx.beginPath(); cx.arc(px, py, Math.max(1.2, sz), 0, Math.PI * 2); cx.fill();
+    }
+  }
+}
+
+function drawTrail() {
+  if (!trail.length) return;
+  cx.fillStyle = 'rgba(255,255,255,.55)';
+  for (var i = 0; i < trail.length; i += 3) {
+    cx.beginPath();
+    cx.arc(trail[i].x, trail[i].y, 2.4, 0, Math.PI * 2);
+    cx.fill();
+  }
+}
+
+function drawQueue() {
+  /* パチンコの手前に控えの鳥を並べる */
+  for (var i = 0; i < birdsQueue.length; i++) {
+    var isNext = (activeBird && !activeBird.launched && i === 0);
+    if (isNext) continue;
+    var def = BIRDS[birdsQueue[i]];
+    var bx = SLING.x - 62 - i * 34;
+    var by = -def.r - 2;
+    cx.save();
+    cx.translate(bx, by);
+    cx.fillStyle = def.color;
+    cx.beginPath(); cx.arc(0, 0, def.r * 0.85, 0, Math.PI * 2); cx.fill();
+    cx.fillStyle = def.belly;
+    cx.beginPath(); cx.ellipse(0, def.r * 0.34, def.r * 0.4, def.r * 0.26, 0, 0, Math.PI * 2); cx.fill();
+    cx.fillStyle = '#fff';
+    cx.beginPath(); cx.arc(def.r * 0.2, -def.r * 0.2, def.r * 0.22, 0, Math.PI * 2); cx.fill();
+    cx.fillStyle = '#2a2a2a';
+    cx.beginPath(); cx.arc(def.r * 0.26, -def.r * 0.2, def.r * 0.1, 0, Math.PI * 2); cx.fill();
+    cx.fillStyle = '#f4a020';
+    cx.beginPath();
+    cx.moveTo(def.r * 0.5, 0); cx.lineTo(def.r * 1.05, def.r * 0.12); cx.lineTo(def.r * 0.5, def.r * 0.3);
+    cx.closePath(); cx.fill();
+    cx.restore();
+  }
+}
+
+function draw() {
+  cx.setTransform(view.scale, 0, 0, view.scale, 0, 0);
+  drawSky();
+
+  var shx = 0, shy = 0;
+  if (shakeT > 0) {
+    var k = shakeT / 0.45;
+    shx = (Math.random() - 0.5) * shakeMag * k;
+    shy = (Math.random() - 0.5) * shakeMag * k;
+  }
+
+  cx.save();
+  cx.translate(view.w / 2 + shx, view.h / 2 + shy);
+  cx.scale(cam.zoom, cam.zoom);
+  cx.translate(-cam.x, -cam.y);
+
+  drawGround();
+  drawSlingshot(false);
+  drawQueue();
+  drawTrail();
+
+  var i;
+  for (i = 0; i < blocks.length; i++) drawBlock(blocks[i]);
+  for (i = 0; i < pigs.length; i++) drawPig(pigs[i]);
+  for (i = 0; i < extraBirds.length; i++) drawBird(extraBirds[i]);
+  if (activeBird) drawBird(activeBird);
+
+  drawTrajectory();
+  drawSlingshot(true);
+
+  /* パーティクル */
+  for (i = 0; i < particles.length; i++) {
+    var pt = particles[i];
+    cx.save();
+    cx.globalAlpha = Math.max(0, Math.min(1, pt.life / 0.55));
+    cx.translate(pt.x, pt.y);
+    cx.rotate(pt.ang);
+    cx.fillStyle = pt.color;
+    cx.fillRect(-pt.size / 2, -pt.size / 2, pt.size, pt.size);
+    cx.restore();
+  }
+
+  /* 爆風・スコア表示 */
+  for (i = 0; i < floaters.length; i++) {
+    var fl = floaters[i];
+    var a = fl.t / fl.max;
+    if (fl.kind === 'shock') {
+      cx.strokeStyle = 'rgba(255,220,140,' + a * 0.8 + ')';
+      cx.lineWidth = 6 * a + 1;
+      cx.beginPath();
+      cx.arc(fl.x, fl.y, fl.r * (1 - a) * 1.15, 0, Math.PI * 2);
+      cx.stroke();
+    } else {
+      cx.globalAlpha = Math.min(1, a * 1.6);
+      cx.fillStyle = fl.color;
+      cx.font = 'bold 17px "Consolas", monospace';
+      cx.textAlign = 'center';
+      cx.fillText(fl.text, fl.x, fl.y);
+      cx.globalAlpha = 1;
+    }
+  }
+
+  cx.restore();
+}
+
+/* ============================================================
+   入力
+   ============================================================ */
+function localPt(ev) {
+  var rect = canvas.getBoundingClientRect();
+  return {
+    x: (ev.clientX - rect.left) / rect.width * view.w,
+    y: (ev.clientY - rect.top) / rect.height * view.h
+  };
+}
+
+function getPull() {
+  var d = vsub({ x: drag.x, y: drag.y }, { x: SLING.x, y: SLING.y });
+  var l = vlen(d);
+  if (l > SLING.r) d = vmul(d, SLING.r / l);
+  return { x: SLING.x + d.x, y: SLING.y + d.y };
+}
+
+var panning = false, panStart = null, panCam = 0;
+
+canvas.addEventListener('pointerdown', function (ev) {
+  ev.preventDefault();
+  Sound.init();
+  var lp = localPt(ev);
+  var w = toWorld(lp.x, lp.y);
+
+  if (state === 'fly') { usePower(); return; }
+  if (state !== 'aim' || !activeBird) return;
+
+  var d = vlen(vsub(w, { x: activeBird.x, y: activeBird.y }));
+  if (d < 170) {
+    drag.on = true;
+    drag.x = w.x; drag.y = w.y;
+    var pl = getPull();
+    activeBird.x = pl.x; activeBird.y = pl.y; activeBird.dirty = true;
+    Sound.play('stretch');
+    try { canvas.setPointerCapture(ev.pointerId); } catch (e) {}
+  } else {
+    panning = true; panStart = lp.x; panCam = cam.tx;
+  }
+});
+
+canvas.addEventListener('pointermove', function (ev) {
+  if (drag.on) {
+    var lp = localPt(ev);
+    var w = toWorld(lp.x, lp.y);
+    drag.x = w.x; drag.y = w.y;
+    var pl = getPull();
+    if (activeBird) { activeBird.x = pl.x; activeBird.y = pl.y; activeBird.dirty = true; }
+  } else if (panning) {
+    var lp2 = localPt(ev);
+    cam.tx = clamp(panCam - (lp2.x - panStart) / cam.zoom, 300, WORLD_R - 260);
+  }
+});
+
+function endDrag(ev) {
+  if (panning) { panning = false; return; }
+  if (!drag.on) return;
+  drag.on = false;
+  var pl = getPull();
+  var dx = SLING.x - pl.x, dy = SLING.y - pl.y;
+  if (Math.sqrt(dx * dx + dy * dy) < 14) {
+    if (activeBird) { activeBird.x = SLING.x; activeBird.y = SLING.y - 6; activeBird.dirty = true; }
+    return;
+  }
+  launchBird(dx * 11.5, dy * 11.5);
+}
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', endDrag);
+canvas.addEventListener('pointerleave', function (ev) { if (drag.on) endDrag(ev); });
+
+document.addEventListener('keydown', function (ev) {
+  var k = (ev.key || '').toLowerCase();
+  if (k === 'r') { if (state !== 'title' && state !== 'levels') startLevel(levelIndex); }
+  else if (k === 'm') { toggleSound(); }
+  else if (k === ' ') { ev.preventDefault(); if (state === 'fly') usePower(); }
+  else if (k === 'escape') { openLevels(); }
+});
+
+/* ============================================================
+   UI
+   ============================================================ */
+function show(id) { document.getElementById(id).classList.remove('hidden'); }
+function hide(id) { document.getElementById(id).classList.add('hidden'); }
+function hideAll() {
+  ['titleScreen', 'levelScreen', 'clearScreen', 'failScreen'].forEach(hide);
+}
+function setHint(t) {
+  var el = document.getElementById('powerhint');
+  if (t) { el.textContent = t; el.classList.add('on'); }
+  else el.classList.remove('on');
+}
+function updateHud() {
+  document.getElementById('hudStage').textContent = (levelIndex + 1);
+  document.getElementById('hudScore').textContent = score;
+  document.getElementById('hudBirds').textContent =
+    birdsQueue.length + ((activeBird && activeBird.launched) ? 1 : 0);
+  document.getElementById('hudPigs').textContent = pigs.length;
+}
+
+function startLevel(idx) {
+  Sound.init();
+  hideAll();
+  setHint('');
+  buildLevel(idx);
+}
+
+function openLevels() {
+  state = 'levels';
+  var grid = document.getElementById('levelGrid');
+  grid.innerHTML = '';
+  var maxOpen = unlockedUpTo();
+  for (var i = 0; i < LEVELS.length; i++) {
+    (function (n) {
+      var d = document.createElement('div');
+      d.className = 'lvl' + (n > maxOpen ? ' locked' : '');
+      var bs = best[n];
+      var st = '';
+      if (bs) for (var s = 0; s < bs.stars; s++) st += '★';
+      d.innerHTML = '<div class="n">' + (n + 1) + '</div><div class="st">' + st + '</div>';
+      if (n <= maxOpen) d.addEventListener('click', function () { startLevel(n); });
+      grid.appendChild(d);
+    })(i);
+  }
+  document.getElementById('totalScore').textContent = totalScore();
+  hideAll();
+  show('levelScreen');
+}
+
+function toggleSound() {
+  var on = Sound.toggle();
+  var btn = document.getElementById('soundBtn');
+  btn.textContent = on ? 'SOUND ON' : 'SOUND OFF';
+  btn.classList.toggle('off', !on);
+}
+
+document.getElementById('startBtn').addEventListener('click', function () { startLevel(0); });
+document.getElementById('retryBtn').addEventListener('click', function () { startLevel(levelIndex); });
+document.getElementById('againBtn').addEventListener('click', function () { startLevel(levelIndex); });
+document.getElementById('nextBtn').addEventListener('click', function () {
+  startLevel(Math.min(LEVELS.length - 1, levelIndex + 1));
+});
+document.getElementById('restartBtn').addEventListener('click', function () {
+  if (state !== 'title' && state !== 'levels') startLevel(levelIndex);
+});
+document.getElementById('menuBtn').addEventListener('click', openLevels);
+document.getElementById('failMenuBtn').addEventListener('click', openLevels);
+document.getElementById('lvBackBtn').addEventListener('click', function () {
+  hideAll(); show('titleScreen'); state = 'title';
+});
+document.getElementById('soundBtn').addEventListener('click', toggleSound);
+global.addEventListener('resize', resize);
+
+/* ============================================================
+   起動
+   ============================================================ */
+resize();
+buildLevel(0);
+state = 'title';
+show('titleScreen');
+
+var lastT = null;
+function frame(ts) {
+  if (lastT === null) lastT = ts;
+  var dt = Math.min(0.033, (ts - lastT) / 1000);
+  lastT = ts;
+  if (canvas.width < 2) resize();
+  updateGame(dt);
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+global.__G = {
+  World: World, blocks: function () { return blocks; }, pigs: function () { return pigs; },
+  bird: function () { return activeBird; }, state: function () { return state; },
+  score: function () { return score; }, queue: function () { return birdsQueue; },
+  start: startLevel, launch: launchBird, power: usePower, cam: cam,
+  step: updateGame, levels: LEVELS, best: function () { return best; }
+};
+
+})(window);
+</script>
+</body>
+</html>
