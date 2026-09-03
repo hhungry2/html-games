@@ -327,6 +327,7 @@ function baseBody(mat, isStatic) {
     x: 0, y: 0, angle: 0,
     vx: 0, vy: 0, av: 0,
     invMass: 0, invI: 0, mass: 0, mv: false,
+    pvx: 0, pvy: 0, pav: 0,   /* 位置補正専用の擬似速度（実際の運動には残さない） */
     rest: mat.rest, fric: mat.fric,
     isStatic: !!isStatic,
     awake: true, sleepT: 0,
@@ -576,6 +577,8 @@ var GRAVITY = 1180;
 var SLOP = 0.45;
 var BAUMGARTE = 0.22;
 var VEL_ITER = 11;
+var POS_ITER = 3;
+var MAX_CORRECT_VEL = 320;   /* めり込み解消速度の上限（吹き飛び防止） */
 var SLEEP_LIN = 12, SLEEP_ANG = 0.45, SLEEP_TIME = 0.55;
 
 /* 眠っている物体を起こす資格があるか。
@@ -621,6 +624,7 @@ var World = {
       b.vx *= (1 - 0.16 * dt);
       b.vy *= (1 - 0.16 * dt);
       b.av *= (1 - 0.9 * dt);
+      b.pvx = 0; b.pvy = 0; b.pav = 0;
     }
 
     /* 2. 衝突検出 */
@@ -667,7 +671,11 @@ var World = {
         var rtA = vcross(cp.ra, tan), rtB = vcross(cp.rb, tan);
         var kt = A2.invMass + B2.invMass + A2.invI * rtA * rtA + B2.invI * rtB * rtB;
         cp.massT = kt > 0 ? 1 / kt : 0;
-        cp.bias = -BAUMGARTE / dt * Math.min(0, cp.sep + SLOP);
+        /* めり込み解消の目標速度。実速度ではなく擬似速度側だけに与えるので、
+           跳ね返りにエネルギーが上乗せされない（split impulse） */
+        cp.bias = Math.min(MAX_CORRECT_VEL,
+                           BAUMGARTE / dt * Math.max(0, -cp.sep - SLOP));
+        cp.pnb = 0;
 
         /* 反発（接近速度が大きいときだけ） */
         var dv = vsub(
@@ -679,8 +687,18 @@ var World = {
         /* solver 前の接近速度＝実際の衝突の激しさ */
         if (-vn > c.approach) c.approach = -vn;
 
-        /* ウォームスタート */
-        var op = old && old[j];
+        /* ウォームスタート。前フレームの接触点とは「位置の近さ」で対応づける。
+           配列の添字で対応づけると、面が切り替わって点の順序が入れ替わった
+           ときに別の点の力積を引き継ぎ、エネルギーが増えて暴れる原因になる */
+        var op = null;
+        if (old) {
+          var bestD2 = 36;
+          for (var q = 0; q < old.length; q++) {
+            var ddx = old[q].px - cp.p.x, ddy = old[q].py - cp.p.y;
+            var d2 = ddx * ddx + ddy * ddy;
+            if (d2 < bestD2) { bestD2 = d2; op = old[q]; }
+          }
+        }
         cp.pn = op ? op.pn : 0;
         cp.pt = op ? op.pt : 0;
         var P = vadd(vmul(n, cp.pn), vmul(tan, cp.pt));
@@ -704,7 +722,8 @@ var World = {
             vadd({ x: a.vx, y: a.vy }, vcrossSV(a.av, p.ra))
           );
           var vn1 = vdot(dv1, nn);
-          var dPn = p.massN * (-vn1 + p.bias - p.bounce);
+          /* bias は擬似速度側で処理するのでここには入れない */
+          var dPn = p.massN * (-vn1 - p.bounce);
           var oldPn = p.pn;
           p.pn = Math.max(oldPn + dPn, 0);
           dPn = p.pn - oldPn;
@@ -730,13 +749,39 @@ var World = {
       }
     }
 
-    /* 5. 位置積分 */
+    /* 4.5 位置補正（擬似速度）— めり込みだけをほどく。
+       ここで得た速度は位置にしか使わず、実速度には積み残さないので
+       跳ね返りが強くなったりしない */
+    for (var itp = 0; itp < POS_ITER; itp++) {
+      for (i = 0; i < contacts.length; i++) {
+        var cq = contacts[i];
+        var qa = cq.a, qb = cq.b, qn = cq.normal;
+        for (j = 0; j < cq.points.length; j++) {
+          var q2 = cq.points[j];
+          if (q2.bias <= 0) continue;
+          var dvp = vsub(
+            vadd({ x: qb.pvx, y: qb.pvy }, vcrossSV(qb.pav, q2.rb)),
+            vadd({ x: qa.pvx, y: qa.pvy }, vcrossSV(qa.pav, q2.ra))
+          );
+          var vnp = vdot(dvp, qn);
+          var dPb = q2.massN * (-vnp + q2.bias);
+          var oldPb = q2.pnb;
+          q2.pnb = Math.max(oldPb + dPb, 0);
+          dPb = q2.pnb - oldPb;
+          var Pb = vmul(qn, dPb);
+          applyPseudo(qa, vmul(Pb, -1), q2.ra);
+          applyPseudo(qb, Pb, q2.rb);
+        }
+      }
+    }
+
+    /* 5. 位置積分（実速度＋位置補正用の擬似速度） */
     for (i = 0; i < bodies.length; i++) {
       b = bodies[i];
       if (b.isStatic || !b.awake) continue;
-      b.x += b.vx * dt;
-      b.y += b.vy * dt;
-      b.angle += b.av * dt;
+      b.x += (b.vx + b.pvx) * dt;
+      b.y += (b.vy + b.pvy) * dt;
+      b.angle += (b.av + b.pav) * dt;
       b.dirty = true;
     }
 
@@ -745,7 +790,8 @@ var World = {
       var cc = contacts[i];
       var store = [];
       for (j = 0; j < cc.points.length; j++) {
-        store.push({ pn: cc.points[j].pn, pt: cc.points[j].pt });
+        store.push({ pn: cc.points[j].pn, pt: cc.points[j].pt,
+                     px: cc.points[j].p.x, py: cc.points[j].p.y });
       }
       newCache[cc.key] = store;
       if (cc.approach > DAMAGE_MIN_SPEED) {
@@ -785,6 +831,14 @@ function applyImpulse(b, P, r) {
   if (b.isStatic || !b.awake) return;
   b.invMass && (b.vx += P.x * b.invMass, b.vy += P.y * b.invMass);
   b.av += b.invI * vcross(r, P);
+}
+
+/* 位置補正専用。実速度は変えない */
+function applyPseudo(b, P, r) {
+  if (b.isStatic || !b.awake) return;
+  b.pvx += P.x * b.invMass;
+  b.pvy += P.y * b.invMass;
+  b.pav += b.invI * vcross(r, P);
 }
 
 function applyRadial(b, cx, cy, power, radius) {
