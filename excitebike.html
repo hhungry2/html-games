@@ -1,0 +1,1925 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>EXCITE MX - HTML5 エキサイトバイク風 モトクロス</title>
+<meta name="description" content="HTML5 Canvasで作ったエキサイトバイク風の4レーン・モトクロスレース。ターボでオーバーヒート、ジャンプ台では空中姿勢を制御して着地。全5コース＋ライバル7台とのレース。スマホ/PC対応。">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #101822;
+  background-image:
+    radial-gradient(circle at 50% -10%, #1d3550 0%, transparent 60%),
+    radial-gradient(circle at 85% 115%, #3b2a12 0%, transparent 55%);
+  color: #e6ecf5;
+  font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 8px;
+  overflow: hidden;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.wrap {
+  width: 100%;
+  max-width: 460px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ---------- 上部バー ---------- */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: "Consolas", monospace;
+  font-size: 11px;
+  color: #90a4bd;
+}
+.topbar .title { flex: 1; letter-spacing: .1em; color: #ffd15c; font-weight: 700; }
+.sbtn {
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.14);
+  color: #d6e0ef;
+  border-radius: 6px;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.sbtn:active { background: rgba(255,255,255,.18); }
+.sbtn.off { color: #61708a; }
+
+/* ---------- HUD ---------- */
+.hud {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: "Consolas", monospace;
+  font-size: 11px;
+  color: #c8d4e6;
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 6px;
+  padding: 5px 9px;
+}
+.hud b { color: #ffd15c; }
+.hud .right { margin-left: auto; }
+
+/* ---------- 画面 ---------- */
+.screen { position: relative; width: 100%; }
+
+canvas#game {
+  display: block;
+  width: 100%;
+  background: #6fa8d8;
+  border: 2px solid #34405a;
+  border-radius: 4px;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(8,12,20,.92);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  text-align: center;
+  overflow-y: auto;
+}
+.overlay.hidden { display: none; }
+
+.logo {
+  font-family: "Consolas", monospace;
+  font-size: clamp(20px, 7vw, 30px);
+  font-weight: 700;
+  letter-spacing: .08em;
+  color: #ffd15c;
+  text-shadow: 0 3px 0 #8a5a12, 0 0 14px rgba(255,209,92,.35);
+}
+.sub {
+  font-size: 11px;
+  color: #93a6c0;
+  letter-spacing: .06em;
+  margin-top: -2px;
+}
+.rules {
+  list-style: none;
+  font-size: 10.5px;
+  line-height: 1.65;
+  color: #b9c6da;
+  max-width: 340px;
+  text-align: left;
+}
+.rules li { padding-left: 12px; position: relative; }
+.rules li::before { content: "▸"; position: absolute; left: 0; color: #ffd15c; }
+.rules b { color: #ffe9a8; }
+.ic { color: #7fd0ff; }
+
+.menu { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 2px; }
+.btn {
+  background: linear-gradient(#ffd15c, #e0982a);
+  color: #3a2404;
+  border: none;
+  border-radius: 7px;
+  padding: 9px 20px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 3px 0 #8a5a12;
+}
+.btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #8a5a12; }
+.btn.sub2 {
+  background: linear-gradient(#6a86ad, #435a7c);
+  color: #eef4ff;
+  box-shadow: 0 3px 0 #2b3b53;
+}
+.btn.sub2:active { box-shadow: 0 1px 0 #2b3b53; }
+.keys { font-size: 10px; color: #7c8ca6; line-height: 1.7; }
+
+/* ---------- コース選択 ---------- */
+.tracks { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; max-width: 360px; }
+.tcard {
+  width: 104px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 7px;
+  padding: 6px 4px;
+  cursor: pointer;
+  font-family: "Consolas", monospace;
+}
+.tcard:active { background: rgba(255,255,255,.18); }
+.tcard .tn { font-size: 12px; color: #ffd15c; font-weight: 700; }
+.tcard .tl { font-size: 9.5px; color: #9db0c9; }
+.tcard .tb { font-size: 9.5px; color: #7fd0ff; }
+.modesel { display: flex; gap: 6px; }
+.modesel .mbtn {
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.18);
+  color: #b9c6da;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 11px;
+  font-family: "Consolas", monospace;
+  cursor: pointer;
+}
+.modesel .mbtn.on { background: #ffd15c; color: #3a2404; border-color: #ffd15c; font-weight: 700; }
+
+/* ---------- 操作パッド ---------- */
+.pad {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 4px 4px;
+  touch-action: none;
+}
+.dpad {
+  position: relative;
+  width: 118px;
+  height: 118px;
+  flex: none;
+}
+.dbtn {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  background: rgba(255,255,255,.09);
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #cfdcee;
+  font-size: 13px;
+}
+.dbtn.on { background: rgba(255,209,92,.5); color: #221600; }
+.dbtn.up    { left: 39px; top: 0; }
+.dbtn.down  { left: 39px; top: 78px; }
+.dbtn.left  { left: 0;  top: 39px; }
+.dbtn.right { left: 78px; top: 39px; }
+.dpad .hint {
+  position: absolute; left: 39px; top: 39px; width: 40px; height: 40px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 8px; color: #6d7f99; text-align: center; line-height: 1.2;
+}
+.abtns { display: flex; gap: 10px; align-items: center; }
+.abtn {
+  width: 62px; height: 62px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.09);
+  border: 2px solid rgba(255,255,255,.22);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  color: #e6ecf5;
+  font-family: "Consolas", monospace;
+  font-size: 17px; font-weight: 700;
+  line-height: 1;
+}
+.abtn small { font-size: 8px; color: #93a6c0; margin-top: 3px; }
+.abtn.a { border-color: rgba(120,230,150,.5); }
+.abtn.b { border-color: rgba(255,140,120,.6); }
+.abtn.on { background: rgba(255,209,92,.45); color: #221600; }
+.abtn.on small { color: #4a3405; }
+
+@media (max-width: 480px) {
+  .dpad { width: 104px; height: 104px; }
+  .dbtn { width: 36px; height: 36px; }
+  .dbtn.up { left: 34px; top: 0; }
+  .dbtn.down { left: 34px; top: 68px; }
+  .dbtn.left { left: 0; top: 34px; }
+  .dbtn.right { left: 68px; top: 34px; }
+  .dpad .hint { left: 34px; top: 34px; width: 36px; height: 36px; }
+}
+@media (min-width: 760px) and (min-height: 560px) {
+  .pad { opacity: .55; }
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <div class="topbar">
+    <span class="title">EXCITE MX</span>
+    <button class="sbtn" id="soundBtn">SOUND ON</button>
+    <button class="sbtn" id="pauseBtn">PAUSE</button>
+  </div>
+
+  <div class="hud">
+    <span>TIME <b id="hudTime">0.00</b></span>
+    <span>BEST <b id="hudBest">--.--</b></span>
+    <span class="right">SPEED <b id="hudSpeed">0</b>km/h</span>
+    <span id="hudPos">1/8</span>
+  </div>
+
+  <div class="screen">
+    <canvas id="game" width="400" height="260"></canvas>
+
+    <div class="overlay" id="titleScreen">
+      <h1 class="logo">EXCITE MX</h1>
+      <p class="sub">- 4レーン モトクロス -</p>
+      <ul class="rules">
+        <li><b>A</b>でアクセル、<b>B</b>はターボ。ターボは速いが<b>エンジンが熱くなる</b></li>
+        <li>温度計が振り切れると<b>オーバーヒート</b>で数秒停止。<span class="ic">青い矢印ゾーン</span>で一気に冷える</li>
+        <li>ジャンプ中は<span class="ic">←→</span>で<b>空中姿勢</b>。角度が合えば<b>PERFECT</b>、外すと転倒</li>
+        <li><span class="ic">↑↓</span>でレーン変更。<b>泥</b>で減速、ライバルへの追突でも転倒</li>
+      </ul>
+      <div class="menu">
+        <button class="btn" id="startBtn">GAME START</button>
+      </div>
+      <p class="keys">PC: ↑↓ レーン / ←→ 空中姿勢 / Z アクセル / X ターボ<br>P: ポーズ　M: サウンド　R: リトライ</p>
+    </div>
+
+    <div class="overlay hidden" id="selectScreen">
+      <h2 class="logo" style="font-size:20px">COURSE SELECT</h2>
+      <div class="modesel" id="modeSel">
+        <div class="mbtn on" data-mode="solo">SELECTION A（タイム）</div>
+        <div class="mbtn" data-mode="race">SELECTION B（レース）</div>
+      </div>
+      <div class="tracks" id="trackList"></div>
+      <p class="keys">SELECTION A＝ひとりでタイムアタック／SELECTION B＝ライバル7台とレース<br>目標タイム以内でゴールすると次のコースが解放される</p>
+      <div class="menu"><button class="btn sub2" id="backBtn">BACK</button></div>
+    </div>
+
+    <div class="overlay hidden" id="resultScreen">
+      <h2 class="logo" id="resultTitle">GOAL!</h2>
+      <p class="sub" id="resultLine">TIME 0.00</p>
+      <p class="keys" id="resultDetail"></p>
+      <div class="menu">
+        <button class="btn" id="retryBtn">RETRY</button>
+        <button class="btn sub2" id="nextBtn">NEXT COURSE</button>
+        <button class="btn sub2" id="titleBtn">TITLE</button>
+      </div>
+    </div>
+
+    <div class="overlay hidden" id="pauseScreen">
+      <h2 class="logo">PAUSE</h2>
+      <div class="menu">
+        <button class="btn" id="resumeBtn">RESUME</button>
+        <button class="btn sub2" id="quitBtn">TITLE</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="pad">
+    <div class="dpad">
+      <div class="dbtn up"    data-dir="up">▲</div>
+      <div class="dbtn left"  data-dir="left">◀</div>
+      <div class="dbtn right" data-dir="right">▶</div>
+      <div class="dbtn down"  data-dir="down">▼</div>
+      <div class="hint">↑↓レーン<br>←→姿勢</div>
+    </div>
+    <div class="abtns">
+      <div class="abtn b" data-btn="b">B<small>ターボ</small></div>
+      <div class="abtn a" data-btn="a">A<small>アクセル</small></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ============================================================
+   EXCITE MX - エキサイトバイク風 4レーン モトクロス
+   sound / track / physics / rival / render を1ファイルに統合
+   ============================================================ */
+(function (global) {
+'use strict';
+
+/* ============================================================
+   定数
+   ============================================================ */
+var VIEW_W = 400, VIEW_H = 260;
+var LANES = 4;
+var LANE_TOP = 100;          // レーン帯の上端
+var LANE_H = 38;             // 1レーンの高さ
+var GROUND_OFF = 30;         // レーン帯上端から接地線までの距離
+var PLAYER_SX = 118;         // 自機の画面上のX
+
+var SPD_A = 250;             // アクセルAの最高速(px/s)
+var SPD_B = 420;             // ターボBの最高速
+var ACC_A = 170, ACC_B = 330;
+var DRAG = 130;              // ノーアクセル時の減速
+var BRAKE_MUD = 240;         // 泥での追加減速
+var MUD_MAX = 0.55;          // 泥での最高速倍率
+
+var HEAT_UP = 27;            // ターボ中の温度上昇/秒
+var HEAT_DOWN = 13;          // 通常時の冷却/秒
+var HEAT_COOL_ZONE = 95;     // 冷却ゾーンの冷却/秒
+var OVERHEAT_T = 3.1;        // オーバーヒート停止時間
+
+var GRAVITY = 900;
+var PITCH_RATE = 3.3;        // 空中での回転速度(rad/s)
+var LIFT_BONUS = 0.74;       // 後傾で上昇中の重力係数
+var LIFT_PENALTY = 1.3;      // 前傾で上昇中の重力係数
+var LAND_PERFECT = 0.28;     // 完璧な着地の許容角(rad)
+var LAND_OK = 0.72;          // 転倒しない許容角(rad)
+var JUMP_K = 2.15;           // 踏切の増幅係数
+var MAX_JUMP_VY = 400;       // 踏切の初速上限(画面外まで飛ばないように)
+
+var CRASH_T = 2.4;           // 転倒からの復帰時間
+var LANE_MOVE_T = 0.17;      // レーン移動にかかる時間
+
+var KMH = 0.42;              // px/s -> km/h 表示係数
+
+function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function laneGroundY(lane) { return LANE_TOP + lane * LANE_H + GROUND_OFF; }
+function laneScale(lane) { return 0.88 + lane * 0.05; }
+
+/* 決定的な乱数（コースを毎回同じ形にする） */
+function makeRng(seed) {
+  var s = seed >>> 0;
+  return function () {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+/* ============================================================
+   Sound - Web Audio API による合成音
+   ============================================================ */
+var Sound = (function () {
+  var ctx = null, master = null, enabled = true, ready = false;
+  var eng = null;   // エンジン音のノード群
+
+  function init() {
+    if (ready) return;
+    ready = true;
+    var AC = global.AudioContext || global.webkitAudioContext;
+    if (!AC) { enabled = false; return; }
+    try { ctx = new AC(); } catch (e) { ctx = null; enabled = false; return; }
+    master = ctx.createGain();
+    master.gain.value = 0.3;
+    master.connect(ctx.destination);
+  }
+  function now() { return ctx ? ctx.currentTime : 0; }
+
+  function tone(opt) {
+    if (!ctx || !enabled) return;
+    var at = opt.at || 0, t0 = now() + at;
+    var o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = opt.type || 'square';
+    o.frequency.setValueAtTime(opt.freq, t0);
+    if (opt.to) o.frequency.exponentialRampToValueAtTime(Math.max(20, opt.to), t0 + opt.dur);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(opt.vol || 0.18, t0 + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + opt.dur);
+    o.connect(g); g.connect(master);
+    o.start(t0); o.stop(t0 + opt.dur + 0.03);
+  }
+
+  function noise(dur, vol, freq, at) {
+    if (!ctx || !enabled) return;
+    var t0 = now() + (at || 0);
+    var len = Math.max(1, Math.floor(ctx.sampleRate * dur));
+    var buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    var d = buf.getChannelData(0);
+    for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    var src = ctx.createBufferSource(); src.buffer = buf;
+    var f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = freq || 1400;
+    var g = ctx.createGain(); g.gain.value = vol || 0.2;
+    src.connect(f); f.connect(g); g.connect(master);
+    src.start(t0); src.stop(t0 + dur + 0.02);
+  }
+
+  /* --- エンジン音（速度に追従する連続音） --- */
+  function engineStart() {
+    init();
+    if (!ctx || !enabled || eng) return;
+    var o1 = ctx.createOscillator(), o2 = ctx.createOscillator();
+    var f = ctx.createBiquadFilter(), g = ctx.createGain();
+    o1.type = 'sawtooth'; o2.type = 'square';
+    o1.frequency.value = 60; o2.frequency.value = 30;
+    f.type = 'lowpass'; f.frequency.value = 700; f.Q.value = 4;
+    g.gain.value = 0.0001;
+    o1.connect(f); o2.connect(f); f.connect(g); g.connect(master);
+    o1.start(); o2.start();
+    eng = { o1: o1, o2: o2, f: f, g: g };
+  }
+  function engineStop() {
+    if (!eng) return;
+    try { eng.g.gain.cancelScheduledValues(now()); eng.g.gain.value = 0.0001; eng.o1.stop(now() + 0.05); eng.o2.stop(now() + 0.05); } catch (e) {}
+    eng = null;
+  }
+  function engineSet(rpm, turbo, dead) {
+    if (!eng || !ctx) return;
+    var t = now();
+    var base = dead ? 22 : 52 + rpm * 130 + (turbo ? 22 : 0);
+    try {
+      eng.o1.frequency.setTargetAtTime(base, t, 0.05);
+      eng.o2.frequency.setTargetAtTime(base * 0.5, t, 0.05);
+      eng.f.frequency.setTargetAtTime(430 + rpm * 1500 + (turbo ? 700 : 0), t, 0.06);
+      eng.g.gain.setTargetAtTime(dead ? 0.012 : 0.05 + rpm * 0.05, t, 0.06);
+    } catch (e) {}
+  }
+
+  return {
+    on: function () { init(); enabled = true; },
+    off: function () { engineStop(); enabled = false; },
+    isOn: function () { return enabled; },
+    resume: function () { init(); if (ctx && ctx.state === 'suspended') ctx.resume(); },
+    engineStart: engineStart,
+    engineStop: engineStop,
+    engineSet: engineSet,
+    ui: function () { tone({ freq: 660, dur: 0.07, vol: 0.12, type: 'square' }); },
+    count: function (hi) { tone({ freq: hi ? 990 : 520, dur: hi ? 0.34 : 0.13, vol: 0.2, type: 'square' }); },
+    land: function () { noise(0.14, 0.28, 800); tone({ freq: 130, to: 70, dur: 0.12, vol: 0.15, type: 'triangle' }); },
+    perfect: function () { tone({ freq: 780, dur: 0.06, vol: 0.14 }); tone({ freq: 1180, dur: 0.09, vol: 0.14, at: 0.06 }); },
+    crash: function () { noise(0.5, 0.4, 900); tone({ freq: 190, to: 45, dur: 0.4, vol: 0.2, type: 'sawtooth' }); },
+    cool: function () { tone({ freq: 500, to: 1400, dur: 0.2, vol: 0.13, type: 'sine' }); },
+    overheat: function () { tone({ freq: 300, to: 90, dur: 0.7, vol: 0.22, type: 'sawtooth' }); noise(0.7, 0.2, 500); },
+    mud: function () { noise(0.16, 0.16, 420); },
+    hit: function () { noise(0.2, 0.3, 600); tone({ freq: 240, to: 110, dur: 0.18, vol: 0.16, type: 'square' }); },
+    goal: function () {
+      var f = [523, 659, 784, 1047];
+      for (var i = 0; i < f.length; i++) tone({ freq: f[i], dur: 0.16, vol: 0.2, at: i * 0.1, type: 'square' });
+    },
+    fail: function () { tone({ freq: 400, to: 150, dur: 0.5, vol: 0.2, type: 'sawtooth' }); }
+  };
+})();
+
+/* ============================================================
+   Track - コース生成
+   ramp: 上り坂(先端が踏切) / land: 下り坂(着地用) / bump: こぶ
+   mud: 泥(減速) / cool: 冷却ゾーン
+   ============================================================ */
+var TRACK_DEFS = [
+  { name: 'TRAINING',  jp: 'トレーニング',   len: 5200, par: 18, diff: 0 },
+  { name: 'DIRT HILL', jp: 'ダートヒル',     len: 6200, par: 21, diff: 1 },
+  { name: 'MUD FLAT',  jp: 'マッドフラット', len: 6800, par: 26, diff: 2 },
+  { name: 'BIG AIR',   jp: 'ビッグエア',     len: 7400, par: 23.5, diff: 3 },
+  { name: 'EXCITE GP', jp: 'エキサイトGP',   len: 8600, par: 31, diff: 4 }
+];
+
+function shuffledLanes(rng, n) {
+  var a = [0, 1, 2, 3], i, j, t;
+  for (i = 3; i > 0; i--) { j = Math.floor(rng() * (i + 1)); t = a[i]; a[i] = a[j]; a[j] = t; }
+  return a.slice(0, n);
+}
+
+function buildTrack(index) {
+  var def = TRACK_DEFS[index];
+  var rng = makeRng(0x5eed + index * 7919);
+  var d = def.diff;
+  var t = { name: def.name, jp: def.jp, len: def.len, par: def.par, index: index,
+            objs: [], byLane: [[], [], [], []], zones: [[], [], [], []], deco: [] };
+
+  function add(o) {
+    t.objs.push(o);
+    if (o.type === 'mud' || o.type === 'cool') t.zones[o.lane].push(o);
+    else t.byLane[o.lane].push(o);
+  }
+  function ramps(x, lanes, h, w, withLanding) {
+    for (var i = 0; i < lanes.length; i++) {
+      add({ type: 'ramp', lane: lanes[i], x: x, w: w, h: h });
+      if (withLanding) {
+        var gap = 90 + h * 5.2;
+        add({ type: 'land', lane: lanes[i], x: x + w + gap, w: w * 1.6, h: h * 0.8 });
+      }
+    }
+  }
+
+  var x = 460;
+  var end = def.len - 620;
+  var kinds = ['ramp', 'ramp', 'bump', 'mud', 'stagger'];
+  if (d >= 2) kinds.push('mud', 'bigair');
+  if (d >= 3) kinds.push('bigair', 'stagger', 'double');
+  var lastCool = 0, coolIdx = index % 4;
+
+  while (x < end) {
+    var k = kinds[Math.floor(rng() * kinds.length)];
+
+    if (k === 'ramp') {
+      var n = 2 + Math.floor(rng() * 3);                 // 2〜4レーンにジャンプ台
+      var h = 12 + Math.floor(rng() * (6 + d * 3));
+      ramps(x, shuffledLanes(rng, n), h, 34 + Math.floor(rng() * 12), rng() < 0.45);
+      x += 260 + rng() * 190;
+
+    } else if (k === 'double') {
+      var lanesD = shuffledLanes(rng, 3);
+      var hD = 20 + Math.floor(rng() * 8);
+      ramps(x, lanesD, hD, 40, true);
+      ramps(x + 300, lanesD, hD * 0.8, 36, true);
+      x += 640 + rng() * 160;
+
+    } else if (k === 'bigair') {
+      var hB = 26 + Math.floor(rng() * 10);
+      var laneB = [0, 1, 2, 3];
+      for (var i2 = 0; i2 < 4; i2++) {
+        add({ type: 'ramp', lane: i2, x: x, w: 50, h: hB });
+        add({ type: 'land', lane: i2, x: x + 250, w: 90, h: hB * 0.75 });
+      }
+      x += 560 + rng() * 180;
+
+    } else if (k === 'bump') {
+      var cnt = 3 + Math.floor(rng() * (2 + d));
+      var bw = 46, bh = 9 + Math.floor(rng() * 6);
+      for (var c = 0; c < cnt; c++) {
+        for (var l = 0; l < 4; l++) add({ type: 'bump', lane: l, x: x + c * (bw + 6), w: bw, h: bh });
+      }
+      x += cnt * (bw + 6) + 200 + rng() * 160;
+
+    } else if (k === 'mud') {
+      var nm = 1 + Math.floor(rng() * (1 + Math.min(2, d)));
+      var lm = shuffledLanes(rng, nm);
+      var mw = 130 + rng() * (90 + d * 40);
+      for (var m = 0; m < lm.length; m++) add({ type: 'mud', lane: lm[m], x: x, w: mw });
+      x += mw + 220 + rng() * 180;
+
+    } else { // stagger: レーンごとにずれたジャンプ台
+      var ls = shuffledLanes(rng, 4);
+      var hs = 13 + Math.floor(rng() * (5 + d * 2));
+      for (var s = 0; s < 4; s++) {
+        add({ type: 'ramp', lane: ls[s], x: x + s * 62, w: 36, h: hs });
+        add({ type: 'land', lane: ls[s], x: x + s * 62 + 36 + 110 + hs * 4, w: 60, h: hs * 0.7 });
+      }
+      x += 520 + rng() * 160;
+    }
+
+    // 冷却ゾーンを適度な間隔で配置
+    if (x - lastCool > 950 + rng() * 350 && x < end - 400) {
+      /* 隣り合う2レーンずつ、順に位置をずらして配置（レーンを移らないと冷やせない） */
+      var base = coolIdx % LANES;
+      add({ type: 'cool', lane: base, x: x, w: 150 });
+      add({ type: 'cool', lane: (base + 1) % LANES, x: x, w: 150 });
+      coolIdx++;
+      lastCool = x;
+      x += 260;
+    }
+  }
+
+  // 看板・距離表示
+  for (var g = 1000; g < def.len; g += 1000) t.deco.push({ x: g, m: g });
+
+  t.objs.sort(function (a, b) { return a.x - b.x; });
+  for (var q = 0; q < 4; q++) {
+    t.byLane[q].sort(function (a, b) { return a.x - b.x; });
+    t.zones[q].sort(function (a, b) { return a.x - b.x; });
+  }
+  return t;
+}
+
+/* 地形の高さと傾き（h: 接地線からの高さ, s: 傾き dh/dx） */
+function surfaceAt(track, lane, x) {
+  var arr = track.byLane[lane];
+  var lo = 0, hi = arr.length, mid;
+  while (lo < hi) { mid = (lo + hi) >> 1; if (arr[mid].x + arr[mid].w < x) lo = mid + 1; else hi = mid; }
+  for (var i = lo; i < arr.length && arr[i].x <= x; i++) {
+    var o = arr[i];
+    if (x < o.x || x > o.x + o.w) continue;
+    var u = (x - o.x) / o.w;
+    if (o.type === 'ramp') return { h: o.h * u, s: o.h / o.w, o: o };
+    if (o.type === 'land') return { h: o.h * (1 - u), s: -o.h / o.w, o: o };
+    if (o.type === 'bump') {
+      var sn = Math.sin(Math.PI * u);
+      return { h: o.h * sn * sn, s: o.h * Math.PI * Math.sin(2 * Math.PI * u) / o.w, o: o };
+    }
+  }
+  return { h: 0, s: 0, o: null };
+}
+
+/* 泥・冷却ゾーンの判定 */
+function zoneAt(track, lane, x) {
+  var arr = track.zones[lane];
+  var lo = 0, hi = arr.length, mid;
+  while (lo < hi) { mid = (lo + hi) >> 1; if (arr[mid].x + arr[mid].w < x) lo = mid + 1; else hi = mid; }
+  for (var i = lo; i < arr.length && arr[i].x <= x; i++) {
+    var o = arr[i];
+    if (x >= o.x && x <= o.x + o.w) return o.type;
+  }
+  return null;
+}
+
+/* ============================================================
+   Bike - 自機とライバル共通の物理
+   y: 接地線からの高さ(上が+) / pitch: 機体角(+でウィリー=のけぞり)
+   ============================================================ */
+function makeBike(isPlayer, colors, skill) {
+  return {
+    isPlayer: isPlayer, colors: colors, skill: skill || 1,
+    x: 0, v: 0, lane: 1, laneF: 1,
+    y: 0, vy: 0, air: false, pitch: 0, prevVyT: 0, prevH: 0,
+    heat: 0, over: 0, crash: 0, crashPhase: 0,
+    wobble: 0, wheel: 0, boost: 0, mud: 0, crashV: 0, turboFx: 0,
+    finished: false, finishT: 0, perfects: 0, crashes: 0, topV: 0,
+    bumpCool: 0
+  };
+}
+
+function bikeCrash(bike, hard) {
+  if (bike.crash > 0) return;
+  bike.crash = CRASH_T * (hard ? 1.15 : 1);
+  bike.crashPhase = 0;
+  bike.air = false;
+  bike.y = 0; bike.vy = 0;
+  bike.pitch = 0;
+  bike.crashes++;
+  bike.crashV = bike.v;
+}
+
+/* input: {acc:0|1|2, lane:-1|0|1, pitch:-1|0|1} */
+function stepBike(bike, dt, track, input, fx) {
+  var lane = Math.round(bike.laneF);
+  lane = clamp(lane, 0, LANES - 1);
+
+  /* --- 転倒中 --- */
+  if (bike.crash > 0) {
+    bike.crash -= dt;
+    bike.crashPhase += dt;
+    bike.v = Math.max(0, bike.v - 900 * dt);
+    bike.x += bike.v * dt;
+    bike.heat = Math.max(0, bike.heat - 40 * dt);
+    if (bike.crash <= 0) { bike.crash = 0; bike.v = 20; bike.pitch = 0; }
+    bike.laneF = lerp(bike.laneF, bike.lane, Math.min(1, dt / LANE_MOVE_T));
+    return;
+  }
+
+  /* --- オーバーヒート停止中 --- */
+  var stalled = false;
+  if (bike.over > 0) {
+    bike.over -= dt;
+    stalled = true;
+    if (bike.over <= 0) { bike.over = 0; bike.heat = 0; }
+  }
+
+  /* --- レーン移動（空中と転倒中は不可） --- */
+  if (!bike.air && input.lane !== 0) {
+    var nl = clamp(bike.lane + input.lane, 0, LANES - 1);
+    if (Math.abs(bike.laneF - bike.lane) < 0.35) bike.lane = nl;
+  }
+  var lstep = dt / LANE_MOVE_T;
+  if (bike.laneF < bike.lane) bike.laneF = Math.min(bike.lane, bike.laneF + lstep);
+  else if (bike.laneF > bike.lane) bike.laneF = Math.max(bike.lane, bike.laneF - lstep);
+
+  /* --- 路面 --- */
+  var zone = zoneAt(track, lane, bike.x);
+  var inMud = (zone === 'mud') && !bike.air;
+  bike.mud = inMud ? Math.min(1, bike.mud + dt * 6) : Math.max(0, bike.mud - dt * 4);
+
+  /* --- 温度 --- */
+  if (bike.isPlayer) {
+    if (zone === 'cool') {
+      if (bike.heat > 0) bike.heat = Math.max(0, bike.heat - HEAT_COOL_ZONE * dt);
+    } else if (input.acc === 2 && !stalled) {
+      bike.heat = Math.min(101, bike.heat + HEAT_UP * dt);
+    } else {
+      bike.heat = Math.max(0, bike.heat - HEAT_DOWN * dt);
+    }
+    if (bike.heat >= 100 && bike.over <= 0) {
+      bike.over = OVERHEAT_T;
+      bike.heat = 100;
+      stalled = true;
+      if (fx) fx.overheat(bike);
+    }
+  }
+
+  /* --- 加速 --- */
+  var acc = stalled ? 0 : input.acc;
+  var maxV = acc === 2 ? SPD_B : (acc === 1 ? SPD_A : 0);
+  if (inMud) maxV *= MUD_MAX;
+  if (bike.boost > 0) { maxV *= 1.14; bike.boost -= dt; }
+
+  if (bike.air) {
+    bike.v -= 12 * dt;                       // 空中はわずかに減速
+  } else if (acc > 0 && bike.v < maxV) {
+    bike.v += (acc === 2 ? ACC_B : ACC_A) * dt;
+    if (bike.v > maxV) bike.v = maxV;
+  } else {
+    var dec = DRAG + (inMud ? BRAKE_MUD : 0) + (stalled ? 260 : 0);
+    if (bike.v > maxV) bike.v = Math.max(maxV, bike.v - dec * dt);
+  }
+  bike.turboFx = lerp(bike.turboFx, (acc === 2 && bike.v > 40) ? 1 : 0, Math.min(1, dt * 10));
+  bike.v = clamp(bike.v, 0, SPD_B * 1.25);
+  if (bike.v > bike.topV) bike.topV = bike.v;
+  bike.wheel += bike.v * dt * 0.09;
+
+  bike.x += bike.v * dt;
+
+  var surf = surfaceAt(track, lane, bike.x);
+
+  if (bike.air) {
+    /* --- 空中 --- */
+    bike.pitch += input.pitch * PITCH_RATE * dt;
+    bike.pitch = clamp(bike.pitch, -1.9, 2.4);
+    var gm = 1;
+    if (bike.vy > 0) {
+      if (bike.pitch > 0.25) gm = LIFT_BONUS;
+      else if (bike.pitch < -0.25) gm = LIFT_PENALTY;
+    }
+    bike.vy -= GRAVITY * gm * dt;
+    bike.y += bike.vy * dt;
+
+    if (bike.y <= surf.h) {
+      /* --- 着地判定 --- */
+      bike.y = surf.h;
+      bike.air = false;
+      var ideal = Math.atan(surf.s);
+      var diff = bike.pitch - ideal;
+      var ad = Math.abs(diff);
+      if (ad <= LAND_PERFECT) {
+        bike.perfects++;
+        bike.boost = 0.9;
+        bike.v *= 1.03;
+        bike.pitch = ideal;
+        if (fx) fx.land(bike, 2);
+      } else if (ad <= LAND_OK) {
+        bike.v *= 0.82;
+        bike.wobble = 0.45;
+        bike.pitch = ideal;
+        if (fx) fx.land(bike, 1);
+      } else {
+        if (fx) fx.land(bike, 0);
+        bikeCrash(bike, ad > 1.3);
+        bike.prevVyT = 0; bike.prevH = surf.h;
+        return;
+      }
+      bike.vy = 0;
+      bike.prevVyT = bike.v * surf.s;
+    }
+  } else {
+    /* --- 接地 --- */
+    bike.y = surf.h;
+    var vyT = bike.v * surf.s;
+    if (vyT < bike.prevVyT - GRAVITY * dt && bike.prevVyT > 6) {
+      bike.air = true;
+      bike.vy = Math.min(MAX_JUMP_VY, bike.prevVyT * JUMP_K);
+      bike.y = bike.prevH;
+      if (fx) fx.takeoff(bike);
+    } else {
+      var tp = Math.atan(surf.s);
+      bike.pitch = lerp(bike.pitch, tp, Math.min(1, dt * 14));
+    }
+    bike.prevVyT = vyT;
+  }
+  bike.prevH = surf.h;
+  if (bike.wobble > 0) bike.wobble -= dt;
+}
+
+/* ============================================================
+   ライバルAI
+   ============================================================ */
+function rivalStep(r, dt, track, player, fx) {
+  r.think -= dt;
+  var inp = { acc: 1, lane: 0, pitch: 0 };
+
+  /* アクセル：スキルに応じてターボを混ぜる */
+  r.turboT -= dt;
+  if (r.turboT <= 0) {
+    r.turbo = !r.turbo;
+    r.turboT = r.turbo ? (0.7 + Math.random() * 1.6) * r.skill : 0.8 + Math.random() * 1.4;
+  }
+  inp.acc = (r.turbo && r.crash <= 0) ? 2 : 1;
+
+  /* レーン選択：前方の泥を避ける */
+  if (r.think <= 0 && !r.air) {
+    r.think = 0.5 + Math.random() * 0.8;
+    var best = r.lane, bestScore = -1e9;
+    for (var l = Math.max(0, r.lane - 1); l <= Math.min(LANES - 1, r.lane + 1); l++) {
+      var sc = 0;
+      for (var d = 40; d < 460; d += 60) {
+        var z = zoneAt(track, l, r.x + d);
+        if (z === 'mud') sc -= 30 * (1 - d / 500);
+        else if (z === 'cool') sc += 3;
+      }
+      // 前を走る車体を避ける
+      for (var i = 0; i < r.others.length; i++) {
+        var o = r.others[i];
+        if (o === r) continue;
+        var dx = o.x - r.x;
+        if (dx > 0 && dx < 150 && Math.abs(o.laneF - l) < 0.6) sc -= 26 * (1 - dx / 150);
+      }
+      if (l === r.lane) sc += 2;
+      if (sc > bestScore) { bestScore = sc; best = l; }
+    }
+    if (best !== r.lane) inp.lane = best > r.lane ? 1 : -1;
+  }
+
+  /* 空中姿勢：着地点の傾きに合わせる（スキルが低いほど誤差が大きい） */
+  if (r.air) {
+    if (r.aimPitch === undefined || r.aimT <= 0) {
+      var t = (r.vy + Math.sqrt(Math.max(0, r.vy * r.vy + 2 * GRAVITY * Math.max(0, r.y)))) / GRAVITY;
+      var lx = r.x + r.v * t;
+      var sf = surfaceAt(track, Math.round(r.laneF), lx);
+      r.aimPitch = Math.atan(sf.s) + (Math.random() - 0.5) * (1.5 - r.skill) * 1.5;
+      r.aimT = 0.25;
+    }
+    r.aimT -= dt;
+    var dp = r.aimPitch - r.pitch;
+    inp.pitch = Math.abs(dp) < 0.06 ? 0 : (dp > 0 ? 1 : -1);
+  } else {
+    r.aimPitch = undefined;
+  }
+
+  stepBike(r, dt, track, inp, fx);
+}
+
+/* ============================================================
+   エフェクト（土煙・火花・浮き文字）
+   ============================================================ */
+function makeFx(game) {
+  var P = [];   // 粒子
+  var T = [];   // 浮き文字
+  function burst(bike, n, col, spd, up) {
+    for (var i = 0; i < n; i++) {
+      P.push({
+        x: bike.x - 8 + Math.random() * 10, y: bike.y + Math.random() * 6,
+        lane: bike.laneF,
+        vx: -spd * (0.4 + Math.random()), vy: (up || 40) * Math.random(),
+        life: 0.3 + Math.random() * 0.45, t: 0,
+        c: col, r: 1.5 + Math.random() * 2.5
+      });
+    }
+  }
+  function text(bike, s, col) {
+    T.push({ x: bike.x, y: bike.y + 34, lane: bike.laneF, s: s, c: col, t: 0, life: 1.1 });
+  }
+  return {
+    P: P, T: T,
+    burst: burst,
+    land: function (bike, q) {
+      burst(bike, q === 2 ? 12 : 8, '#c9a06a', 70, 70);
+      if (!bike.isPlayer) return;
+      if (q === 2) { Sound.perfect(); text(bike, 'PERFECT!', '#7dffa8'); game.score += 300; }
+      else if (q === 1) Sound.land();
+      else Sound.crash();
+    },
+    takeoff: function (bike) {
+      burst(bike, 5, '#d8bb8a', 50, 30);
+    },
+    overheat: function (bike) {
+      if (bike.isPlayer) { Sound.overheat(); text(bike, 'OVER HEAT!', '#ff8a5c'); }
+      for (var i = 0; i < 16; i++) {
+        P.push({ x: bike.x, y: bike.y + 8, lane: bike.laneF,
+                 vx: (Math.random() - 0.5) * 30, vy: 40 + Math.random() * 60,
+                 life: 0.7 + Math.random() * 0.6, t: 0, c: '#e8e8f0', r: 3 + Math.random() * 3 });
+      }
+    },
+    hit: function (bike) {
+      if (bike.isPlayer) { Sound.hit(); text(bike, 'CRASH!', '#ff6a6a'); }
+      burst(bike, 10, '#ffd15c', 60, 90);
+    },
+    mudSplash: function (bike) {
+      burst(bike, 3, '#5c4326', 40, 34);
+    },
+    step: function (dt) {
+      var i;
+      for (i = P.length - 1; i >= 0; i--) {
+        var p = P[i];
+        p.t += dt;
+        if (p.t >= p.life) { P.splice(i, 1); continue; }
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vy -= 240 * dt;
+        if (p.y < 0) { p.y = 0; p.vy = 0; p.vx *= 0.7; }
+      }
+      for (i = T.length - 1; i >= 0; i--) {
+        var q = T[i];
+        q.t += dt; q.y += 22 * dt;
+        if (q.t >= q.life) T.splice(i, 1);
+      }
+    },
+    clear: function () { P.length = 0; T.length = 0; }
+  };
+}
+
+/* ============================================================
+   Game - 状態管理
+   ============================================================ */
+var canvas = document.getElementById('game');
+var ctx = canvas.getContext('2d');
+
+var RIVAL_COLORS = [
+  { body: '#4fa3e0', trim: '#dff1ff' }, { body: '#69c46a', trim: '#e6ffe4' },
+  { body: '#b06ad0', trim: '#f3e2ff' }, { body: '#e0a93f', trim: '#fff2cf' },
+  { body: '#d9564f', trim: '#ffe3e0' }, { body: '#4ec8bd', trim: '#e0fffb' },
+  { body: '#8d8f9c', trim: '#eceef5' }
+];
+var PLAYER_COLORS = { body: '#e8352f', trim: '#ffffff' };
+
+var G = {
+  state: 'title', mode: 'solo', ti: 0, track: null,
+  player: null, rivals: [], all: [], fx: null,
+  time: 0, camX: 0, count: 0, score: 0, shake: 0,
+  result: null, best: {}, unlocked: 1, blink: 0, mudT: 0
+};
+
+var STORE_KEY = 'excitemx.v1';
+function loadStore() {
+  try {
+    var s = JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
+    G.best = s.best || {};
+    G.unlocked = Math.max(1, Math.min(TRACK_DEFS.length, s.unlocked || 1));
+  } catch (e) { G.best = {}; G.unlocked = 1; }
+}
+function saveStore() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ best: G.best, unlocked: G.unlocked })); } catch (e) {}
+}
+function bestKey(mode, ti) { return mode + ':' + ti; }
+function fmtTime(t) {
+  if (t == null) return '--.--';
+  return t.toFixed(2);
+}
+
+function startRace(ti, mode) {
+  G.ti = ti;
+  G.mode = mode;
+  G.track = buildTrack(ti);
+  G.fx = makeFx(G);
+  G.score = 0;
+  G.time = 0;
+  G.shake = 0;
+  G.count = 3.4;
+
+  var p = makeBike(true, PLAYER_COLORS, 1);
+  p.x = 40; p.lane = 2; p.laneF = 2;
+  G.player = p;
+
+  G.rivals = [];
+  if (mode === 'race') {
+    for (var i = 0; i < 7; i++) {
+      var r = makeBike(false, RIVAL_COLORS[i % RIVAL_COLORS.length], 0.72 + (i % 4) * 0.09 + G.ti * 0.03);
+      r.x = 60 + (i % 4) * 46 + Math.floor(i / 4) * 30;
+      r.lane = [0, 1, 3, 0, 2, 3, 1][i];
+      r.laneF = r.lane;
+      r.think = Math.random() * 0.6;
+      r.turbo = false; r.turboT = Math.random();
+      G.rivals.push(r);
+    }
+    for (var j = 0; j < G.rivals.length; j++) G.rivals[j].others = G.rivals.concat([p]);
+  }
+  G.all = G.rivals.concat([p]);
+  G.camX = 0;
+  G.state = 'count';
+  Sound.engineStart();
+  updateHud();
+}
+
+function finishRace() {
+  var p = G.player;
+  p.finished = true;
+  var key = bestKey(G.mode, G.ti);
+  var prev = G.best[key];
+  var isBest = (prev == null || G.time < prev);
+  if (isBest) G.best[key] = Math.round(G.time * 100) / 100;
+  var par = G.track.par;
+  var qualify = G.time <= par;
+  var pos = 1;
+  for (var i = 0; i < G.rivals.length; i++) if (G.rivals[i].finished) pos++;
+  if (qualify && G.ti + 1 >= G.unlocked && G.ti + 1 < TRACK_DEFS.length) G.unlocked = G.ti + 2;
+  saveStore();
+  G.result = { time: G.time, best: G.best[key], isBest: isBest, qualify: qualify,
+               pos: pos, perfects: p.perfects, crashes: p.crashes, topV: p.topV, par: par };
+  G.state = 'result';
+  Sound.engineStop();
+  if (qualify) Sound.goal(); else Sound.fail();
+  showResult();
+}
+
+/* --- 車体どうしの接触 --- */
+function collisions(dt) {
+  var p = G.player;
+  for (var i = 0; i < G.rivals.length; i++) {
+    var r = G.rivals[i];
+    if (Math.abs(r.laneF - p.laneF) > 0.72) continue;
+    if (Math.abs(r.x - p.x) > 26) continue;
+    if (Math.abs(r.y - p.y) > 22) continue;
+    if (p.crash > 0 || r.crash > 0) continue;
+    var dv = p.v - r.v;
+    if (p.x < r.x && dv > 60) {
+      /* 自分から追突 → 転倒 */
+      G.fx.hit(p);
+      bikeCrash(p, false);
+      r.v *= 0.9;
+      G.shake = 0.35;
+    } else if (p.x > r.x && dv < -60) {
+      /* 後ろから突かれた → よろける */
+      p.v *= 0.86;
+      p.wobble = 0.5;
+      r.v *= 0.94;
+      G.fx.burst(p, 6, '#ffd15c', 40, 60);
+      if (p.wobble > 0.4) Sound.hit();
+    } else {
+      /* 並走：押し合い */
+      var push = (p.x > r.x ? 1 : -1) * 40 * dt;
+      p.x += push; r.x -= push;
+      p.v *= 0.997; r.v *= 0.997;
+    }
+  }
+  /* ライバルどうし */
+  for (var a = 0; a < G.rivals.length; a++) {
+    for (var b = a + 1; b < G.rivals.length; b++) {
+      var A = G.rivals[a], B = G.rivals[b];
+      if (Math.abs(A.laneF - B.laneF) > 0.7 || Math.abs(A.x - B.x) > 24) continue;
+      if (A.x < B.x) { A.v *= 0.93; B.v *= 0.99; } else { B.v *= 0.93; A.v *= 0.99; }
+    }
+  }
+}
+
+function update(dt) {
+  var p = G.player;
+  if (G.shake > 0) G.shake -= dt;
+  G.blink += dt;
+
+  if (G.state === 'count') {
+    var before = Math.ceil(G.count);
+    G.count -= dt;
+    var after = Math.ceil(G.count);
+    if (after !== before && after >= 0) Sound.count(after === 0);
+    Sound.engineSet(0.1, false, false);
+    if (G.count <= 0) { G.state = 'run'; G.count = 0; }
+    G.camX = Math.max(0, p.x - PLAYER_SX);
+    return;
+  }
+  if (G.state !== 'run') return;
+
+  G.time += dt;
+  var inp = readInput();
+  stepBike(p, dt, G.track, inp, G.fx);
+
+  for (var i = 0; i < G.rivals.length; i++) {
+    var r = G.rivals[i];
+    if (r.finished) { r.x += r.v * dt; continue; }
+    rivalStep(r, dt, G.track, p, G.fx);
+    if (r.x >= G.track.len) { r.finished = true; r.finishT = G.time; }
+  }
+  collisions(dt);
+
+  /* 泥しぶき */
+  if (p.mud > 0.4 && p.v > 40) {
+    G.mudT -= dt;
+    if (G.mudT <= 0) { G.mudT = 0.07; G.fx.mudSplash(p); if (Math.random() < 0.25) Sound.mud(); }
+  }
+  /* 走行中の土煙 */
+  if (!p.air && p.v > 120 && Math.random() < dt * 22) G.fx.burst(p, 1, '#cbb089', 40, 26);
+
+  G.fx.step(dt);
+  G.camX = Math.max(0, p.x - PLAYER_SX);
+  Sound.engineSet(clamp(p.v / SPD_B, 0, 1), inp.acc === 2 && p.over <= 0, p.over > 0 || p.crash > 0);
+
+  if (p.x >= G.track.len) finishRace();
+  updateHud();
+}
+
+/* ============================================================
+   描画 - 背景とコース
+   ============================================================ */
+var camY = 0;
+
+function sx(x) { return x - G.camX; }
+function sy(lane, h) { return laneGroundY(lane) - h + camY; }
+
+function drawSky() {
+  var g = ctx.createLinearGradient(0, 0, 0, LANE_TOP + camY);
+  g.addColorStop(0, '#3d86c6');
+  g.addColorStop(0.6, '#7fb9e2');
+  g.addColorStop(1, '#cfe6f3');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, VIEW_W, LANE_TOP + camY + 2);
+
+  /* 太陽 */
+  ctx.fillStyle = 'rgba(255,246,200,.9)';
+  ctx.beginPath(); ctx.arc(330, 26 + camY * 0.4, 15, 0, 6.284); ctx.fill();
+
+  /* 遠景の山 */
+  var px = -G.camX * 0.12;
+  ctx.fillStyle = '#6e93ad';
+  ctx.beginPath();
+  var baseY = LANE_TOP + camY - 26;
+  ctx.moveTo(-40, baseY);
+  for (var i = -1; i < 9; i++) {
+    var mx = ((px + i * 130) % 1170 + 1170) % 1170 - 130;
+    ctx.lineTo(mx, baseY);
+    ctx.lineTo(mx + 46, baseY - 38 - (i % 3) * 9);
+    ctx.lineTo(mx + 96, baseY);
+  }
+  ctx.lineTo(VIEW_W + 40, baseY); ctx.lineTo(VIEW_W + 40, baseY + 40); ctx.lineTo(-40, baseY + 40);
+  ctx.closePath(); ctx.fill();
+}
+
+function drawCrowd() {
+  var top = LANE_TOP + camY - 26;
+  var px = -G.camX * 0.34;
+  /* スタンド */
+  ctx.fillStyle = '#4a5568';
+  ctx.fillRect(0, top, VIEW_W, 26);
+  ctx.fillStyle = '#5b6a80';
+  ctx.fillRect(0, top, VIEW_W, 4);
+  /* 観客 */
+  for (var i = 0; i < 90; i++) {
+    var cx = ((px * 1.0 + i * 15) % 1350 + 1350) % 1350 - 20;
+    if (cx < -10 || cx > VIEW_W + 10) continue;
+    var row = i % 3;
+    var cy = top + 6 + row * 7;
+    var hue = (i * 47) % 360;
+    ctx.fillStyle = 'hsl(' + hue + ',45%,' + (52 - row * 6) + '%)';
+    ctx.fillRect(cx, cy, 4, 5);
+    ctx.fillStyle = 'rgba(255,225,190,.85)';
+    ctx.fillRect(cx + 0.5, cy - 2.5, 3, 3);
+  }
+  /* フェンス */
+  ctx.strokeStyle = 'rgba(240,245,255,.45)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, top + 25.5); ctx.lineTo(VIEW_W, top + 25.5);
+  ctx.stroke();
+
+  /* 看板（距離表示） */
+  var deco = G.track.deco;
+  for (var d = 0; d < deco.length; d++) {
+    var X = sx(deco[d].x);
+    if (X < -60 || X > VIEW_W + 60) continue;
+    ctx.fillStyle = '#2f3a4d';
+    ctx.fillRect(X, top - 16, 34, 14);
+    ctx.fillStyle = '#ffd15c';
+    ctx.font = 'bold 8px Consolas, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(deco[d].m + 'm', X + 17, top - 6);
+    ctx.fillStyle = '#8e9bb0';
+    ctx.fillRect(X + 15, top - 2, 3, 4);
+  }
+  ctx.textAlign = 'left';
+}
+
+var LANE_DIRT = ['#a98352', '#b48b58', '#bd925d', '#c69a63'];
+var LANE_EDGE = ['#8a6a41', '#946f45', '#9c7649', '#a67d4d'];
+
+function laneProfile(lane, step) {
+  var pts = [];
+  var x0 = G.camX - 20, x1 = G.camX + VIEW_W + 20;
+  for (var x = x0; x <= x1; x += step) {
+    var s = surfaceAt(G.track, lane, x);
+    pts.push([sx(x), sy(lane, s.h)]);
+  }
+  return pts;
+}
+
+function drawLane(lane) {
+  var pts = laneProfile(lane, 4);
+  var bottom = VIEW_H + 80;
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.lineTo(pts[pts.length - 1][0], bottom);
+  ctx.lineTo(pts[0][0], bottom);
+  ctx.closePath();
+  ctx.fillStyle = LANE_DIRT[lane];
+  ctx.fill();
+
+  /* 路面の陰影 */
+  ctx.save();
+  ctx.clip();
+  ctx.fillStyle = 'rgba(0,0,0,.12)';
+  ctx.fillRect(0, sy(lane, -LANE_H + GROUND_OFF + 2), VIEW_W, 40);
+  /* 砂利のテクスチャ */
+  var seed = Math.floor(G.camX / 7);
+  for (var t = 0; t < 46; t++) {
+    var gx = ((t * 79 + seed * 7) % 460) - 30;
+    var wx = G.camX + gx;
+    var gy = sy(lane, surfaceAt(G.track, lane, wx).h) + 3 + ((t * 37) % 9);
+    ctx.fillStyle = (t % 3) ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.08)';
+    ctx.fillRect(gx, gy, 3, 1.5);
+  }
+  ctx.restore();
+
+  /* 接地線のふち（前面の段差） */
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (var j = 1; j < pts.length; j++) ctx.lineTo(pts[j][0], pts[j][1]);
+  ctx.strokeStyle = LANE_EDGE[lane];
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  /* レーン区切りの白線 */
+  if (lane > 0) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,.55)';
+    ctx.lineWidth = 1.4;
+    ctx.setLineDash([9, 9]);
+    ctx.lineDashOffset = -(G.camX % 18);
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1] - 0.5);
+    for (var k = 1; k < pts.length; k++) ctx.lineTo(pts[k][0], pts[k][1] - 0.5);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawZone(lane) {
+  var arr = G.track.zones[lane];
+  for (var i = 0; i < arr.length; i++) {
+    var o = arr[i];
+    var X0 = sx(o.x), X1 = sx(o.x + o.w);
+    if (X1 < -20 || X0 > VIEW_W + 20) continue;
+    ctx.save();
+    ctx.beginPath();
+    var step = 6;
+    ctx.moveTo(X0, sy(lane, surfaceAt(G.track, lane, o.x).h + 8));
+    for (var x = o.x; x <= o.x + o.w; x += step) ctx.lineTo(sx(x), sy(lane, surfaceAt(G.track, lane, x).h + 8));
+    ctx.lineTo(X1, sy(lane, 0) + LANE_H + 4);
+    ctx.lineTo(X0, sy(lane, 0) + LANE_H + 4);
+    ctx.closePath();
+    if (o.type === 'mud') {
+      ctx.fillStyle = '#4d3a22';
+      ctx.fill();
+      ctx.clip();
+      ctx.fillStyle = 'rgba(0,0,0,.3)';
+      for (var b = 0; b < 14; b++) {
+        var bx = X0 + ((b * 53) % Math.max(1, o.w));
+        ctx.beginPath();
+        ctx.ellipse(bx, sy(lane, 0) + 4 + (b % 3) * 9, 10, 3.4, 0, 0, 6.284);
+        ctx.fill();
+      }
+      ctx.fillStyle = 'rgba(255,255,255,.10)';
+      ctx.fillRect(X0, sy(lane, 0) - 1, o.w, 2);
+    } else {
+      ctx.fillStyle = 'rgba(90,190,255,.55)';
+      ctx.fill();
+      ctx.clip();
+      /* 冷却ゾーンの矢印 */
+      ctx.fillStyle = 'rgba(255,255,255,.85)';
+      for (var row = 0; row < 2; row++) {
+        for (var a = 0; a < 8; a++) {
+          var ax = X0 + 8 + a * 26 + ((G.blink * 70) % 26);
+          if (ax > X1 - 4) continue;
+          var ay = sy(lane, 0) + 8 + row * 15;
+          ctx.beginPath();
+          ctx.moveTo(ax, ay - 5); ctx.lineTo(ax + 9, ay); ctx.lineTo(ax, ay + 5);
+          ctx.lineTo(ax + 3, ay); ctx.closePath(); ctx.fill();
+        }
+      }
+    }
+    ctx.restore();
+  }
+}
+
+function drawGoal() {
+  var X = sx(G.track.len);
+  if (X < -80 || X > VIEW_W + 80) return;
+  for (var lane = 0; lane < LANES; lane++) {
+    var gy = sy(lane, 0);
+    ctx.fillStyle = '#f0f0f0';
+    for (var c = 0; c < 6; c++) {
+      ctx.fillStyle = (c % 2) ? '#1a1a1a' : '#f5f5f5';
+      ctx.fillRect(X - 6 + (c % 2) * 6, gy - 5 + Math.floor(c / 2) * 4, 6, 4);
+    }
+  }
+  /* ゲート */
+  ctx.fillStyle = '#c8402f';
+  ctx.fillRect(X - 3, sy(0, 0) - 62, 5, 62);
+  ctx.fillRect(X - 3, sy(3, 0) - 30, 5, 30);
+  ctx.fillStyle = '#eee';
+  ctx.fillRect(X - 26, sy(0, 0) - 66, 52, 12);
+  ctx.fillStyle = '#c8402f';
+  ctx.font = 'bold 9px Consolas, monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('GOAL', X, sy(0, 0) - 57);
+  ctx.textAlign = 'left';
+}
+
+function drawRamps(lane) {
+  var arr = G.track.byLane[lane];
+  var x0 = G.camX - 60, x1 = G.camX + VIEW_W + 60;
+  var lo = 0, hi = arr.length, mid;
+  while (lo < hi) { mid = (lo + hi) >> 1; if (arr[mid].x + arr[mid].w < x0) lo = mid + 1; else hi = mid; }
+  for (var i = lo; i < arr.length && arr[i].x <= x1; i++) {
+    var o = arr[i];
+    if (o.type === 'ramp') {
+      var X0 = sx(o.x), X1 = sx(o.x + o.w);
+      var Y0 = sy(lane, 0), Y1 = sy(lane, o.h);
+      ctx.beginPath();
+      ctx.moveTo(X0, Y0); ctx.lineTo(X1, Y1); ctx.lineTo(X1, Y0); ctx.closePath();
+      ctx.fillStyle = 'rgba(255,255,255,.12)';
+      ctx.fill();
+      /* 踏切のふち */
+      ctx.fillStyle = '#f0e2c0';
+      ctx.fillRect(X1 - 3, Y1 - 2, 4, 3);
+      ctx.strokeStyle = 'rgba(90,60,30,.5)';
+      ctx.lineWidth = 1;
+      for (var s = 0.25; s < 1; s += 0.25) {
+        ctx.beginPath();
+        ctx.moveTo(X0 + (X1 - X0) * s, Y0);
+        ctx.lineTo(X0 + (X1 - X0) * s, Y0 - o.h * s);
+        ctx.stroke();
+      }
+      /* 断面（踏切の後ろの落差） */
+      ctx.fillStyle = 'rgba(60,40,20,.55)';
+      ctx.fillRect(X1, Y1, 3, o.h);
+    } else if (o.type === 'land') {
+      ctx.fillStyle = 'rgba(0,0,0,.10)';
+      ctx.beginPath();
+      ctx.moveTo(sx(o.x), sy(lane, o.h)); ctx.lineTo(sx(o.x + o.w), sy(lane, 0));
+      ctx.lineTo(sx(o.x), sy(lane, 0)); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.18)';
+      ctx.fillRect(sx(o.x) - 1, sy(lane, o.h) - 1.5, 4, 3);
+    }
+  }
+}
+
+/* ============================================================
+   描画 - バイクとライダー
+   ============================================================ */
+function laneY(laneF) { return LANE_TOP + laneF * LANE_H + GROUND_OFF + camY; }
+
+function wheel(cx, cy, r, rot) {
+  ctx.fillStyle = '#1c1c22';
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, 6.284); ctx.fill();
+  ctx.fillStyle = '#55555f';
+  ctx.beginPath(); ctx.arc(cx, cy, r * 0.42, 0, 6.284); ctx.fill();
+  ctx.strokeStyle = '#8a8a96';
+  ctx.lineWidth = 0.8;
+  for (var i = 0; i < 4; i++) {
+    var a = rot + i * Math.PI / 2;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * r * 0.35, cy + Math.sin(a) * r * 0.35);
+    ctx.lineTo(cx + Math.cos(a) * r * 0.85, cy + Math.sin(a) * r * 0.85);
+    ctx.stroke();
+  }
+}
+
+function drawRider(b, lean) {
+  var c = b.colors;
+  /* 脚 */
+  ctx.strokeStyle = '#2d3550';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-4, -17); ctx.lineTo(-3, -12); ctx.lineTo(1, -9);
+  ctx.stroke();
+  /* 胴 */
+  ctx.fillStyle = c.body;
+  ctx.beginPath();
+  ctx.moveTo(-6, -17); ctx.lineTo(-2 + lean, -27); ctx.lineTo(3 + lean, -26); ctx.lineTo(-1, -16);
+  ctx.closePath(); ctx.fill();
+  /* 腕 */
+  ctx.strokeStyle = c.trim;
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(1 + lean, -25); ctx.lineTo(5 + lean, -22); ctx.lineTo(8, -19);
+  ctx.stroke();
+  /* ヘルメット */
+  ctx.fillStyle = '#f2f4f8';
+  ctx.beginPath(); ctx.arc(1.5 + lean, -29, 4, 0, 6.284); ctx.fill();
+  ctx.fillStyle = c.body;
+  ctx.beginPath(); ctx.arc(1.5 + lean, -30.2, 4, Math.PI * 1.05, Math.PI * 2.05); ctx.fill();
+  ctx.fillStyle = '#2a3446';
+  ctx.beginPath(); ctx.ellipse(3.6 + lean, -29, 2.1, 1.5, -0.25, 0, 6.284); ctx.fill();
+}
+
+function drawBikeBody(b) {
+  var c = b.colors;
+  /* 車輪 */
+  wheel(-10, -7, 7, b.wheel);
+  wheel(10, -7, 7, b.wheel);
+  /* フレーム */
+  ctx.strokeStyle = '#3a3f52';
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.moveTo(-10, -7); ctx.lineTo(-2, -12); ctx.lineTo(9, -8);
+  ctx.stroke();
+  /* エンジン */
+  ctx.fillStyle = '#4a5064';
+  ctx.fillRect(-3, -13, 8, 6);
+  /* シート＆タンク */
+  ctx.fillStyle = c.body;
+  ctx.beginPath();
+  ctx.moveTo(-12, -15); ctx.lineTo(-3, -17); ctx.lineTo(5, -16); ctx.lineTo(7, -12);
+  ctx.lineTo(-2, -11); ctx.lineTo(-11, -12);
+  ctx.closePath(); ctx.fill();
+  /* リアフェンダー */
+  ctx.fillStyle = c.trim;
+  ctx.fillRect(-15, -16, 5, 2.5);
+  /* フォークとハンドル */
+  ctx.strokeStyle = '#6b7288';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(10, -7); ctx.lineTo(8, -18); ctx.stroke();
+  ctx.strokeStyle = '#22262f';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(5, -19); ctx.lineTo(11, -19); ctx.stroke();
+  /* ゼッケン */
+  ctx.fillStyle = c.trim;
+  ctx.beginPath();
+  ctx.moveTo(11, -18); ctx.lineTo(15, -16); ctx.lineTo(13, -11); ctx.lineTo(10, -12);
+  ctx.closePath(); ctx.fill();
+}
+
+function drawBike(b) {
+  var sc = laneScale(b.laneF);
+  var X = sx(b.x);
+  if (X < -60 || X > VIEW_W + 60) return;
+  var surfH = surfaceAt(G.track, clamp(Math.round(b.laneF), 0, 3), b.x).h;
+  var gY = laneY(b.laneF);
+
+  /* 影 */
+  var airH = Math.max(0, b.y - surfH);
+  var shw = 13 * sc * clamp(1 - airH / 160, 0.35, 1);
+  ctx.fillStyle = 'rgba(0,0,0,' + (0.28 * clamp(1 - airH / 160, 0.25, 1)) + ')';
+  ctx.beginPath();
+  ctx.ellipse(X, gY - surfH, shw, 3.2 * sc, 0, 0, 6.284);
+  ctx.fill();
+
+  ctx.save();
+  ctx.translate(X, gY - b.y);
+  ctx.scale(sc, sc);
+
+  if (b.crash > 0) {
+    var ph = b.crashPhase;
+    /* 倒れたバイク */
+    ctx.save();
+    ctx.translate(0, -2);
+    ctx.rotate(Math.min(1.5, ph * 5));
+    drawBikeBody(b);
+    ctx.restore();
+    /* ライダー */
+    var rx, ry;
+    if (ph < 0.6) { rx = ph * 40; ry = -Math.sin(ph / 0.6 * Math.PI) * 26; }
+    else {
+      var k = clamp((ph - 0.6) / Math.max(0.3, (CRASH_T - 0.9)), 0, 1);
+      rx = 24 * (1 - k); ry = 0;
+    }
+    ctx.save();
+    ctx.translate(rx, ry - 8);
+    if (ph < 0.6) ctx.rotate(ph * 9);
+    ctx.strokeStyle = '#2d3550'; ctx.lineWidth = 2.6;
+    ctx.beginPath(); ctx.moveTo(-2, 0); ctx.lineTo(0, -7); ctx.stroke();
+    ctx.beginPath();
+    var sw = Math.sin(ph * 22) * 3;
+    ctx.moveTo(-2, 0); ctx.lineTo(-4 + sw, 6); ctx.moveTo(-2, 0); ctx.lineTo(1 - sw, 6);
+    ctx.stroke();
+    ctx.strokeStyle = b.colors.trim;
+    ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(4, -3 + sw * 0.5); ctx.stroke();
+    ctx.fillStyle = '#f2f4f8';
+    ctx.beginPath(); ctx.arc(0.5, -10, 3.6, 0, 6.284); ctx.fill();
+    ctx.fillStyle = b.colors.body;
+    ctx.beginPath(); ctx.arc(0.5, -11, 3.6, Math.PI * 1.05, Math.PI * 2.05); ctx.fill();
+    ctx.restore();
+    ctx.restore();
+    return;
+  }
+
+  var wob = b.wobble > 0 ? Math.sin(b.wobble * 60) * 0.12 * b.wobble : 0;
+  ctx.rotate(-(b.pitch + wob));
+  var lean = b.air ? 1.5 : (b.v > SPD_A ? 1.2 : 0);
+  drawBikeBody(b);
+  drawRider(b, lean);
+
+  /* オーバーヒートの湯気 */
+  if (b.isPlayer && b.over > 0) {
+    ctx.fillStyle = 'rgba(240,240,255,.5)';
+    for (var i = 0; i < 3; i++) {
+      var t = (G.blink * 2 + i * 0.33) % 1;
+      ctx.beginPath();
+      ctx.arc(-2 + Math.sin(t * 6) * 3, -18 - t * 22, 2 + t * 4, 0, 6.284);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+
+  /* ターボの排気 */
+  if (b.turboFx > 0) {
+    ctx.fillStyle = 'rgba(255,180,90,' + (0.4 * b.turboFx) + ')';
+    ctx.beginPath();
+    ctx.ellipse(X - 16 * sc, gY - b.y - 9 * sc, 6 * b.turboFx, 2.4, 0, 0, 6.284);
+    ctx.fill();
+  }
+}
+
+/* ============================================================
+   描画 - 粒子・文字・HUD
+   ============================================================ */
+function drawParticles() {
+  var P = G.fx.P;
+  for (var i = 0; i < P.length; i++) {
+    var p = P[i];
+    var X = sx(p.x);
+    if (X < -10 || X > VIEW_W + 10) continue;
+    var a = 1 - p.t / p.life;
+    ctx.globalAlpha = a;
+    ctx.fillStyle = p.c;
+    ctx.fillRect(X, laneY(p.lane) - p.y, p.r, p.r);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawTexts() {
+  var T = G.fx.T;
+  ctx.textAlign = 'center';
+  for (var i = 0; i < T.length; i++) {
+    var q = T[i];
+    var a = clamp(1 - (q.t / q.life) * 1.4, 0, 1);
+    ctx.globalAlpha = a;
+    ctx.font = 'bold 11px Consolas, monospace';
+    ctx.fillStyle = '#000';
+    ctx.fillText(q.s, sx(q.x) + 1, laneY(q.lane) - q.y + 1);
+    ctx.fillStyle = q.c;
+    ctx.fillText(q.s, sx(q.x), laneY(q.lane) - q.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.textAlign = 'left';
+}
+
+function drawCanvasHud() {
+  var p = G.player;
+  /* 温度計 */
+  var tx = 6, ty = 6, tw = 96, th = 9;
+  ctx.fillStyle = 'rgba(0,0,0,.45)';
+  ctx.fillRect(tx - 2, ty - 2, tw + 30, th + 4);
+  ctx.fillStyle = '#2a2f3a';
+  ctx.fillRect(tx, ty, tw, th);
+  var hr = clamp(p.heat / 100, 0, 1);
+  var hot = p.heat > 72;
+  var gg = ctx.createLinearGradient(tx, 0, tx + tw, 0);
+  gg.addColorStop(0, '#5fd0ff'); gg.addColorStop(0.55, '#ffd15c'); gg.addColorStop(1, '#ff4a35');
+  ctx.fillStyle = gg;
+  ctx.fillRect(tx, ty, tw * hr, th);
+  if (hot && Math.floor(G.blink * 8) % 2 === 0) {
+    ctx.fillStyle = 'rgba(255,80,50,.5)';
+    ctx.fillRect(tx, ty, tw, th);
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,.5)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(tx + 0.5, ty + 0.5, tw - 1, th - 1);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 8px Consolas, monospace';
+  ctx.fillText('TEMP', tx + tw + 3, ty + 8);
+
+  /* 進行度バー */
+  var bx = 150, bw = VIEW_W - bx - 8, by = 8;
+  ctx.fillStyle = 'rgba(0,0,0,.45)';
+  ctx.fillRect(bx - 2, by - 3, bw + 4, 11);
+  ctx.fillStyle = '#3b4354';
+  ctx.fillRect(bx, by, bw, 4);
+  for (var i = 0; i < G.rivals.length; i++) {
+    var r = G.rivals[i];
+    ctx.fillStyle = r.colors.body;
+    ctx.fillRect(bx + bw * clamp(r.x / G.track.len, 0, 1) - 1, by, 2.5, 4);
+  }
+  ctx.fillStyle = '#fff';
+  var px = bx + bw * clamp(p.x / G.track.len, 0, 1);
+  ctx.beginPath();
+  ctx.moveTo(px, by - 3); ctx.lineTo(px + 4, by - 7); ctx.lineTo(px - 4, by - 7);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#e8352f';
+  ctx.fillRect(px - 1, by, 3, 4);
+
+  /* オーバーヒート表示 */
+  if (p.over > 0 && Math.floor(G.blink * 6) % 2 === 0) {
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 18px Consolas, monospace';
+    ctx.fillStyle = '#000';
+    ctx.fillText('OVER HEAT!', VIEW_W / 2 + 1, 61);
+    ctx.fillStyle = '#ff7a4a';
+    ctx.fillText('OVER HEAT!', VIEW_W / 2, 60);
+    ctx.textAlign = 'left';
+  }
+  if (p.crash > 0 && p.crashPhase > 0.7 && Math.floor(G.blink * 5) % 2 === 0) {
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 10px Consolas, monospace';
+    ctx.fillStyle = '#ffd15c';
+    ctx.fillText('- 立て直し中 -', VIEW_W / 2, 74);
+    ctx.textAlign = 'left';
+  }
+}
+
+function drawCountdown() {
+  var n = Math.ceil(G.count);
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 46px Consolas, monospace';
+  var s = n > 0 ? String(Math.min(3, n)) : 'GO!';
+  var k = 1 - (G.count - Math.floor(G.count));
+  ctx.globalAlpha = clamp(1.2 - k * 0.4, 0, 1);
+  ctx.fillStyle = '#000';
+  ctx.fillText(s, VIEW_W / 2 + 2, 122);
+  ctx.fillStyle = n > 0 ? '#ffd15c' : '#7dffa8';
+  ctx.fillText(s, VIEW_W / 2, 120);
+  ctx.globalAlpha = 1;
+  ctx.font = 'bold 10px Consolas, monospace';
+  ctx.fillStyle = '#fff';
+  ctx.fillText(G.track.jp + '  /  目標 ' + G.track.par.toFixed(2) + '秒', VIEW_W / 2, 150);
+  ctx.textAlign = 'left';
+}
+
+function render() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#8ec5e8';
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  ctx.save();
+  if (G.shake > 0) ctx.translate((Math.random() - 0.5) * 7 * G.shake, (Math.random() - 0.5) * 4 * G.shake);
+
+  drawSky();
+  drawCrowd();
+  /* コース奥の地面（レーン0の手前まで空が見えないように） */
+  var gy0 = LANE_TOP + camY - 2;
+  var gg2 = ctx.createLinearGradient(0, gy0, 0, gy0 + 46);
+  gg2.addColorStop(0, '#7d6440');
+  gg2.addColorStop(1, '#9c7a4c');
+  ctx.fillStyle = gg2;
+  ctx.fillRect(0, gy0, VIEW_W, VIEW_H + 80 - gy0);
+  var lane;
+  for (lane = 0; lane < LANES; lane++) { drawLane(lane); drawRamps(lane); drawZone(lane); }
+  drawGoal();
+  drawParticles();
+
+  var list = G.all.slice().sort(function (a, b) { return a.laneF - b.laneF; });
+  for (var i = 0; i < list.length; i++) drawBike(list[i]);
+  drawTexts();
+  ctx.restore();
+
+  drawCanvasHud();
+  if (G.state === 'count') drawCountdown();
+}
+
+/* ============================================================
+   入力
+   ============================================================ */
+var keys = {};
+var pad = { up: false, down: false, left: false, right: false, a: false, b: false };
+
+function readInput() {
+  var up = keys['arrowup'] || keys['w'] || pad.up;
+  var down = keys['arrowdown'] || keys['s'] || pad.down;
+  var left = keys['arrowleft'] || keys['a'] || pad.left;
+  var right = keys['arrowright'] || keys['d'] || pad.right;
+  var acc = 0;
+  if (keys['z'] || keys[' '] || keys['enter'] || pad.a) acc = 1;
+  if (keys['x'] || keys['shift'] || pad.b) acc = 2;
+  return {
+    acc: acc,
+    lane: up ? -1 : (down ? 1 : 0),
+    pitch: (left ? 1 : 0) + (right ? -1 : 0)
+  };
+}
+
+/* ============================================================
+   DOM・UI
+   ============================================================ */
+function el(id) { return document.getElementById(id); }
+var elTime = el('hudTime'), elBest = el('hudBest'), elSpeed = el('hudSpeed'), elPos = el('hudPos');
+var titleScreen = el('titleScreen'), resultScreen = el('resultScreen'), pauseScreen = el('pauseScreen');
+var selectScreen = el('selectScreen');
+
+function updateHud() {
+  elTime.textContent = G.time.toFixed(2);
+  var b = G.best[bestKey(G.mode, G.ti)];
+  elBest.textContent = fmtTime(b);
+  elSpeed.textContent = Math.round(G.player.v * KMH);
+  if (G.mode === 'race') {
+    var rank = 1;
+    for (var i = 0; i < G.rivals.length; i++) if (G.rivals[i].x > G.player.x) rank++;
+    elPos.textContent = rank + '/' + (G.rivals.length + 1) + '位';
+  } else {
+    elPos.textContent = G.track ? G.track.jp : '';
+  }
+}
+
+var selMode = 'solo';
+function buildTrackList() {
+  var list = el('trackList');
+  list.innerHTML = '';
+  for (var i = 0; i < TRACK_DEFS.length; i++) {
+    (function (idx) {
+      var d = TRACK_DEFS[idx];
+      var locked = idx >= G.unlocked;
+      var c = document.createElement('div');
+      c.className = 'tcard';
+      var b = G.best[bestKey(selMode, idx)];
+      c.innerHTML = '<div class="tn">' + (locked ? '🔒 ' : '') + (idx + 1) + '. ' + d.name + '</div>' +
+                    '<div class="tl">' + d.jp + ' / 目標' + d.par + '秒</div>' +
+                    '<div class="tb">BEST ' + fmtTime(b) + '</div>';
+      if (locked) {
+        c.style.opacity = '.45';
+        c.onclick = function () { Sound.ui(); };
+      } else {
+        c.onclick = function () {
+          Sound.resume(); Sound.ui();
+          titleScreen.classList.add('hidden');
+          selectScreen.classList.add('hidden');
+          startRace(idx, selMode);
+        };
+      }
+      list.appendChild(c);
+    })(i);
+  }
+}
+
+var modeBtns = el('modeSel').querySelectorAll('.mbtn');
+for (var mi = 0; mi < modeBtns.length; mi++) {
+  (function (btn) {
+    btn.addEventListener('click', function () {
+      Sound.resume(); Sound.ui();
+      selMode = btn.getAttribute('data-mode');
+      for (var k = 0; k < modeBtns.length; k++) modeBtns[k].classList.toggle('on', modeBtns[k] === btn);
+      buildTrackList();
+    });
+  })(modeBtns[mi]);
+}
+
+function showTitle() {
+  G.state = 'title';
+  Sound.engineStop();
+  resultScreen.classList.add('hidden');
+  pauseScreen.classList.add('hidden');
+  selectScreen.classList.add('hidden');
+  titleScreen.classList.remove('hidden');
+}
+function showSelect() {
+  G.state = 'title';
+  Sound.engineStop();
+  resultScreen.classList.add('hidden');
+  pauseScreen.classList.add('hidden');
+  titleScreen.classList.add('hidden');
+  selectScreen.classList.remove('hidden');
+  buildTrackList();
+}
+
+function showResult() {
+  var r = G.result;
+  el('resultTitle').textContent = r.qualify ? 'QUALIFY!' : 'GOAL';
+  el('resultTitle').style.color = r.qualify ? '#7dffa8' : '#ffd15c';
+  var line = 'TIME ' + r.time.toFixed(2) + '秒';
+  if (G.mode === 'race') line = r.pos + '位 / ' + line;
+  el('resultLine').textContent = line + (r.isBest ? '  ★NEW BEST' : '');
+  var detail = '目標 ' + r.par.toFixed(2) + '秒　BEST ' + fmtTime(r.best) + '<br>' +
+               'PERFECT着地 ' + r.perfects + '　転倒 ' + r.crashes + '　最高速 ' + Math.round(r.topV * KMH) + 'km/h';
+  if (!r.qualify) detail += '<br><span style="color:#ff9a7a">目標タイムに届かず（次のコースは解放されません）</span>';
+  el('resultDetail').innerHTML = detail;
+  el('nextBtn').style.display = (G.ti + 1 < TRACK_DEFS.length && G.ti + 1 < G.unlocked) ? '' : 'none';
+  resultScreen.classList.remove('hidden');
+}
+
+function togglePause() {
+  if (G.state === 'run' || G.state === 'count') {
+    G.pauseFrom = G.state;
+    G.state = 'pause';
+    pauseScreen.classList.remove('hidden');
+    Sound.engineStop();
+  } else if (G.state === 'pause') {
+    G.state = G.pauseFrom || 'run';
+    pauseScreen.classList.add('hidden');
+    Sound.resume();
+    Sound.engineStart();
+  }
+}
+
+el('retryBtn').onclick = function () { Sound.resume(); Sound.ui(); resultScreen.classList.add('hidden'); startRace(G.ti, G.mode); };
+el('nextBtn').onclick = function () { Sound.resume(); Sound.ui(); resultScreen.classList.add('hidden'); startRace(Math.min(TRACK_DEFS.length - 1, G.ti + 1), G.mode); };
+el('titleBtn').onclick = function () { Sound.ui(); showSelect(); };
+el('startBtn').onclick = function () { Sound.resume(); Sound.ui(); showSelect(); };
+el('backBtn').onclick = function () { Sound.ui(); showTitle(); };
+el('resumeBtn').onclick = function () { Sound.ui(); togglePause(); };
+el('quitBtn').onclick = function () { Sound.ui(); pauseScreen.classList.add('hidden'); showSelect(); };
+el('pauseBtn').onclick = function () { togglePause(); };
+
+var soundBtn = el('soundBtn');
+soundBtn.onclick = function () {
+  if (Sound.isOn()) { Sound.off(); soundBtn.textContent = 'SOUND OFF'; soundBtn.classList.add('off'); }
+  else {
+    Sound.on(); Sound.resume();
+    soundBtn.textContent = 'SOUND ON'; soundBtn.classList.remove('off');
+    if (G.state === 'run' || G.state === 'count') Sound.engineStart();
+  }
+};
+
+/* --- キーボード --- */
+var PREVENT = { 'arrowup': 1, 'arrowdown': 1, 'arrowleft': 1, 'arrowright': 1, ' ': 1 };
+document.addEventListener('keydown', function (e) {
+  var k = (e.key || '').toLowerCase();
+  if (PREVENT[k]) e.preventDefault();
+  if (keys[k]) return;
+  keys[k] = true;
+  if (k === 'p') togglePause();
+  else if (k === 'm') soundBtn.onclick();
+  else if (k === 'r' && (G.state === 'run' || G.state === 'result')) {
+    resultScreen.classList.add('hidden');
+    startRace(G.ti, G.mode);
+  }
+  if (G.state === 'run' || G.state === 'count') Sound.resume();
+});
+document.addEventListener('keyup', function (e) { keys[(e.key || '').toLowerCase()] = false; });
+window.addEventListener('blur', function () { keys = {}; });
+
+/* --- タッチ／マウスパッド --- */
+function bindHold(nodes, on, off) {
+  for (var i = 0; i < nodes.length; i++) {
+    (function (n) {
+      var press = function (e) { e.preventDefault(); Sound.resume(); n.classList.add('on'); on(n); };
+      var rel = function () { n.classList.remove('on'); off(n); };
+      n.addEventListener('pointerdown', press);
+      n.addEventListener('pointerup', rel);
+      n.addEventListener('pointercancel', rel);
+      n.addEventListener('pointerleave', rel);
+      n.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    })(nodes[i]);
+  }
+}
+bindHold(document.querySelectorAll('.dbtn'),
+  function (n) { pad[n.getAttribute('data-dir')] = true; },
+  function (n) { pad[n.getAttribute('data-dir')] = false; });
+bindHold(document.querySelectorAll('.abtn'),
+  function (n) { pad[n.getAttribute('data-btn')] = true; },
+  function (n) { pad[n.getAttribute('data-btn')] = false; });
+document.addEventListener('pointerup', function () {
+  pad.up = pad.down = pad.left = pad.right = pad.a = pad.b = false;
+  var on = document.querySelectorAll('.dbtn.on, .abtn.on');
+  for (var i = 0; i < on.length; i++) on[i].classList.remove('on');
+});
+
+/* ============================================================
+   メインループ
+   ============================================================ */
+function loop(t) {
+  var dt = (t - loop.last) / 1000;
+  loop.last = t;
+  if (!(dt > 0)) dt = 1 / 60;
+  if (dt > 0.05) dt = 0.05;
+
+  if (G.state === 'title') {
+    G.blink += dt;
+    G.camX += 70 * dt;
+    if (G.camX > G.track.len - VIEW_W) G.camX = 0;
+    camY = 0;
+  } else if (G.state === 'run' || G.state === 'count') {
+    update(dt);
+    var p = G.player;
+    var target = clamp(p.y - 58, 0, 84);
+    camY = lerp(camY, target, Math.min(1, dt * 6));
+  } else if (G.state === 'result') {
+    G.blink += dt;
+    G.fx.step(dt);
+  }
+  render();
+  requestAnimationFrame(loop);
+}
+loop.last = (global.performance && performance.now) ? performance.now() : 0;
+
+/* ============================================================
+   起動
+   ============================================================ */
+loadStore();
+G.track = buildTrack(0);
+G.player = makeBike(true, PLAYER_COLORS, 1);
+G.player.x = -900;
+G.fx = makeFx(G);
+G.all = [];
+buildTrackList();
+updateHud();
+requestAnimationFrame(loop);
+
+global.__EXCITE = { G: G, startRace: startRace, Sound: Sound };
+
+})(window);
+</script>
+</body>
+</html>
