@@ -244,6 +244,160 @@ var SFX = {
   power:  function () { Audio_.tone(300, 0.3, 'sawtooth', 0.1, 0, 800); Audio_.tone(600, 0.3, 'sine', 0.07, 0.05, 1200); }
 };
 
+
+/* ================================================================
+   BGM（Web Audio によるステップシーケンサー）
+   ================================================================ */
+var NOTE = { C: 0, Cs: 1, D: 2, Ds: 3, E: 4, F: 5, Fs: 6, G: 7, Gs: 8, A: 9, As: 10, B: 11 };
+function freqOf(semi) { return 440 * Math.pow(2, (semi - 9) / 12); }
+
+/* 曲：コード進行（ルート半音・和音の構成音）とテンポ */
+var TRACKS = {
+  title:  { bpm: 76,  root: NOTE.A, prog: [[0, 3, 7], [-4, 0, 3], [-7, -3, 0], [-5, -1, 2]], drums: false, lead: 'slow', wave: 'triangle' },
+  map:    { bpm: 92,  root: NOTE.D, prog: [[0, 3, 7], [-3, 0, 5], [-5, -1, 2], [-7, -4, 0]], drums: 'soft', lead: 'slow', wave: 'triangle' },
+  combat: { bpm: 126, root: NOTE.A, prog: [[0, 3, 7], [-2, 3, 5], [-4, 0, 3], [-5, -1, 2]], drums: true, lead: 'fast', wave: 'square' },
+  elite:  { bpm: 138, root: NOTE.E, prog: [[0, 3, 6], [-1, 2, 5], [0, 3, 7], [-3, 1, 4]], drums: true, lead: 'fast', wave: 'sawtooth' },
+  boss:   { bpm: 148, root: NOTE.C, prog: [[0, 3, 6], [-2, 1, 5], [-4, 0, 3], [-1, 2, 6]], drums: true, lead: 'fast', wave: 'sawtooth' },
+  shop:   { bpm: 104, root: NOTE.F, prog: [[0, 4, 7], [-3, 2, 5], [-5, 0, 4], [-1, 2, 7]], drums: 'soft', lead: 'slow', wave: 'triangle' },
+  rest:   { bpm: 68,  root: NOTE.G, prog: [[0, 4, 7], [-5, 0, 4], [-3, 2, 7], [-7, -3, 0]], drums: false, lead: 'slow', wave: 'sine' }
+};
+
+var BGM = {
+  cur: null, step: 0, nextTime: 0, timer: null, gain: null, on: true,
+  ensure: function () {
+    if (!Audio_.ctx) Audio_.init();
+    if (!Audio_.ctx) return false;
+    if (!this.gain) {
+      this.gain = Audio_.ctx.createGain();
+      this.gain.gain.value = 0.0;
+      this.gain.connect(Audio_.master);
+    }
+    return true;
+  },
+  play: function (name) {
+    if (this.cur === name) return;
+    this.cur = name;
+    this.step = 0;
+    if (!this.ensure()) return;
+    this.nextTime = Audio_.ctx.currentTime + 0.06;
+    var g = this.gain.gain, t = Audio_.ctx.currentTime;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(g.value, t);
+    g.linearRampToValueAtTime(Audio_.on ? 0.5 : 0, t + 0.5);
+    if (!this.timer) {
+      var self = this;
+      this.timer = setInterval(function () { self.tick(); }, 40);
+    }
+  },
+  stop: function () {
+    this.cur = null;
+    if (this.gain && Audio_.ctx) {
+      var t = Audio_.ctx.currentTime;
+      this.gain.gain.cancelScheduledValues(t);
+      this.gain.gain.setValueAtTime(this.gain.gain.value, t);
+      this.gain.gain.linearRampToValueAtTime(0, t + 0.35);
+    }
+  },
+  setVolume: function () {
+    if (!this.gain || !Audio_.ctx) return;
+    var t = Audio_.ctx.currentTime;
+    this.gain.gain.cancelScheduledValues(t);
+    this.gain.gain.linearRampToValueAtTime(Audio_.on && this.cur ? 0.5 : 0, t + 0.2);
+  },
+  note: function (freq, time, dur, type, vol, detune) {
+    var c = Audio_.ctx;
+    var o = c.createOscillator(), g = c.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, time);
+    if (detune) o.detune.setValueAtTime(detune, time);
+    g.gain.setValueAtTime(0.0001, time);
+    g.gain.exponentialRampToValueAtTime(vol, time + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+    o.connect(g); g.connect(this.gain);
+    o.start(time); o.stop(time + dur + 0.02);
+  },
+  perc: function (time, kind) {
+    var c = Audio_.ctx;
+    if (kind === 'kick') {
+      var o = c.createOscillator(), g = c.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(130, time);
+      o.frequency.exponentialRampToValueAtTime(42, time + 0.12);
+      g.gain.setValueAtTime(0.5, time);
+      g.gain.exponentialRampToValueAtTime(0.0001, time + 0.16);
+      o.connect(g); g.connect(this.gain);
+      o.start(time); o.stop(time + 0.18);
+    } else {
+      var len = Math.floor(c.sampleRate * (kind === 'snare' ? 0.14 : 0.05));
+      var buf = c.createBuffer(1, len, c.sampleRate), d = buf.getChannelData(0);
+      for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+      var src = c.createBufferSource(); src.buffer = buf;
+      var f = c.createBiquadFilter();
+      f.type = kind === 'snare' ? 'bandpass' : 'highpass';
+      f.frequency.value = kind === 'snare' ? 1800 : 7000;
+      var g2 = c.createGain(); g2.gain.value = kind === 'snare' ? 0.3 : 0.14;
+      src.connect(f); f.connect(g2); g2.connect(this.gain);
+      src.start(time);
+    }
+  },
+  tick: function () {
+    if (!this.cur || !Audio_.ctx || !this.gain) return;
+    if (!Audio_.on) return;
+    var T = TRACKS[this.cur] || TRACKS.map;
+    var c = Audio_.ctx;
+    var stepDur = 60 / T.bpm / 2;   /* 8分音符 */
+    if (this.nextTime < c.currentTime) this.nextTime = c.currentTime + 0.05;
+    while (this.nextTime < c.currentTime + 0.25) {
+      var st = this.step;
+      var bar = Math.floor(st / 8) % T.prog.length;
+      var chord = T.prog[bar];
+      var inBar = st % 8;
+      var base = T.root + 36;
+      var t = this.nextTime;
+      /* ベース */
+      if (inBar % 2 === 0) {
+        this.note(freqOf(base + chord[0] - 12), t, stepDur * 1.4, 'triangle', 0.26);
+      }
+      /* アルペジオ */
+      var arpIdx = [0, 1, 2, 1, 2, 1, 0, 2][inBar];
+      this.note(freqOf(base + 12 + chord[arpIdx]), t, stepDur * 0.9, T.wave, 0.085);
+      /* リード */
+      if (T.lead === 'fast' && (inBar === 0 || inBar === 3 || inBar === 6)) {
+        this.note(freqOf(base + 24 + chord[(arpIdx + 1) % 3]), t, stepDur * 1.3, 'square', 0.05, 6);
+      } else if (T.lead === 'slow' && inBar === 0 && bar % 2 === 0) {
+        this.note(freqOf(base + 24 + chord[2]), t, stepDur * 3, 'sine', 0.06);
+      }
+      /* ドラム */
+      if (T.drums) {
+        if (inBar === 0 || inBar === 4) this.perc(t, 'kick');
+        if (T.drums === true) {
+          if (inBar === 2 || inBar === 6) this.perc(t, 'snare');
+          this.perc(t, 'hat');
+        } else if (inBar % 4 === 2) this.perc(t, 'hat');
+      }
+      this.nextTime += stepDur;
+      this.step = (this.step + 1) % (8 * T.prog.length);
+    }
+  }
+};
+function sceneTrack() {
+  if (scene === 'combat' && game && game.cb) {
+    if (game.cb.kind === 'boss') return 'boss';
+    if (game.cb.kind === 'elite') return 'elite';
+    return 'combat';
+  }
+  if (scene === 'shop') return 'shop';
+  if (scene === 'rest' || scene === 'event' || scene === 'treasure') return 'rest';
+  if (scene === 'title' || scene === 'charselect' || scene === 'help') return 'title';
+  if (scene === 'gameover' || scene === 'victory') return null;
+  return 'map';
+}
+function updateBgm() {
+  var want = sceneTrack();
+  if (!want) { if (BGM.cur) BGM.stop(); return; }
+  if (BGM.cur !== want) BGM.play(want);
+}
+
 /* ================================================================
    バフ / デバフ（パワー）定義
    dec: 'turn'  … 所有者のターン終了時に 1 減る
@@ -3580,6 +3734,12 @@ function startCombat(g, ids, kind) {
   });
   scene = 'combat';
   cb.phase = 'player';
+  cb.banner = {
+    t: 0,
+    text: kind === 'boss' ? 'BOSS BATTLE' : (kind === 'elite' ? 'ELITE ENEMY' : 'BATTLE START'),
+    sub: cb.enemies.map(function (e) { return e.name; }).filter(function (v, i, a) { return a.indexOf(v) === i; }).join('　'),
+    col: kind === 'boss' ? '#ff4d6d' : (kind === 'elite' ? '#ff9f4a' : '#ffcf4a')
+  };
   relicHook(g, 'combatStart');
   startPlayerTurn(g, true);
 }
@@ -3589,7 +3749,7 @@ function layoutEnemies(g) {
   var n = list.length;
   var gap = n >= 4 ? 128 : (n === 3 ? 152 : 176);
   var totalW = (n - 1) * gap;
-  var baseX = 660;
+  var baseX = n >= 4 ? 616 : (n === 1 ? 618 : 652);
   list.forEach(function (e, i) {
     e.baseX = clamp(baseX - totalW / 2 + i * gap, 360, VW - 90);
     e.baseY = GROUND_Y + (i % 2 === 1 ? 6 : 0);
@@ -3717,6 +3877,18 @@ function playCard(g, inst, target) {
   cb.cardsPlayedThisTurn++;
   g.stats.cardsPlayed++;
   SFX.card();
+  (function () {
+    var L = null;
+    if (cb.handLayout) { for (var li = 0; li < cb.handLayout.length; li++) if (cb.handLayout[li].inst === inst) L = cb.handLayout[li]; }
+    cb.playFx = cb.playFx || [];
+    cb.playFx.push({
+      inst: inst, t: 0,
+      x: L ? L.x : VW / 2 - 66, y: L ? L.y : VH - 190,
+      tx: (target && target.hp > 0 && d.target === 'enemy') ? target.baseX - 66 : VW / 2 - 66,
+      ty: (target && target.hp > 0 && d.target === 'enemy') ? GROUND_Y - 200 : 220
+    });
+    if (cb.playFx.length > 4) cb.playFx.shift();
+  })();
 
   if (!target || target.hp <= 0) target = aliveEnemies(g)[0] || null;
 
@@ -4899,18 +5071,55 @@ function drawEnemyArt(e, x, y, S, t) {
       limb(x + S * 0.26, y - S * 0.5, x + S * 0.5, y - S * 0.35 + Math.sin(wob) * S * 0.06, S * 0.05, '#a08050');
     }
     limb(x - S * 0.26, y - S * 0.5, x - S * 0.44, y - S * 0.3, S * 0.055, bodyCol);
-  } else if (art === 'gremlin' || art === 'nob') {
-    var gs = art === 'nob' ? 1.25 : 1;
-    cx.fillStyle = col;
-    cx.beginPath(); cx.ellipse(x, y - S * 0.3 * gs, S * 0.3 * gs, S * 0.3 * gs, 0, 0, TAU); cx.fill();
+  } else if (art === 'gremlin') {
+    /* 小柄な体 */
+    poly([x - S * 0.2, y, x - S * 0.24, y - S * 0.34, x + S * 0.24, y - S * 0.34, x + S * 0.2, y], col, dark, 1.6);
+    limb(x - S * 0.2, y - S * 0.26, x - S * 0.42, y - S * 0.1, S * 0.055, col);
+    limb(x + S * 0.2, y - S * 0.26, x + S * 0.44, y - S * 0.26 + Math.sin(wob) * S * 0.05, S * 0.055, col);
+    /* 頭 */
     cx.fillStyle = light;
-    cx.beginPath(); cx.arc(x, y - S * 0.62 * gs, S * 0.22 * gs, 0, TAU); cx.fill();
-    poly([x - S * 0.22 * gs, y - S * 0.72 * gs, x - S * 0.42 * gs, y - S * 0.95 * gs, x - S * 0.14 * gs, y - S * 0.82 * gs], light);
-    poly([x + S * 0.22 * gs, y - S * 0.72 * gs, x + S * 0.42 * gs, y - S * 0.95 * gs, x + S * 0.14 * gs, y - S * 0.82 * gs], light);
-    eyes(x, y - S * 0.63 * gs, S * 0.05 * gs, '#ff4d4d', true, true);
-    limb(x - S * 0.28 * gs, y - S * 0.3 * gs, x - S * 0.5 * gs, y - S * 0.12 * gs, S * 0.06 * gs, col);
-    limb(x + S * 0.28 * gs, y - S * 0.3 * gs, x + S * 0.52 * gs, y - S * 0.35 * gs + Math.sin(wob) * S * 0.05, S * 0.06 * gs, col);
-    if (art === 'nob') limb(x + S * 0.52 * gs, y - S * 0.35 * gs, x + S * 0.62 * gs, y - S * 0.95 * gs, S * 0.1, '#8a6a4a');
+    cx.beginPath(); cx.ellipse(x, y - S * 0.52, S * 0.23, S * 0.2, 0, 0, TAU); cx.fill();
+    poly([x - S * 0.19, y - S * 0.6, x - S * 0.46, y - S * 0.82, x - S * 0.12, y - S * 0.66], light, dark, 1);
+    poly([x + S * 0.19, y - S * 0.6, x + S * 0.46, y - S * 0.82, x + S * 0.12, y - S * 0.66], light, dark, 1);
+    cx.fillStyle = dark;
+    cx.beginPath(); cx.ellipse(x, y - S * 0.45, S * 0.05, S * 0.04, 0, 0, TAU); cx.fill();
+    eyes(x, y - S * 0.55, S * 0.045, '#ffe14d', true, true);
+    cx.fillStyle = '#fff';
+    poly([x - S * 0.06, y - S * 0.4, x - S * 0.03, y - S * 0.32, x, y - S * 0.4], '#f5f0e0');
+    poly([x + S * 0.06, y - S * 0.4, x + S * 0.03, y - S * 0.32, x, y - S * 0.4], '#f5f0e0');
+  } else if (art === 'nob') {
+    /* いかつい胴体 */
+    poly([x - S * 0.34, y, x - S * 0.4, y - S * 0.52, x + S * 0.4, y - S * 0.52, x + S * 0.34, y], col, dark, 2.2);
+    cx.fillStyle = shade(col, -18);
+    cx.beginPath(); cx.ellipse(x, y - S * 0.26, S * 0.22, S * 0.16, 0, 0, TAU); cx.fill();
+    /* 腕と巨大な棍棒 */
+    limb(x - S * 0.36, y - S * 0.44, x - S * 0.6, y - S * 0.14, S * 0.1, col);
+    limb(x + S * 0.36, y - S * 0.46, x + S * 0.6, y - S * 0.62 + Math.sin(wob) * S * 0.05, S * 0.1, col);
+    cx.save();
+    cx.translate(x + S * 0.62, y - S * 0.64 + Math.sin(wob) * S * 0.05);
+    cx.rotate(-0.35 + Math.sin(wob) * 0.06);
+    cx.fillStyle = '#7a5a34';
+    cx.fillRect(-S * 0.045, -S * 0.1, S * 0.09, S * 0.5);
+    cx.fillStyle = '#8f6b3f';
+    cx.beginPath(); cx.ellipse(0, -S * 0.26, S * 0.12, S * 0.2, 0, 0, TAU); cx.fill();
+    cx.fillStyle = '#5f4426';
+    for (var nb = 0; nb < 4; nb++) {
+      cx.beginPath();
+      cx.arc(Math.cos(nb * 1.7) * S * 0.09, -S * 0.26 + Math.sin(nb * 1.7) * S * 0.13, S * 0.03, 0, TAU);
+      cx.fill();
+    }
+    cx.restore();
+    /* 頭 */
+    cx.fillStyle = light;
+    cx.beginPath(); cx.ellipse(x, y - S * 0.74, S * 0.28, S * 0.24, 0, 0, TAU); cx.fill();
+    poly([x - S * 0.24, y - S * 0.86, x - S * 0.52, y - S * 1.18, x - S * 0.13, y - S * 0.92], light, dark, 1.4);
+    poly([x + S * 0.24, y - S * 0.86, x + S * 0.52, y - S * 1.18, x + S * 0.13, y - S * 0.92], light, dark, 1.4);
+    eyes(x, y - S * 0.78, S * 0.06, '#ff3d3d', true, true);
+    cx.fillStyle = '#2a1008';
+    cx.beginPath(); cx.ellipse(x, y - S * 0.62, S * 0.14, S * 0.07, 0, 0, TAU); cx.fill();
+    cx.fillStyle = '#f5f0e0';
+    poly([x - S * 0.1, y - S * 0.64, x - S * 0.06, y - S * 0.52, x - S * 0.02, y - S * 0.64], '#f5f0e0');
+    poly([x + S * 0.1, y - S * 0.64, x + S * 0.06, y - S * 0.52, x + S * 0.02, y - S * 0.64], '#f5f0e0');
   } else if (art === 'statue') {
     poly([x - S * 0.42, y, x - S * 0.32, y - S * 0.9, x + S * 0.32, y - S * 0.9, x + S * 0.42, y], col, dark, 2);
     cx.fillStyle = dark;
@@ -5276,7 +5485,7 @@ function drawBackground(g, kind) {
   cx.fillRect(0, VH - 190, VW, 190);
 }
 
-function drawHpBar(x, y, w, h, hp, maxHp, block, col) {
+function drawHpBar(x, y, w, h, hp, maxHp, block, col, preview) {
   fillRR(x, y, w, h, h / 2, 'rgba(0,0,0,.62)');
   var ratio = clamp(hp / maxHp, 0, 1);
   var c1 = col || '#c0392b', c2 = col ? shade(col, 40) : '#e74c3c';
@@ -5284,6 +5493,20 @@ function drawHpBar(x, y, w, h, hp, maxHp, block, col) {
     var gr = cx.createLinearGradient(x, y, x, y + h);
     gr.addColorStop(0, c2); gr.addColorStop(1, c1);
     fillRR(x + 1, y + 1, Math.max(3, (w - 2) * ratio), h - 2, (h - 2) / 2, gr);
+  }
+  if (preview > 0) {
+    var afterHp = Math.max(0, hp - Math.max(0, preview - (block || 0)));
+    var r2 = clamp(afterHp / maxHp, 0, 1);
+    var lost = Math.max(0, (ratio - r2)) * (w - 2);
+    if (lost > 0.5) {
+      cx.save();
+      rr(x + 1, y + 1, w - 2, h - 2, (h - 2) / 2); cx.clip();
+      cx.fillStyle = 'rgba(255,246,214,' + (0.72 + Math.sin(tick * 0.16) * 0.18) + ')';
+      cx.fillRect(x + 1 + (w - 2) * r2, y + 1, lost, h - 2);
+      cx.fillStyle = 'rgba(255,120,90,.9)';
+      cx.fillRect(x + 1 + (w - 2) * r2, y + 1, 2, h - 2);
+      cx.restore();
+    }
   }
   strokeRR(x, y, w, h, h / 2, 'rgba(255,255,255,.22)', 1);
   txtShadow(hp + '/' + maxHp, x + w / 2, y + h / 2 + 0.5, Math.min(13, h * 0.72), '#fff', 'center', '700');
@@ -5382,9 +5605,25 @@ function intentDesc(g, e) {
   return s;
 }
 
+function previewDamageFor(g, e) {
+  var cb = g.cb;
+  var pc = cb.dragging || cb.selected || cb.hoverCard;
+  if (!pc || cb.phase !== 'player' || overlay) return 0;
+  var d = CARDS[pc.id];
+  if (d.type !== 'attack') return 0;
+  var v = cardVals(pc);
+  if (v.d === undefined) return 0;
+  if (d.target === 'enemy') {
+    var list = aliveEnemies(g);
+    var tgt = cb.hoverEnemy || (list.length === 1 ? list[0] : null);
+    if (!tgt || tgt !== e) return 0;
+  }
+  return calcPlayerDamage(g, v.d, e);
+}
 function drawCombat(g) {
   var cb = g.cb, t = tick;
   drawBackground(g, cb.kind);
+  var hoveredEnemy = null;
 
   /* ---- 敵 ---- */
   cb.enemies.forEach(function (e) {
@@ -5416,15 +5655,22 @@ function drawCombat(g) {
     e.shakeT = Math.max(0, e.shakeT - 0.9);
     /* HPバー / バフ / インテント */
     var bw = Math.max(84, S * 0.86);
-    drawHpBar(ex - bw / 2, ey + 12, bw, 13, e.hp, e.maxHp, e.block);
+    drawHpBar(ex - bw / 2, ey + 12, bw, 13, e.hp, e.maxHp, e.block, null, previewDamageFor(g, e));
     drawBuffs(g, e, ex, ey + 30, 20, true);
     var topY = artTop(e, S);
-    txtShadow(e.name, ex, topY - 34, 12, '#d8d0c0', 'center', '600');
+    var prevDmg = previewDamageFor(g, e);
+    if (prevDmg > 0) {
+      txtShadow(e.name, ex - 16, topY - 34, 12, '#d8d0c0', 'center', '600');
+      txtShadow('-' + prevDmg, ex + 22, topY - 34, 14, '#ffd06b', 'center', '700');
+    } else {
+      txtShadow(e.name, ex, topY - 34, 12, '#d8d0c0', 'center', '600');
+    }
     drawIntent(g, e, ex, topY - 8);
     /* クリック領域 */
     var o = uiAdd(ex - S * 0.46, topY, S * 0.92, GROUND_Y + 26 - topY, function () { onEnemyClick(g, e); }, 'enemy', e);
-    if (o.hover) cb.hoverEnemy = e;
+    if (o.hover) hoveredEnemy = e;
   });
+  cb.hoverEnemy = hoveredEnemy;
 
   /* ---- プレイヤー ---- */
   var p = cb.player;
@@ -5496,6 +5742,34 @@ function drawCombat(g) {
 
   /* ---- エフェクト ---- */
   drawEffects(g);
+  drawBanner(g);
+}
+
+function drawBanner(g) {
+  var b = g.cb.banner;
+  if (!b) return;
+  b.t++;
+  if (b.t > 108) { g.cb.banner = null; return; }
+  var k = b.t / 108;
+  var alpha = k < 0.12 ? k / 0.12 : (k > 0.78 ? (1 - k) / 0.22 : 1);
+  var slide = k < 0.12 ? (1 - k / 0.12) * 60 : (k > 0.78 ? -(k - 0.78) / 0.22 * 40 : 0);
+  cx.save();
+  cx.globalAlpha = clamp(alpha, 0, 1);
+  var y = 150;
+  var gr = cx.createLinearGradient(0, y - 34, 0, y + 46);
+  gr.addColorStop(0, 'rgba(0,0,0,0)');
+  gr.addColorStop(0.5, 'rgba(0,0,0,.78)');
+  gr.addColorStop(1, 'rgba(0,0,0,0)');
+  cx.fillStyle = gr;
+  cx.fillRect(0, y - 34, VW, 80);
+  cx.strokeStyle = rgba(b.col, 0.7); cx.lineWidth = 1.5;
+  cx.beginPath(); cx.moveTo(120, y - 24); cx.lineTo(VW - 120, y - 24); cx.stroke();
+  cx.beginPath(); cx.moveTo(120, y + 40); cx.lineTo(VW - 120, y + 40); cx.stroke();
+  cx.shadowColor = b.col; cx.shadowBlur = 22;
+  txt(b.text, VW / 2 + slide, y + 2, 34, b.col, 'center', '800');
+  cx.shadowBlur = 0;
+  txt(b.sub, VW / 2 - slide, y + 28, 15, '#e8dcc0', 'center', '600');
+  cx.restore();
 }
 
 function drawPileButton(g, x, y, label, count, onClick) {
@@ -5653,6 +5927,22 @@ function drawArrow(x1, y1, x2, y2) {
 
 function drawEffects(g) {
   var cb = g.cb;
+  /* 使用したカードの残像 */
+  if (cb.playFx) {
+    for (var fi = cb.playFx.length - 1; fi >= 0; fi--) {
+      var fx = cb.playFx[fi];
+      fx.t++;
+      if (fx.t > 26) { cb.playFx.splice(fi, 1); continue; }
+      var kk = fx.t / 26;
+      var ease = 1 - Math.pow(1 - kk, 2.2);
+      var sc2 = 1 - kk * 0.55;
+      var w2 = 132 * sc2, h2 = 176 * sc2;
+      cx.save();
+      cx.globalAlpha = (1 - kk) * 0.92;
+      drawCard(lerp(fx.x, fx.tx, ease), lerp(fx.y, fx.ty, ease), w2, h2, fx.inst, { shadow: false, glow: 'rgba(255,207,74,.6)' });
+      cx.restore();
+    }
+  }
   /* 斬撃 */
   for (var i = cb.slashes.length - 1; i >= 0; i--) {
     var s = cb.slashes[i];
@@ -6619,6 +6909,7 @@ function onPotionClick(g, idx) {
 canvas.addEventListener('pointerdown', function (ev) {
   ev.preventDefault();
   Audio_.init(); Audio_.resume();
+  if (!BGM.cur) { var wt = sceneTrack(); if (wt) BGM.play(wt); }
   var v = toView(ev.clientX, ev.clientY);
   try { canvas.setPointerCapture(ev.pointerId); } catch (e) {}
   onDown(v.x, v.y);
@@ -6705,8 +6996,8 @@ function frame(ts) {
   cx.beginPath(); cx.rect(0, 0, VW, VH); cx.clip();
 
   tooltip = null;
+  updateBgm();
   uiBegin();
-  if (game && game.cb) game.cb.hoverEnemy = null;
 
   try {
   processQueue(game, dt);
@@ -6777,6 +7068,7 @@ function drawToasts() {
    ================================================================ */
 function toggleSound() {
   Audio_.on = !Audio_.on;
+  BGM.setVolume();
   var b = document.getElementById('soundBtn');
   if (b) { b.textContent = Audio_.on ? 'SOUND ON' : 'SOUND OFF'; b.className = 'sbtn' + (Audio_.on ? '' : ' off'); }
 }
