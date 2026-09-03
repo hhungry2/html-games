@@ -42,7 +42,16 @@ body {
   font-size: 11px;
   color: #93a4b8;
 }
-.topbar .title { flex: 1; letter-spacing: .12em; color: #ffcf4a; font-weight: 700; }
+.topbar .title {
+  flex: 1;
+  letter-spacing: .12em;
+  color: #ffcf4a;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
 .sbtn {
   background: rgba(255,255,255,.07);
   border: 1px solid rgba(255,255,255,.15);
@@ -52,9 +61,40 @@ body {
   font-size: 11px;
   font-family: inherit;
   cursor: pointer;
+  white-space: nowrap;
 }
 .sbtn:active { background: rgba(255,255,255,.2); }
 .sbtn.off { color: #64748b; }
+.sbtn.active {
+  background: rgba(255,207,74,.22);
+  border-color: rgba(255,207,74,.45);
+  color: #ffcf4a;
+}
+
+@media (max-width: 540px) {
+  .topbar { gap: 4px; }
+  .sbtn { padding: 4px 6px; font-size: 10px; }
+  .topbar .title { font-size: 10px; }
+}
+
+/* ---------- フルスクリーン時 ---------- */
+body.fullscreen-active {
+  padding: 0;
+}
+body.fullscreen-active .wrap {
+  max-width: 100vw;
+  height: 100vh;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+}
+body.fullscreen-active .topbar,
+body.fullscreen-active .screen {
+  width: min(100vw - 12px, calc((100vh - 46px) * 16 / 9));
+}
+body.fullscreen-active canvas#game {
+  max-height: calc(100vh - 46px);
+}
 
 /* ---------- 画面 ---------- */
 .screen { position: relative; width: 100%; }
@@ -209,6 +249,7 @@ canvas#game {
     <button class="sbtn" id="soundBtn">SOUND ON</button>
     <button class="sbtn" id="restartBtn">RESTART</button>
     <button class="sbtn" id="menuBtn">STAGE</button>
+    <button class="sbtn" id="fullscreenBtn" title="フルスクリーン切替 (F)">FULLSCREEN</button>
   </div>
 
   <div class="screen">
@@ -238,7 +279,7 @@ canvas#game {
       <div class="menu">
         <button class="btn" id="startBtn">GAME START</button>
       </div>
-      <p class="keys">マウス／指でドラッグ　R: リトライ　M: サウンド切替</p>
+      <p class="keys">マウス／指でドラッグ　R: リトライ　M: サウンド切替　F: フルスクリーン</p>
     </div>
 
     <div class="overlay hidden" id="levelScreen">
@@ -2203,9 +2244,63 @@ document.addEventListener('keydown', function (ev) {
   var k = (ev.key || '').toLowerCase();
   if (k === 'r') { if (state !== 'title' && state !== 'levels') startLevel(levelIndex); }
   else if (k === 'm') { toggleSound(); }
+  else if (k === 'f') { toggleFullscreen(); }
   else if (k === ' ') { ev.preventDefault(); if (state === 'fly') usePower(); }
   else if (k === 'escape') { openLevels(); }
 });
+
+/* ============================================================
+   フルスクリーン
+   ============================================================ */
+function isFullscreen() {
+  return !!(
+    document.fullscreenElement ||
+    document.webkitFullscreenElement ||
+    document.mozFullScreenElement ||
+    document.msFullscreenElement
+  );
+}
+
+function toggleFullscreen() {
+  var doc = document;
+  var docEl = doc.documentElement;
+  if (!isFullscreen()) {
+    var rq = docEl.requestFullscreen ||
+             docEl.webkitRequestFullscreen ||
+             docEl.mozRequestFullScreen ||
+             docEl.msRequestFullscreen;
+    if (rq) {
+      try {
+        var p = rq.call(docEl);
+        if (p && p.catch) p.catch(function () {});
+      } catch (err) {}
+    }
+  } else {
+    var ex = doc.exitFullscreen ||
+             doc.webkitExitFullscreen ||
+             doc.mozCancelFullScreen ||
+             doc.msExitFullscreen;
+    if (ex) {
+      try {
+        var p2 = ex.call(doc);
+        if (p2 && p2.catch) p2.catch(function () {});
+      } catch (err) {}
+    }
+  }
+}
+
+function syncFsBtn() {
+  var fs = isFullscreen();
+  var btn = document.getElementById('fullscreenBtn');
+  if (btn) {
+    btn.textContent = fs ? 'WINDOW' : 'FULLSCREEN';
+    btn.classList.toggle('active', fs);
+  }
+  document.body.classList.toggle('fullscreen-active', fs);
+  resize();
+  setTimeout(resize, 80);
+  setTimeout(resize, 250);
+}
 
 /* ============================================================
    UI
@@ -2279,6 +2374,11 @@ document.getElementById('lvBackBtn').addEventListener('click', function () {
   hideAll(); show('titleScreen'); state = 'title';
 });
 document.getElementById('soundBtn').addEventListener('click', toggleSound);
+document.getElementById('fullscreenBtn').addEventListener('click', toggleFullscreen);
+global.addEventListener('fullscreenchange', syncFsBtn);
+global.addEventListener('webkitfullscreenchange', syncFsBtn);
+global.addEventListener('mozfullscreenchange', syncFsBtn);
+global.addEventListener('MSFullscreenChange', syncFsBtn);
 global.addEventListener('resize', resize);
 
 /* ============================================================
@@ -2306,7 +2406,8 @@ global.__G = {
   bird: function () { return activeBird; }, state: function () { return state; },
   score: function () { return score; }, queue: function () { return birdsQueue; },
   start: startLevel, launch: launchBird, power: usePower, cam: cam,
-  step: updateGame, levels: LEVELS, best: function () { return best; }
+  step: updateGame, levels: LEVELS, best: function () { return best; },
+  toggleFullscreen: toggleFullscreen, isFullscreen: isFullscreen
 };
 
 })(window);
