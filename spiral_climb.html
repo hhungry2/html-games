@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>SPIRAL CASTLE ぐるぐる塔のぼり</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;background:#0d1b2a;overflow:hidden;
+  font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;
+  -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
+  touch-action:none}
+#wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+canvas{display:block;touch-action:none;box-shadow:0 0 60px rgba(0,40,80,.45)}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="cv"></canvas></div>
+<script>
+'use strict';
+(function(){
+/* ===== 基本設定 ===== */
+const CW=480, CH=800, CX=CW/2;
+const TAU=Math.PI*2;
+const SEG=12, SEGA=TAU/SEG;
+const FLOOR_H=64;
+const GRAV=1500, JUMP_V=560;          // 頂点 ≒ 104px（1.63階ぶん）
+const OM_MAX=2.9, OM_ACC=14, OM_FRIC=10;
+const KY=0.30;                         // 円筒の見下ろし つぶれ率
+const RT=118, RP=174, RS=146, TH=28;   // 塔の半径 / 足場の外径 / 立つ半径 / 足場の厚み
+const PY=530;                          // プレイヤーのスクリーンY
+const PW=0.075;                        // プレイヤーの角度半幅
+const TIME_START=40, TIME_MAX=60;
+
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+function resize(){
+  const vw=Math.max(1,innerWidth||CW), vh=Math.max(1,innerHeight||CH);
+  const s=Math.max(0.25,Math.min(vw/CW, vh/CH));
+  const dpr=Math.min(devicePixelRatio||1,2);
+  cv.style.width=(CW*s)+'px'; cv.style.height=(CH*s)+'px';
+  cv.width=Math.round(CW*s*dpr); cv.height=Math.round(CH*s*dpr);
+  ctx.setTransform(s*dpr,0,0,s*dpr,0,0);
+  ctx.textBaseline='alphabetic';
+}
+addEventListener('resize',resize);
+
+/* ===== 乱数 ===== */
+let seed=1;
+function srand(s){ seed=(s>>>0)||1; }
+function rnd(){ seed^=seed<<13; seed>>>=0; seed^=seed>>>17; seed^=seed<<5; seed>>>=0; return seed/4294967296; }
+function pick(arr){ return arr[Math.floor(rnd()*arr.length)]; }
+
+/* ===== 投影（塔は回り、プレイヤーは常に手前中央） ===== */
+let pa=0;                                   // プレイヤーの塔座標角
+function sa(a){ return a-pa; }              // 塔座標 → 画面角
+function sx(a,r){ return CX + r*Math.sin(a); }
+function sylo(a,r,sy){ return sy + r*KY*Math.cos(a); }
+function w2s(y){ return PY-(y-camY); }
+function angDiff(a,b){ let d=(a-b)%TAU; if(d>Math.PI)d-=TAU; if(d<-Math.PI)d+=TAU; return d; }
+
+/* ===== 塔の生成 ===== */
+let floors=[];
+function halfW(i){
+  return i<5?0.85 : i<15?0.62 : i<30?0.52 : i<50?0.44 : i<75?0.38 : 0.32;
+}
+function makeFloor(i){
+  const f={i:i, h:i*FLOOR_H, plats:[], pick:[], cannon:null, saw:null, done:false};
+  if(i===0){
+    f.ua=0; f.dir=1;
+    f.plats.push({ca:0, hw:2.95, kind:'ground'});
+    floors.push(f); return f;
+  }
+  const p=floors[i-1];
+  let dir=p.dir;
+  if(i>18 && i%9===0 && rnd()<0.4) dir=-dir;
+  const wide=(i%10===0);
+  let hw=wide?0.9:halfW(i);
+  const t=rnd();
+  let step=(i<6)?2:(t<0.18?1:(t<0.9?2:3));
+  if(step===3 && hw<0.44) step=2;
+  const ua=p.ua+dir*step*SEGA;
+  f.ua=ua; f.dir=dir;
+
+  const main={ca:ua, hw:hw, kind:wide?'milestone':'normal', base:ua};
+  if(!wide){
+    if(i>=32 && rnd()<0.20){ main.kind='move'; main.amp=0.22+rnd()*0.16; main.sp=0.55+rnd()*0.45; main.ph=rnd()*TAU; }
+    else if(i>=22 && rnd()<0.18){ main.kind='crumble'; }
+  }
+  f.plats.push(main);
+
+  // 隣にトゲ足場（狙いがズレると刺さる）
+  const pSpike=Math.min(0.45,(i-8)*0.012);
+  if(!wide && rnd()<pSpike){
+    const side=rnd()<0.5?-1:1;
+    const shw=0.24+rnd()*0.12;
+    f.plats.push({ca:ua+side*(hw+shw+0.06), hw:shw, kind:'spike'});
+    if(rnd()<0.3) f.plats.push({ca:ua-side*(hw+shw+0.06), hw:shw, kind:'spike'});
+  }
+  // 離れた足場（コイン置き場になりやすい）
+  if(rnd()<0.35){
+    const side=rnd()<0.5?-1:1;
+    f.plats.push({ca:ua+side*(hw+0.75+rnd()*0.8), hw:0.28+rnd()*0.16, kind:'normal'});
+  }
+  // 拾いもの
+  if(rnd()<0.5){
+    const tp=f.plats[Math.floor(rnd()*f.plats.length)];
+    if(tp.kind!=='spike') f.pick.push({a:tp.ca, h:f.h+30, kind:'coin', got:false});
+  }
+  if(i>=18 && rnd()<0.06){
+    f.pick.push({a:ua+(rnd()<0.5?-1:1)*(hw+0.5), h:f.h+34, kind:'heart', got:false});
+  }
+  // 壁の大砲：弾が足場の高さに落ちてくる
+  if(i>=14 && !wide && rnd()<0.17){
+    f.cannon={a:ua+(rnd()<0.5?-1:1)*(0.45+rnd()*0.5), h:f.h+FLOOR_H*0.62,
+              per:1.5+rnd()*1.1, next:0};
+  }
+  // トゲ車：塔のまわりをぐるぐる回る
+  if(i>=24 && !wide && rnd()<0.14){
+    f.saw={h:f.h+FLOOR_H*0.5, sp:(rnd()<0.5?-1:1)*(0.75+rnd()*0.55), ph:rnd()*TAU};
+  }
+  floors.push(f); return f;
+}
+function ensure(n){ while(floors.length<=n) makeFloor(floors.length); return floors[n]; }
+function platAngle(p){
+  return p.kind==='move' ? p.base + p.amp*Math.sin(gameT*p.sp + p.ph) : p.ca;
+}
+function platSolid(p){ return !(p.kind==='crumble' && p.gone); }
+function onPlat(p,ang){
+  if(!platSolid(p)) return false;
+  return Math.abs(angDiff(ang, platAngle(p))) < p.hw + PW*0.7;
+}
+
+/* ===== サウンド ===== */
+let ac=null, muted=/[?&]mute\b/.test(location.search)||localStorage.getItem('sc_mute')==='1';
+function initAudio(){ if(!ac){ try{ ac=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } if(ac&&ac.state==='suspended') ac.resume(); }
+function beep(freq,dur,type,vol,slide){
+  if(muted||!ac) return;
+  const t=ac.currentTime, o=ac.createOscillator(), g=ac.createGain();
+  o.type=type||'square'; o.frequency.setValueAtTime(freq,t);
+  if(slide) o.frequency.exponentialRampToValueAtTime(Math.max(40,freq*slide),t+dur);
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.exponentialRampToValueAtTime(vol||0.13,t+0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+dur+0.03);
+}
+
+/* ===== 状態 ===== */
+let phase='title';
+let player, paVel=0, camY=0, gameT=0, timeLeft=TIME_START;
+let hp=3, coins=0, maxFloor=0, combo=0, bestCombo=0, invul=0;
+let best=+(localStorage.getItem('sc_best')||0);
+let balls=[], parts=[], shake=0, msg=null, flashT=0, hurtT=0, coinPop=0;
+let keyL=false, keyR=false;
+
+function reset(){
+  srand((Date.now()^(Math.random()*1e9))>>>0);
+  floors=[]; ensure(26);
+  player={y:0, vy:JUMP_V, floor:0};
+  pa=0; paVel=0; camY=40; gameT=0; timeLeft=TIME_START;
+  hp=3; coins=0; maxFloor=0; combo=0; bestCombo=0; invul=0;
+  balls=[]; parts=[]; shake=0; msg=null; flashT=0; hurtT=0; coinPop=0;
+}
+function say(text,color){ msg={text:text, color:color||'#ffd54a', t:0}; }
+function spawn(n,col,spd,ang,y,r){
+  for(let i=0;i<n;i++){
+    const d=rnd()*TAU, s=spd*(0.4+rnd()*0.8);
+    parts.push({a:ang+(rnd()-0.5)*0.16, y:y+rnd()*8, r:(r||RS)+(rnd()-0.5)*20,
+      va:Math.cos(d)*s*0.004, vy:Math.sin(d)*s+70, life:0.45+rnd()*0.4, t:0, col:col});
+  }
+}
+function addTime(v){ timeLeft=Math.min(TIME_MAX, timeLeft+v); }
+
+function hurt(){
+  if(invul>0||phase!=='play') return;
+  hp--; invul=1.5; hurtT=0.45; shake=10; flashT=0.3; combo=0;
+  timeLeft=Math.max(0,timeLeft-2.5);
+  player.vy=-190;
+  spawn(14,'#ff5a5a',150,pa,player.y+20);
+  beep(300,0.28,'sawtooth',0.14,0.35);
+  if(hp<=0) gameOver('たおれた…');
+}
+function land(n,p){
+  const up=n-player.floor;
+  if(p.kind==='spike'){
+    player.vy=JUMP_V*0.72; hurt(); return;
+  }
+  player.vy=JUMP_V;
+  if(up>0){ combo+=up; if(combo>bestCombo) bestCombo=combo; }
+  else combo=0;
+  player.floor=n;
+  if(n>maxFloor){ addTime(0.15*(n-maxFloor)); maxFloor=n; }
+  const f=floors[n];
+  if(p.kind==='crumble'){ p.crumb=0.34; beep(160,0.12,'square',0.07,0.6); }
+  if(p.kind==='milestone' && !f.done){ f.done=true; addTime(2.6); say('+2.6秒','#7dffa0'); beep(700,0.16,'triangle',0.12,1.5); }
+  spawn(5,'#ffe9a8',80,pa,n*FLOOR_H);
+  shake=Math.min(5,2+combo*0.04);
+  beep(300+Math.min(620,combo*13),0.06,'square',0.08,1.55);
+}
+
+/* ===== 更新 ===== */
+function update(dt){
+  gameT+=dt;
+  timeLeft-=dt;
+  if(timeLeft<=0){ timeLeft=0; gameOver('時間切れ'); return; }
+  if(invul>0) invul-=dt;
+  if(hurtT>0) hurtT-=dt;
+  if(coinPop>0) coinPop-=dt;
+
+  // 左右で塔を回す（プレイヤーは画面中央のまま）
+  const ax=(keyR?1:0)-(keyL?1:0);
+  if(ax!==0) paVel+=ax*OM_ACC*dt;
+  else{ const s=Math.sign(paVel); paVel-=s*OM_FRIC*dt; if(Math.sign(paVel)!==s) paVel=0; }
+  paVel=Math.max(-OM_MAX,Math.min(OM_MAX,paVel));
+  pa=(pa+paVel*dt)%TAU; if(pa<0) pa+=TAU;
+
+  // 重力＋自動ジャンプ
+  const prevY=player.y;
+  player.vy-=GRAV*dt;
+  player.y+=player.vy*dt;
+  if(player.vy<0){
+    for(let n=Math.floor(prevY/FLOOR_H+1e-6);n>=0;n--){
+      const h=n*FLOOR_H;
+      if(h>prevY+1e-6) continue;
+      if(h<=player.y+1e-6) break;
+      const f=ensure(n);
+      let hit=null;
+      for(const p of f.plats){ if(onPlat(p,pa)){ hit=p; break; } }
+      if(hit){ player.y=h; land(n,hit); break; }
+    }
+  }
+  if(player.y<-90){ gameOver('落ちてしまった'); return; }
+
+  ensure(player.floor+16);
+  const lo=Math.max(0,player.floor-4), hi=player.floor+8;
+
+  // 崩れる足場
+  for(let n=lo;n<=hi;n++){
+    const f=floors[n]; if(!f) continue;
+    for(const p of f.plats){
+      if(p.crumb!==undefined && !p.gone){ p.crumb-=dt; if(p.crumb<=0){ p.gone=true; spawn(8,'#a9793f',110,platAngle(p),f.h); beep(120,0.2,'sawtooth',0.07,0.5); } }
+    }
+  }
+  // 大砲
+  for(let n=lo;n<=hi;n++){
+    const f=floors[n]; if(!f||!f.cannon) continue;
+    const c=f.cannon;
+    if(!c.next) c.next=gameT+rnd()*c.per;
+    c.warn=Math.max(0,c.next-gameT);
+    if(gameT>c.next){
+      c.next=gameT+c.per; c.fire=0.18; c.warn=c.per;
+      balls.push({a:c.a, h:c.h, t:0, vy:0});
+      beep(180,0.14,'square',0.07,0.4);
+    }
+    if(c.fire>0) c.fire-=dt;
+  }
+  // 弾
+  for(let i=balls.length-1;i>=0;i--){
+    const b=balls[i]; b.t+=dt;
+    b.r=RT+(RS-RT)*Math.min(1,b.t/0.28);
+    if(b.t>0.28){ b.vy-=1150*dt; b.h+=b.vy*dt; }
+    if(b.h<camY-460 || b.t>9){ balls.splice(i,1); continue; }
+    if(Math.abs(angDiff(b.a,pa))<0.15 && Math.abs(b.h-(player.y+20))<24){
+      balls.splice(i,1); hurt();
+    }
+  }
+  // トゲ車
+  for(let n=lo;n<=hi;n++){
+    const f=floors[n]; if(!f||!f.saw) continue;
+    const s=f.saw, ang=s.ph+s.sp*gameT;
+    if(Math.abs(angDiff(ang,pa))<0.185 && Math.abs(s.h-(player.y+20))<26) hurt();
+  }
+  // 拾いもの
+  for(let n=lo;n<=hi;n++){
+    const f=floors[n]; if(!f) continue;
+    for(const q of f.pick){
+      if(q.got) continue;
+      if(Math.abs(angDiff(q.a,pa))<0.26 && Math.abs(q.h-(player.y+22))<34){
+        q.got=true;
+        if(q.kind==='coin'){ coins++; addTime(0.8); coinPop=0.45; spawn(7,'#ffd54a',120,q.a,q.h); beep(1050,0.09,'triangle',0.1,1.5); }
+        else{ hp=Math.min(5,hp+1); addTime(1.5); say('ハート回復','#ff7d9e'); spawn(10,'#ff7d9e',120,q.a,q.h); beep(720,0.2,'triangle',0.12,1.6); }
+      }
+    }
+  }
+
+  camY+=((player.y+40)-camY)*Math.min(1,dt*7);
+  for(let i=parts.length-1;i>=0;i--){
+    const p=parts[i]; p.t+=dt;
+    if(p.t>=p.life){ parts.splice(i,1); continue; }
+    p.y+=p.vy*dt; p.vy-=560*dt; p.a+=p.va*dt*60;
+  }
+  if(shake>0) shake=Math.max(0,shake-dt*24);
+  if(msg){ msg.t+=dt; if(msg.t>1.2) msg=null; }
+  if(flashT>0) flashT=Math.max(0,flashT-dt);
+}
+function gameOver(reason){
+  if(phase!=='play') return;
+  phase='over'; overReason=reason;
+  if(maxFloor>best){ best=maxFloor; localStorage.setItem('sc_best',best); }
+  spawn(24,'#ffb14a',180,pa,player.y+20);
+  shake=9; flashT=0.35;
+  beep(400,0.5,'sawtooth',0.13,0.25);
+}
+let overReason='';
+
+/* ===== 背景 ===== */
+const clouds=[];
+for(let i=0;i<7;i++) clouds.push({x:Math.random()*CW, y:60+Math.random()*430, s:0.6+Math.random()*0.9, sp:4+Math.random()*9});
+function ridge(baseY,amp,step,col,seedv){
+  ctx.fillStyle=col; ctx.beginPath(); ctx.moveTo(-20,CH);
+  let k=seedv;
+  for(let x=-20;x<=CW+20;x+=step){
+    k=(k*1103515245+12345)&0x7fffffff;
+    ctx.lineTo(x, baseY-((k>>8)%amp));
+  }
+  ctx.lineTo(CW+20,CH); ctx.closePath(); ctx.fill();
+}
+function drawBG(dt){
+  const g=ctx.createLinearGradient(0,0,0,CH);
+  g.addColorStop(0,'#57c4f0'); g.addColorStop(.45,'#8fdcf7'); g.addColorStop(1,'#cdf1fb');
+  ctx.fillStyle=g; ctx.fillRect(0,0,CW,CH);
+  const sink=Math.min(340, camY*0.045);
+  ridge(CH*0.44+sink, 150, 46, '#9fd5e8', 7771);
+  ridge(CH*0.56+sink*1.25, 110, 38, '#7ec3dd', 4242);
+  ridge(CH*0.68+sink*1.5, 80, 30, '#63aecb', 999);
+  ctx.fillStyle='#4f9bbd'; ctx.fillRect(0,CH*0.68+sink*1.5+40,CW,CH);
+  for(const c of clouds){
+    c.x+=c.sp*(dt||0); if(c.x>CW+90) c.x=-90;
+    const y=c.y+camY*0.10*c.s; const yy=((y%(CH+260))+CH+260)%(CH+260)-130;
+    ctx.fillStyle='rgba(255,255,255,.85)';
+    ctx.beginPath();
+    ctx.ellipse(c.x,yy,34*c.s,15*c.s,0,0,TAU);
+    ctx.ellipse(c.x+26*c.s,yy+4*c.s,24*c.s,12*c.s,0,0,TAU);
+    ctx.ellipse(c.x-26*c.s,yy+5*c.s,21*c.s,10*c.s,0,0,TAU);
+    ctx.fill();
+  }
+}
+
+/* ===== 塔本体 ===== */
+const NCOL=16, COLA=TAU/NCOL, BRICK=32;
+function drawTower(){
+  const g=ctx.createLinearGradient(CX-RT,0,CX+RT,0);
+  g.addColorStop(0,'#7d3f18'); g.addColorStop(.22,'#c67a34');
+  g.addColorStop(.45,'#e09a4b'); g.addColorStop(.72,'#c9762f'); g.addColorStop(1,'#6f3714');
+  ctx.fillStyle=g; ctx.fillRect(CX-RT,0,RT*2,CH);
+  ctx.save(); ctx.beginPath(); ctx.rect(CX-RT,0,RT*2,CH); ctx.clip();
+  const h0=Math.floor((camY-(CH-PY)-120)/BRICK)*BRICK, h1=camY+PY+140;
+  ctx.strokeStyle='rgba(96,46,14,.42)'; ctx.lineWidth=2.5;
+  for(let h=h0;h<=h1;h+=BRICK){
+    const sy=w2s(h);
+    ctx.beginPath(); ctx.ellipse(CX,sy,RT,RT*KY,0,0,Math.PI); ctx.stroke();
+  }
+  ctx.lineWidth=2;
+  for(let h=h0, row=Math.round(h0/BRICK); h<=h1; h+=BRICK, row++){
+    const off=(row&1)?COLA*0.5:0;
+    for(let c=0;c<NCOL;c++){
+      const a=sa(c*COLA+off), co=Math.cos(a);
+      if(co<=0.04) continue;
+      const x=sx(a,RT);
+      ctx.beginPath();
+      ctx.moveTo(x, w2s(h)+RT*KY*co);
+      ctx.lineTo(x, w2s(h+BRICK)+RT*KY*co);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+  ctx.fillStyle='rgba(255,255,255,.10)'; ctx.fillRect(CX-RT*0.55,0,RT*0.5,CH);
+}
+
+/* ===== 足場 ===== */
+function arcPts(a0,a1,r,sy,out){
+  const n=Math.max(3,Math.ceil(Math.abs(a1-a0)/0.13));
+  for(let k=0;k<=n;k++){ const a=a0+(a1-a0)*k/n; out.push(sx(a,r), sy+r*KY*Math.cos(a)); }
+  return out;
+}
+function poly(pts){ ctx.beginPath(); ctx.moveTo(pts[0],pts[1]); for(let i=2;i<pts.length;i+=2) ctx.lineTo(pts[i],pts[i+1]); ctx.closePath(); }
+const PAL={
+  normal:{top:'#79cf35',top2:'#5bb022',dirt:'#b3762f',dark:'#8a5520'},
+  ground:{top:'#79cf35',top2:'#5bb022',dirt:'#b3762f',dark:'#8a5520'},
+  milestone:{top:'#ffd54a',top2:'#e0a800',dirt:'#c99a3a',dark:'#9a7124'},
+  move:{top:'#43d6d0',top2:'#27a9a5',dirt:'#3f7fa8',dark:'#2e5f80'},
+  crumble:{top:'#b8ac93',top2:'#968a72',dirt:'#8d7a5e',dark:'#6b5c46'},
+  spike:{top:'#9aa4b0',top2:'#79838f',dirt:'#7a6a5c',dark:'#5b4f45'}
+};
+function drawPlat(f,p){
+  const ang=sa(platAngle(p)), sy=w2s(f.h);
+  const c=PAL[p.kind]||PAL.normal;
+  let a0=ang-p.hw, a1=ang+p.hw;
+  let alpha=1, drop=0;
+  if(p.kind==='crumble'&&p.crumb!==undefined&&!p.gone){ drop=(0.34-p.crumb)*10; }
+  if(p.gone) return;
+  ctx.save(); ctx.globalAlpha=alpha; ctx.translate(0,drop);
+  // 端の面
+  ctx.fillStyle=c.dark;
+  for(const a of [a0,a1]){
+    const co=Math.cos(a);
+    ctx.beginPath();
+    ctx.moveTo(sx(a,RT), sy+RT*KY*co);
+    ctx.lineTo(sx(a,RP), sy+RP*KY*co);
+    ctx.lineTo(sx(a,RP), sy+TH+RP*KY*co);
+    ctx.lineTo(sx(a,RT), sy+TH+RT*KY*co);
+    ctx.closePath(); ctx.fill();
+  }
+  // 外側の面
+  const o1=arcPts(a0,a1,RP,sy,[]), o2=[];
+  for(let i=o1.length-2;i>=0;i-=2) o2.push(o1[i], o1[i+1]+TH);
+  poly(o1.concat(o2));
+  const gd=ctx.createLinearGradient(0,sy,0,sy+TH+60);
+  gd.addColorStop(0,c.dirt); gd.addColorStop(1,c.dark);
+  ctx.fillStyle=gd; ctx.fill();
+  // 上の面
+  const t1=arcPts(a0,a1,RP,sy,[]), t2=arcPts(a1,a0,RT,sy,[]);
+  poly(t1.concat(t2));
+  const gt=ctx.createLinearGradient(0,sy-30,0,sy+40);
+  gt.addColorStop(0,c.top); gt.addColorStop(1,c.top2);
+  ctx.fillStyle=gt; ctx.fill();
+  // トゲ
+  if(p.kind==='spike'){
+    ctx.fillStyle='#e8eef4'; ctx.strokeStyle='#8c98a6'; ctx.lineWidth=1;
+    const n=Math.max(2,Math.round(p.hw/0.11));
+    for(let k=0;k<n;k++){
+      const a=a0+(a1-a0)*(k+0.5)/n, co=Math.cos(a);
+      const bx=sx(a,RS), by=sy+RS*KY*co;
+      ctx.beginPath(); ctx.moveTo(bx-6,by+2); ctx.lineTo(bx,by-19); ctx.lineTo(bx+6,by+2);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+  }
+  if(p.kind==='milestone'){
+    ctx.strokeStyle='rgba(255,255,255,.55)'; ctx.lineWidth=3;
+    const t=arcPts(a0,a1,RS,sy,[]); ctx.beginPath(); ctx.moveTo(t[0],t[1]);
+    for(let i=2;i<t.length;i+=2) ctx.lineTo(t[i],t[i+1]); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/* ===== 障害物・拾いもの ===== */
+function drawCannon(f){
+  const c=f.cannon, a=sa(c.a), co=Math.cos(a), sy=w2s(c.h);
+  const x0=sx(a,RT), y0=sy+RT*KY*co;
+  const x1=sx(a,RT+42), y1=sy+(RT+42)*KY*co+13;
+  const soon=(c.warn!==undefined&&c.warn<0.5);
+  ctx.strokeStyle='#2f7f86'; ctx.lineCap='round';
+  ctx.lineWidth=c.fire>0?21:18;
+  ctx.beginPath(); ctx.moveTo(x0,y0); ctx.lineTo(x1,y1); ctx.stroke();
+  ctx.strokeStyle=soon?(Math.floor(gameT*14)%2?'#ffe08a':'#ff7a4a'):'#54c9c2';
+  ctx.lineWidth=c.fire>0?14:11;
+  ctx.beginPath(); ctx.moveTo(x0,y0); ctx.lineTo(x1,y1); ctx.stroke();
+  if(soon){
+    ctx.fillStyle='rgba(255,150,70,'+(0.35+0.3*Math.sin(gameT*20)).toFixed(3)+')';
+    ctx.beginPath(); ctx.arc(x1,y1,9,0,TAU); ctx.fill();
+  }
+  ctx.fillStyle='#e0483a';
+  ctx.beginPath(); ctx.arc(x0,y0,11,0,TAU); ctx.fill();
+  ctx.strokeStyle='#9c2a20'; ctx.lineWidth=2.5;
+  for(let k=0;k<4;k++){ const t=k*Math.PI/4+gameT*0.6;
+    ctx.beginPath(); ctx.moveTo(x0-Math.cos(t)*10,y0-Math.sin(t)*10); ctx.lineTo(x0+Math.cos(t)*10,y0+Math.sin(t)*10); ctx.stroke(); }
+}
+function drawSaw(f){
+  const s=f.saw, ang=s.ph+s.sp*gameT, a=sa(ang), co=Math.cos(a);
+  const x=sx(a,RS), y=w2s(s.h)+RS*KY*co, R=17;
+  ctx.save(); ctx.translate(x,y); ctx.rotate(gameT*6*Math.sign(s.sp));
+  ctx.fillStyle='#cfd6de';
+  ctx.beginPath();
+  for(let k=0;k<10;k++){
+    const t1=k*TAU/10, t2=t1+TAU/20;
+    ctx.lineTo(Math.cos(t1)*R*1.42, Math.sin(t1)*R*1.42);
+    ctx.lineTo(Math.cos(t2)*R, Math.sin(t2)*R);
+  }
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle='#8d97a3'; ctx.beginPath(); ctx.arc(0,0,R*0.55,0,TAU); ctx.fill();
+  ctx.fillStyle='#5c646e'; ctx.beginPath(); ctx.arc(0,0,R*0.22,0,TAU); ctx.fill();
+  ctx.restore();
+}
+function drawBall(b){
+  const a=sa(b.a), co=Math.cos(a);
+  const x=sx(a,b.r), y=w2s(b.h)+b.r*KY*co;
+  ctx.fillStyle='#3a3f4a'; ctx.beginPath(); ctx.arc(x,y,11,0,TAU); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.45)'; ctx.beginPath(); ctx.arc(x-3.5,y-3.5,3.4,0,TAU); ctx.fill();
+}
+function drawPick(q){
+  if(q.got) return;
+  const a=sa(q.a), co=Math.cos(a);
+  const x=sx(a,RS), y=w2s(q.h)+RS*KY*co+Math.sin(gameT*3+q.h)*3;
+  if(q.kind==='coin'){
+    const w=Math.abs(Math.cos(gameT*3.2))*10+2.5;
+    ctx.fillStyle='#f0a91e'; ctx.beginPath(); ctx.ellipse(x,y,w,12,0,0,TAU); ctx.fill();
+    ctx.fillStyle='#ffd54a'; ctx.beginPath(); ctx.ellipse(x,y,w*0.66,9,0,0,TAU); ctx.fill();
+  }else{
+    ctx.fillStyle='#ff5f86';
+    ctx.beginPath();
+    ctx.moveTo(x,y+11); ctx.bezierCurveTo(x-16,y-1,x-9,y-13,x,y-5);
+    ctx.bezierCurveTo(x+9,y-13,x+16,y-1,x,y+11); ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,.5)'; ctx.beginPath(); ctx.ellipse(x-4,y-3,2.6,3.6,-0.5,0,TAU); ctx.fill();
+  }
+}
+function drawParts(){
+  for(const p of parts){
+    const a=sa(p.a), co=Math.cos(a);
+    const x=sx(a,p.r), y=w2s(p.y)+p.r*KY*co;
+    ctx.globalAlpha=1-p.t/p.life; ctx.fillStyle=p.col;
+    ctx.fillRect(x-2.5,y-2.5,5,5);
+  }
+  ctx.globalAlpha=1;
+}
+
+/* ===== プレイヤー ===== */
+function drawPlayer(){
+  const x=CX, base=w2s(player.y)+RS*KY;
+  if(invul>0 && Math.floor(gameT*22)%2===0) return;
+  const sq=Math.max(-0.22,Math.min(0.22,-player.vy/2600));
+  const w=19*(1-sq), h=22*(1+sq);
+  ctx.save();
+  ctx.translate(x,base-h);
+  // 影
+  ctx.fillStyle='rgba(0,0,0,.26)';
+  ctx.beginPath(); ctx.ellipse(0,h+2,w*0.85,4.5,0,0,TAU); ctx.fill();
+  // 足
+  const legs=Math.sin(gameT*13)*3.5;
+  ctx.strokeStyle='#2b6ea8'; ctx.lineWidth=4.5; ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(-5,h*0.7); ctx.lineTo(-6,h+legs);
+  ctx.moveTo(5,h*0.7); ctx.lineTo(6,h-legs);
+  ctx.stroke();
+  // 体
+  const g=ctx.createLinearGradient(0,-h,0,h);
+  if(hurtT>0){ g.addColorStop(0,'#ffffff'); g.addColorStop(.55,'#ffb0b0'); g.addColorStop(1,'#e8503f'); }
+  else{ g.addColorStop(0,'#ffffff'); g.addColorStop(.55,'#9be9ff'); g.addColorStop(1,'#3aa6e8'); }
+  ctx.fillStyle=g;
+  ctx.beginPath(); ctx.ellipse(0,0,w,h,0,0,TAU); ctx.fill();
+  ctx.lineWidth=2.4; ctx.strokeStyle='rgba(18,38,74,.72)'; ctx.stroke();
+  // つや
+  ctx.fillStyle='rgba(255,255,255,.75)';
+  ctx.beginPath(); ctx.ellipse(-w*0.35,-h*0.42,w*0.22,h*0.16,-0.5,0,TAU); ctx.fill();
+  // 目
+  const ex=Math.max(-2.6,Math.min(2.6,paVel*0.9));
+  ctx.fillStyle='#16233d';
+  ctx.beginPath(); ctx.ellipse(-6+ex,-2.5,2.8,3.6,0,0,TAU); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(6+ex,-2.5,2.8,3.6,0,0,TAU); ctx.fill();
+  ctx.restore();
+}
+
+/* ===== 描画のとりまとめ ===== */
+function render(dt){
+  ctx.save();
+  if(shake>0) ctx.translate((Math.random()-0.5)*shake,(Math.random()-0.5)*shake);
+  drawBG(dt);
+  const items=[];
+  const lo=Math.max(0,Math.floor((camY-(CH-PY)-170)/FLOOR_H));
+  const hi=Math.floor((camY+PY+190)/FLOOR_H);
+  for(let n=lo;n<=hi;n++){
+    const f=ensure(n);
+    for(const p of f.plats){
+      if(p.gone) continue;
+      items.push({c:Math.cos(sa(platAngle(p))), f:f, p:p, t:0});
+    }
+    if(f.cannon) items.push({c:Math.cos(sa(f.cannon.a))-0.01, f:f, t:1});
+    if(f.saw) items.push({c:Math.cos(sa(f.saw.ph+f.saw.sp*gameT))+0.03, f:f, t:2});
+    for(const q of f.pick){ if(!q.got) items.push({c:Math.cos(sa(q.a))+0.02, q:q, t:3}); }
+  }
+  for(const b of balls) items.push({c:Math.cos(sa(b.a))+0.02, b:b, t:4});
+  items.sort((A,B)=>A.c-B.c);
+  let i=0;
+  for(;i<items.length&&items[i].c<0;i++) drawItem(items[i]);
+  drawTower();
+  for(;i<items.length;i++) drawItem(items[i]);
+  drawParts();
+  drawPlayer();
+  ctx.restore();
+  if(flashT>0){ ctx.fillStyle='rgba(255,70,70,'+(flashT*1.2).toFixed(3)+')'; ctx.fillRect(0,0,CW,CH); }
+  if(phase==='play'&&timeLeft<8){
+    const a=0.16+0.14*Math.sin(gameT*9);
+    const g=ctx.createRadialGradient(CX,CH/2,140,CX,CH/2,470);
+    g.addColorStop(0,'rgba(255,40,40,0)'); g.addColorStop(1,'rgba(255,40,40,'+a.toFixed(3)+')');
+    ctx.fillStyle=g; ctx.fillRect(0,0,CW,CH);
+  }
+  if(phase==='play') drawHUD();
+  else if(phase==='title') drawTitle();
+  else drawOver();
+}
+function drawItem(it){
+  if(it.t===0) drawPlat(it.f,it.p);
+  else if(it.t===1) drawCannon(it.f);
+  else if(it.t===2) drawSaw(it.f);
+  else if(it.t===3) drawPick(it.q);
+  else drawBall(it.b);
+}
+
+/* ===== HUD ===== */
+function rr(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+}
+function heart(x,y,s,col){
+  ctx.fillStyle=col; ctx.beginPath();
+  ctx.moveTo(x,y+s*0.85); ctx.bezierCurveTo(x-s*1.35,y-s*0.1,x-s*0.75,y-s*1.05,x,y-s*0.4);
+  ctx.bezierCurveTo(x+s*0.75,y-s*1.05,x+s*1.35,y-s*0.1,x,y+s*0.85); ctx.fill();
+}
+function coinIcon(x,y,r){
+  ctx.fillStyle='#c98a12'; ctx.beginPath(); ctx.arc(x,y,r,0,TAU); ctx.fill();
+  ctx.fillStyle='#ffd54a'; ctx.beginPath(); ctx.arc(x,y,r*0.78,0,TAU); ctx.fill();
+  ctx.fillStyle='#c98a12'; ctx.font='700 '+(r*1.1|0)+'px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('C',x,y+r*0.4);
+}
+function fmt(t){
+  const m=Math.floor(t/60), s=Math.floor(t%60);
+  return (m<10?'0':'')+m+':'+(s<10?'0':'')+s;
+}
+function drawHUD(){
+  ctx.fillStyle='rgba(12,42,66,.78)'; rr(12,12,CW-24,58,17); ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,.18)'; ctx.lineWidth=2; ctx.stroke();
+  for(let i=0;i<Math.max(3,hp);i++){
+    const on=i<hp;
+    heart(34+i*26,40,10, on?'#ff5271':'rgba(255,255,255,.25)');
+  }
+  ctx.textAlign='center';
+  const warn=timeLeft<8;
+  ctx.font='800 33px "Yu Gothic",sans-serif';
+  ctx.fillStyle= warn ? (Math.floor(gameT*6)%2?'#ff5555':'#ffffff') : '#ffffff';
+  ctx.fillText(fmt(timeLeft), CX+6, 52);
+  ctx.strokeStyle='#ffd54a'; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.arc(CX-58,40,11,0,TAU); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(CX-58,34); ctx.lineTo(CX-58,41); ctx.lineTo(CX-53,44); ctx.stroke();
+  const cs=1+coinPop*0.9;
+  coinIcon(CW-72,40,11*cs);
+  ctx.textAlign='right'; ctx.font='800 26px "Yu Gothic",sans-serif'; ctx.fillStyle='#ffffff';
+  ctx.fillText(String(coins), CW-28, 50);
+  ctx.textAlign='left';
+  ctx.font='700 14px "Yu Gothic",sans-serif'; ctx.fillStyle='rgba(255,255,255,.9)';
+  ctx.strokeStyle='rgba(10,40,60,.6)'; ctx.lineWidth=4;
+  ctx.strokeText('FLOOR',22,94); ctx.fillText('FLOOR',22,94);
+  ctx.font='800 40px "Yu Gothic",sans-serif';
+  ctx.strokeText(String(maxFloor),22,132); ctx.fillText(String(maxFloor),22,132);
+  if(combo>=4){
+    ctx.textAlign='right'; ctx.font='800 22px "Yu Gothic",sans-serif';
+    ctx.fillStyle=combo>=20?'#ffd54a':'#7dffa0';
+    ctx.strokeText('連続 '+combo+'階',CW-22,98); ctx.fillText('連続 '+combo+'階',CW-22,98);
+  }
+  ctx.textAlign='right'; ctx.font='20px sans-serif'; ctx.fillStyle='rgba(255,255,255,.75)';
+  ctx.fillText(muted?'🔇':'🔊', CW-22, CH-18);
+  if(msg){
+    const a=Math.min(1,(1.2-msg.t)*3);
+    ctx.globalAlpha=a; ctx.textAlign='center';
+    ctx.font='800 32px "Yu Gothic",sans-serif';
+    ctx.strokeStyle='rgba(20,40,60,.7)'; ctx.lineWidth=6;
+    ctx.strokeText(msg.text,CX,255-msg.t*28);
+    ctx.fillStyle=msg.color; ctx.fillText(msg.text,CX,255-msg.t*28);
+    ctx.globalAlpha=1;
+  }
+}
+
+/* ===== タイトル / リザルト ===== */
+function drawTitle(){
+  ctx.fillStyle='rgba(8,32,54,.55)'; ctx.fillRect(0,0,CW,CH);
+  ctx.textAlign='center';
+  ctx.font='800 44px "Yu Gothic",sans-serif';
+  ctx.strokeStyle='rgba(10,40,60,.75)'; ctx.lineWidth=8;
+  ctx.strokeText('SPIRAL CASTLE',CX,150); ctx.fillStyle='#ffd54a'; ctx.fillText('SPIRAL CASTLE',CX,150);
+  ctx.font='700 21px "Yu Gothic",sans-serif';
+  ctx.lineWidth=6; ctx.strokeText('ぐるぐる塔のぼり',CX,184);
+  ctx.fillStyle='#eafaff'; ctx.fillText('ぐるぐる塔のぼり',CX,184);
+  const bx=36, by=214, bw=CW-72, bh=352;
+  ctx.fillStyle='rgba(10,36,58,.82)'; rr(bx,by,bw,bh,18); ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,.28)'; ctx.lineWidth=2; ctx.stroke();
+  ctx.font='700 17px "Yu Gothic",sans-serif'; ctx.fillStyle='#eafaff';
+  const L=[
+    '← → で塔がぐるぐる回る（動くのは塔）',
+    'ジャンプは自動。跳びっぱなしで登る',
+    '',
+    '足場は歯抜け。穴に落ちると下の階まで転落',
+    'カウントダウンが 0 になったらおしまい',
+    '',
+    '〈 気をつけるもの 〉',
+    'トゲ足場 … 刺さるとハート-1、時間-2.5秒',
+    '大砲 … 壁から鉄球が落ちてくる',
+    'トゲ車 … 塔のまわりをぐるぐる回る',
+    '灰色の足場 … 乗るとすぐ崩れる',
+    '水色の足場 … 左右に揺れている',
+    '',
+    'コイン +0.8秒 / 10階ごとの金の足場 +2.6秒'
+  ];
+  L.forEach((s,i)=>ctx.fillText(s,CX,by+34+i*23));
+  const bl=0.55+0.45*Math.sin(gameT*4);
+  ctx.globalAlpha=bl;
+  ctx.font='800 24px "Yu Gothic",sans-serif';
+  ctx.strokeStyle='rgba(10,40,60,.7)'; ctx.lineWidth=6;
+  ctx.strokeText('SPACE / タップ でスタート',CX,626);
+  ctx.fillStyle='#7dffa0'; ctx.fillText('SPACE / タップ でスタート',CX,626);
+  ctx.globalAlpha=1;
+  if(best>0){ ctx.font='700 18px "Yu Gothic",sans-serif'; ctx.fillStyle='rgba(255,255,255,.85)';
+    ctx.fillText('BEST  '+best+' 階',CX,664); }
+}
+function drawOver(){
+  ctx.fillStyle='rgba(30,10,20,.6)'; ctx.fillRect(0,0,CW,CH);
+  ctx.textAlign='center';
+  ctx.font='800 40px "Yu Gothic",sans-serif';
+  ctx.strokeStyle='rgba(20,10,20,.7)'; ctx.lineWidth=8;
+  ctx.strokeText(overReason,CX,250); ctx.fillStyle='#ff7d9e'; ctx.fillText(overReason,CX,250);
+  const bx=60, by=286, bw=CW-120, bh=214;
+  ctx.fillStyle='rgba(10,30,50,.9)'; rr(bx,by,bw,bh,18); ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,.3)'; ctx.lineWidth=2; ctx.stroke();
+  ctx.font='700 17px "Yu Gothic",sans-serif'; ctx.fillStyle='rgba(220,235,255,.85)';
+  ctx.fillText('とうたつ階数',CX,by+38);
+  ctx.font='800 58px "Yu Gothic",sans-serif';
+  ctx.fillStyle=(maxFloor>=best&&maxFloor>0)?'#ffd54a':'#ffffff';
+  ctx.fillText(String(maxFloor),CX,by+98);
+  coinIcon(CX-52,by+126,12);
+  ctx.font='800 22px "Yu Gothic",sans-serif'; ctx.fillStyle='#ffffff'; ctx.textAlign='left';
+  ctx.fillText('× '+coins,CX-34,by+134);
+  ctx.textAlign='center';
+  ctx.font='700 16px "Yu Gothic",sans-serif'; ctx.fillStyle='#9fe6ff';
+  ctx.fillText('最大連続 '+bestCombo+'階   /   BEST '+best+'階',CX,by+166);
+  if(maxFloor>=best&&maxFloor>0){
+    ctx.font='800 20px "Yu Gothic",sans-serif'; ctx.fillStyle='#ffd54a';
+    ctx.fillText('★ NEW RECORD ★',CX,by+196);
+  }
+  const bl=0.5+0.5*Math.sin(gameT*4);
+  ctx.globalAlpha=bl;
+  ctx.font='800 24px "Yu Gothic",sans-serif';
+  ctx.strokeStyle='rgba(10,40,60,.7)'; ctx.lineWidth=6;
+  ctx.strokeText('SPACE / タップ でリトライ',CX,584);
+  ctx.fillStyle='#7dffa0'; ctx.fillText('SPACE / タップ でリトライ',CX,584);
+  ctx.globalAlpha=1;
+}
+
+/* ===== ループ ===== */
+let last=performance.now();
+function loop(now){
+  let dt=(now-last)/1000; last=now;
+  dt=Math.min(dt,1/30);
+  if(phase==='play') update(dt);
+  else{
+    gameT+=dt;
+    if(shake>0) shake=Math.max(0,shake-dt*24);
+    if(flashT>0) flashT=Math.max(0,flashT-dt);
+    for(let i=parts.length-1;i>=0;i--){ const p=parts[i]; p.t+=dt; if(p.t>=p.life){parts.splice(i,1);continue;} p.y+=p.vy*dt; p.vy-=560*dt; }
+  }
+  render(dt);
+  requestAnimationFrame(loop);
+}
+
+/* ===== 入力 ===== */
+function start(){ initAudio(); reset(); phase='play'; }
+function action(){ if(phase==='play') return; if(phase==='over'&&gameT<0.4) return; start(); }
+addEventListener('keydown',e=>{
+  const k=e.key;
+  if(k==='ArrowLeft'||k==='a'||k==='A'){ keyL=true; e.preventDefault(); }
+  else if(k==='ArrowRight'||k==='d'||k==='D'){ keyR=true; e.preventDefault(); }
+  else if(k===' '||k==='Enter'){ action(); e.preventDefault(); }
+  else if(k==='m'||k==='M'){ muted=!muted; localStorage.setItem('sc_mute',muted?'1':'0'); if(!muted) initAudio(); }
+  initAudio();
+});
+addEventListener('keyup',e=>{
+  const k=e.key;
+  if(k==='ArrowLeft'||k==='a'||k==='A') keyL=false;
+  if(k==='ArrowRight'||k==='d'||k==='D') keyR=false;
+});
+const ptr=new Map();
+function applyPtr(){ keyL=keyR=false; ptr.forEach(x=>{ if(x<CW/2) keyL=true; else keyR=true; }); }
+function localX(e){ const r=cv.getBoundingClientRect(); return (e.clientX-r.left)/r.width*CW; }
+function localY(e){ const r=cv.getBoundingClientRect(); return (e.clientY-r.top)/r.height*CH; }
+cv.addEventListener('pointerdown',e=>{
+  initAudio(); e.preventDefault();
+  const x=localX(e), y=localY(e);
+  if(x>CW-64&&y>CH-52){ muted=!muted; localStorage.setItem('sc_mute',muted?'1':'0'); return; }
+  if(phase!=='play'){ action(); return; }
+  ptr.set(e.pointerId,x); applyPtr();
+  try{ cv.setPointerCapture(e.pointerId); }catch(err){}
+});
+cv.addEventListener('pointermove',e=>{ if(!ptr.has(e.pointerId)) return; ptr.set(e.pointerId,localX(e)); applyPtr(); });
+function ptrEnd(e){ ptr.delete(e.pointerId); applyPtr(); }
+cv.addEventListener('pointerup',ptrEnd);
+cv.addEventListener('pointercancel',ptrEnd);
+cv.addEventListener('lostpointercapture',ptrEnd);
+addEventListener('blur',()=>{ ptr.clear(); keyL=keyR=false; });
+cv.addEventListener('contextmenu',e=>e.preventDefault());
+
+resize(); reset(); phase='title';
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
