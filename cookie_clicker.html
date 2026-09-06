@@ -783,13 +783,13 @@ function importSave(str){
     const o=JSON.parse(decodeURIComponent(escape(atob(str.trim()))));
     if(!o||typeof o!=='object'||!('cookies' in o)) throw 0;
     S=loadState(o); NUMFMT=S.settings.numFmt||'jp';
-    recalc(); rebuildAll(); save(true);
+    removeGolden(); recalc(); rebuildAll(); save(true);
     return true;
   }catch(e){ return false; }
 }
 function wipeSave(){
   try{ localStorage.removeItem(SAVE_KEY); }catch(e){}
-  S=defState(); NUMFMT='jp'; recalc(); rebuildAll();
+  S=defState(); NUMFMT='jp'; removeGolden(); recalc(); rebuildAll();
 }
 
 /* ============================================================
@@ -862,7 +862,7 @@ var dirtyStore=true, dirtyUp=true, dirtyAch=true;
 const elCount=$('#cCount'), elCps=$('#cCps'), elBank=$('#cBank'), elBuffs=$('#buffs');
 const elBList=$('#bList'), elUpGrid=$('#upGrid'), elTip=$('#tip');
 const rowRef={};
-let upSig='', tipTimer=null;
+let upSig=null, tipTimer=null;
 
 /* ---------- ツールチップ ---------- */
 function showTip(html,e){
@@ -1273,7 +1273,7 @@ function updateMuteBtn(){ $('#btnMute').classList.toggle('off',!S.settings.sfx);
 
 /* ---------- 全再構築 ---------- */
 function rebuildAll(){
-  upSig=''; buildRows(); buildUpGrid(); buildAch(); dirtyAch=false;
+  upSig=null; buildRows(); buildUpGrid(); buildAch(); dirtyAch=false;
   updateBuyBar(); recalc(); updateRows(); renderBuffs();
   if(curTab==='up') buildUpList();
   if(curTab==='stat') renderStats();
@@ -1471,6 +1471,7 @@ function clickCookie(x,y){
   crumbs(x,y);
   sfx('click');
   dirtyStore=true;
+  updateHUD();
 }
 function canvasPos(e){
   const r=cv.getBoundingClientRect();
@@ -1592,26 +1593,26 @@ function tickGolden(){
 /* ============================================================
    メインループ
    ============================================================ */
-let lastT=performance.now(), accSave=0, accUI=0, accAch=0, accWr=0, wrNext=45;
-function frame(now){
-  const dt=Math.min(0.3,(now-lastT)/1000); lastT=now; tsec+=dt;
-  press=Math.max(0,press-dt*5.5);
-  spin*=0.94;
+let lastT=performance.now(), lastLogic=Date.now();
+let accSave=0, accAch=0, accWr=0, wrNext=45;
 
+/* 生産などのロジックは描画(rAF)から独立させる。
+   タブが裏に回ってもタイマーは動き、スリープ復帰時は経過ぶんを追いつき計算する。 */
+function logicTick(){
+  const t=Date.now();
+  let dt=(t-lastLogic)/1000; lastLogic=t;
+  if(!(dt>0)) return;
+  if(dt>180){ // 長時間止まっていた（スリープ・端末ロックなど）
+    const g=C.cps*Math.min(dt,C.offCap)*C.offRate;
+    if(g>0){ earn(g); toast('💤','おかえりなさい','留守のあいだに +'+fmt(g)+' クッキー'); }
+    dt=0.2;
+  }
   if(C.cps>0) earn(C.cps*dt);
   if(S.wrinklers.length){
     const eat=C.cpsNoWr*0.05*dt;
     S.wrinklers.forEach(w=>{ w.belly+=eat; w.grow=Math.min(1,w.belly/Math.max(1,C.cpsNoWr*120)); });
   }
-  stepParts(dt);
   tickBuffs(); tickGolden();
-
-  accUI+=dt;
-  if(accUI>=0.1){
-    accUI=0;
-    updateHUD(); updateRows(); buildUpGrid(); updateBuffTimes();
-    if(curTab==='stat') renderStats();
-  }
   accAch+=dt;
   if(accAch>=0.5){ accAch=0; checkAch(); newsTick(); updateTitle(); }
   accSave+=dt;
@@ -1620,6 +1621,14 @@ function frame(now){
     accWr+=dt;
     if(accWr>=wrNext){ accWr=0; wrNext=rnd(35,80); spawnWrinkler(); }
   }
+  updateHUD(); updateRows(); buildUpGrid(); updateBuffTimes();
+  if(curTab==='stat') renderStats();
+}
+function frame(now){
+  const dt=Math.min(0.3,(now-lastT)/1000); lastT=now; tsec+=dt;
+  press=Math.max(0,press-dt*5.5);
+  spin*=0.94;
+  stepParts(dt);
   draw();
   requestAnimationFrame(frame);
 }
@@ -1704,6 +1713,8 @@ function init(){
   if(!fresh) offlineReward(); else setTimeout(showHelp,400);
   if(S.settings.bgm){ audioInit(); bgmStart(); }
   setTimeout(resize,60);
+  lastLogic=Date.now();
+  setInterval(logicTick,125);
   requestAnimationFrame(t=>{ lastT=t; frame(t); });
 }
 init();
