@@ -263,6 +263,7 @@ const Snd = {
                      this.tone(NF(79),t+.18,.22,'square',.15); break;
       case 'ng':     this.tone(NF(58),t,.18,'sawtooth',.18); this.tone(NF(53),t+.18,.36,'sawtooth',.18); break;
       case 'ui':     this.tone(1000,t,.05,'square',.11); break;
+      case 'ashot':  this.tone(780,t,.07,'square',.055,null,250); break;
     }
   },
   /* --- BGM --- */
@@ -789,7 +790,7 @@ MDL.ice =[mkRock(31,'#7fc4e8','#4f8fb8'),mkRock(97,'#a8dcf2','#5f9cc4')];
 
 /* ============================================================== ゲーム状態 */
 const GY = -24;                        /* 地表の高さ */
-const BX = 34, BYL = -17, BYH = 27;    /* 可動範囲 */
+const BX = 32, BYL = -17, BYH = 27;    /* 可動範囲 */
 const SPD_N = 96, SPD_B = 168, SPD_R = 54;
 
 const S = {
@@ -1101,11 +1102,13 @@ function updFoes(dt){
     }
   }
 }
-function damageFoe(f,d,silent){
+function damageFoe(f,d,silent,by){
   f.hp-=d; f.flash=1;
   if(f.hp>0){ if(!silent) Snd.sfx('hit'); fx('spark',f.x,f.y,f.z,{life:0.2,r:1.6,c:'#ffe37a'}); return 0; }
   boom(f.x,f.y,f.z,f.r*0.95,f.r>5.5);
-  addScore(f.score); S.hits++;
+  if(by){ addScore(Math.round(f.score*0.35)); by.kills++;
+    if(Math.random()<0.2) chat(by,KILLLINE[by.who][rint(KILLLINE[by.who].length)],1.7); }
+  else { addScore(f.score); S.hits++; }
   if(f.drop) dropItem(f.x,f.y,f.z,f.drop);
   const i=FO.indexOf(f); if(i>=0) FO.splice(i,1);
   return 1;
@@ -1137,7 +1140,7 @@ function updBullets(dt){
       const f=FO[j];
       if(Math.abs(f.z-b.z)>f.r+6) continue;
       const dx=f.x-b.x, dy=f.y-b.y, rr=f.r+b.r;
-      if(dx*dx+dy*dy<rr*rr){ damageFoe(f,b.pow); hit=1; break; }
+      if(dx*dx+dy*dy<rr*rr){ damageFoe(f,b.pow,0,b.by); hit=1; break; }
     }
     if(!hit&&BOSS.a) hit=bossHitTest(b);
     if(!hit) hit=propHitTest(b);
@@ -1217,11 +1220,31 @@ function updProps(dt){
 const CREW={hayato:{n:'ハヤト',c:'#ff8a3d',m:'wm1'},mimi:{n:'ミミ',c:'#ff6fb0',m:'wm2'},
             kero:{n:'ケロ',c:'#5ad86a',m:'wm3'},self:{n:'キミ',c:'#4bdcff',m:'ship'},
             cmd:{n:'司令',c:'#ffd85c',m:'ship'}};
+/* 僚機の性格：agg=交戦しやすさ／spdK=機動力／slot=定位置／burst=連射数／jit=射撃のブレ */
+const WPROF={
+  hayato:{agg:0.90,spdK:1.30,slot:[-23,7,62],cd:[1.3,2.6],burst:3,fire:0.16,jit:1.5,range:250,sup:'strike'},
+  mimi  :{agg:0.60,spdK:1.10,slot:[24,-5,54],cd:[2.2,4.0],burst:2,fire:0.20,jit:2.2,range:220,sup:'scout'},
+  kero  :{agg:0.32,spdK:0.92,slot:[-9,-12,72],cd:[3.2,5.6],burst:2,fire:0.24,jit:3.0,range:170,sup:'repair'}
+};
+const ENGLINE={
+  hayato:['こいつはオレがやる！','いっちょ揉んでやるか！','front clear、突っ込むぞ！'],
+  mimi  :['目標ロック、仕掛けるよ！','こっちの敵は引き受けた！','よそ見しないでね、隊長！'],
+  kero  :['ぼ、僕もやってみます…！','え、えいっ！　当たれー！','に、逃げませんってば…！']
+};
+const KILLLINE={
+  hayato:['もらったぁ！','一機、撃墜！','おそいんだよ！'],
+  mimi  :['命中！　やったぁ！','一機おとしたよ！','どんどんいくよ！'],
+  kero  :['あ、当たった…！','や、やった、落ちた！','ぼくでも やれば できる…！']
+};
 function resetWings(){
   WM.length=0;
-  const set=[['hayato',-22,7,52],['mimi',24,-6,64],['kero',-10,-11,78]];
-  for(const s of set) WM.push({who:s[0],ox:s[1],oy:s[2],oz:s[3],x:s[1],y:s[2],z:s[3],
-    alive:1,hp:100,ph:rnd(TAU),bank:0,trouble:null,mdl:MDL[CREW[s[0]].m]});
+  for(const k in WPROF){
+    const pf=WPROF[k];
+    WM.push({who:k,pf:pf,x:pf.slot[0],y:pf.slot[1],z:pf.slot[2],
+      vx:0,vy:0,vz:SPD_N,bank:0,pit:0,alive:1,hp:100,ph:rnd(TAU),ph2:rnd(TAU),
+      st:'form',stT:rnd(2,0.5),cool:rnd(3,0.5),tg:null,fireT:0,burst:0,
+      trouble:null,chat:rnd(14,6),supT:rnd(26,12),kills:0,mdl:MDL[CREW[k].m]});
+  }
 }
 function killWing(w){
   if(!w.alive) return;
@@ -1229,19 +1252,147 @@ function killWing(w){
   radio(w.who,'うわぁーっ！　だ、脱出する…！',3.2);
   if(w.trouble){ w.trouble.tg=null; w.trouble.pat='appr'; w.trouble=null; }
 }
-function updWings(dt){
-  for(const w of WM){
-    if(!w.alive) continue;
-    w.ph+=dt;
-    const tx=P.x+w.ox+Math.sin(w.ph*0.7)*4, ty=P.y+w.oy+Math.cos(w.ph*0.5)*3, tz=P.z+w.oz;
-    w.bank=lerp(w.bank,clamp((tx-w.x)*-0.06,-0.9,0.9),dt*3);
-    w.x=lerp(w.x,tx,1-Math.pow(0.02,dt)); w.y=lerp(w.y,ty,1-Math.pow(0.02,dt));
-    w.z=lerp(w.z,tz,1-Math.pow(0.02,dt));
-    if(w.hp<100) w.hp=Math.min(100,w.hp+3*dt);
-    if(w.trouble&&(FO.indexOf(w.trouble)<0)){
-      w.trouble=null; addScore(500);
-      radio(w.who,['助かった！　恩に着るよ！','さすが隊長、ナイスショット！','ふぅ…あぶなかった！'][rint(3)],2.6);
+/* 僚機のひとりごと：無線が空いていて、その機のクールダウンが明けたときだけ喋る */
+function chat(w,txt,life){
+  if(S.mode!=='play'||RADIO.life>0||w.chat>0) return 0;
+  w.chat=rnd(17,9); radio(w.who,txt,life||2.2); return 1;
+}
+/* 定位置（ゆっくり漂う） */
+function wingSlot(w){
+  const sl=w.pf.slot;
+  return [P.x+sl[0]+Math.sin(w.ph*0.62)*5, P.y+sl[1]+Math.cos(w.ph*0.44)*4,
+          P.z+sl[2]+Math.sin(w.ph2*0.5)*9];
+}
+/* 自分で目標を選ぶ */
+function wingPick(w){
+  const pf=w.pf; let best=null,bd=1e9;
+  for(const f of FO){
+    if(f.k==='rock'&&f.r>7) continue;
+    const dz=f.z-w.z;
+    if(dz<24||dz>pf.range) continue;
+    const d = pf.sup==='scout'
+      ? Math.hypot(f.x-P.x,f.y-P.y)*0.8+Math.max(0,f.z-P.z)*0.28
+      : Math.hypot(f.x-w.x,f.y-w.y)*0.7+dz*0.3;
+    if(d<bd){ bd=d; best=f; }
+  }
+  if(!best&&BOSS.a&&!BOSS.a.dying&&pf.agg>0.5){
+    const dz=BOSS.a.z-w.z;
+    if(dz>30&&dz<pf.range+90) best=BOSS.a;
+  }
+  return best;
+}
+function allyShot(w){
+  const c=CREW[w.who].c, j=w.pf.jit;
+  if(w.burst===0) Snd.sfx('ashot');
+  for(const o of [-1.7,1.7]){
+    PB.push({x:w.x+o,y:w.y+0.1,z:w.z+3,vx:rnd(j,-j)*3,vy:rnd(j*0.7,-j*0.7)*3,vz:288,
+      t:0,life:1.15,r:1.5,pow:1,col:c,home:0,tg:null,big:0,ally:1,by:w});
+  }
+}
+/* 役割ごとの自発的なサポート行動 */
+function wingSupport(w){
+  if(S.mode!=='play'){ w.supT=rnd(20,10); return; }
+  const pf=w.pf; w.supT=rnd(26,15);
+  if(pf.sup==='repair'){
+    if(P.shield<62){
+      PR.push({k:'ring',x:clamp(P.x+rnd(11,-11),-BX,BX),y:clamp(P.y+rnd(8,-8),BYL,BYH),
+        z:P.z+235,r:7.0,got:0,t:0,gold:0,hit:0});
+      w.chat=rnd(17,9);
+      radio(w.who,'応急パーツ、投下します！　リング拾ってください！',2.6);
+      w.supT=rnd(46,32);
+    } else w.supT=rnd(12,7);
+  } else if(pf.sup==='scout'){
+    let n=0; for(const f of FO){ const dz=f.z-P.z; if(dz>60&&dz<420) n++; }
+    let ring=null;
+    for(const q of PR){ if((q.k==='ring'||q.k==='ringg')&&!q.got&&q.z-P.z>90&&q.z-P.z<400){ ring=q; break; } }
+    if(ring&&Math.random()<0.6) chat(w,ring.gold?'前方に金のリング！　ボムが補給できるよ！':'前方にリング、拾っておこう！',2.2);
+    else if(n>=5) chat(w,'前方に敵編隊、'+n+'機！　気をつけて！',2.2);
+    else w.supT=rnd(12,7);
+  } else {
+    let th=null,bd=1e9;
+    for(const f of FO){
+      const dz=f.z-P.z; if(dz<20||dz>240) continue;
+      const d=Math.hypot(f.x-P.x,f.y-P.y); if(d<bd){ bd=d; th=f; }
     }
+    if(th&&bd<20&&!w.trouble){
+      w.tg=th; w.st='engage'; w.stT=rnd(6,3.5); w.burst=0;
+      chat(w,'隊長に張りついてる奴は、オレが落とす！',2.2);
+    } else w.supT=rnd(10,6);
+  }
+}
+function updWings(dt){
+  for(let i=0;i<WM.length;i++){
+    const w=WM[i]; if(!w.alive) continue;
+    const pf=w.pf;
+    w.ph+=dt; w.ph2+=dt; w.stT-=dt; w.cool-=dt; w.chat-=dt; w.supT-=dt;
+    if(w.fireT>0) w.fireT-=dt;
+    if(w.hp<100) w.hp=Math.min(100,w.hp+3.5*dt);
+    /* --- 自律的な状態遷移 --- */
+    if(w.trouble){
+      if(FO.indexOf(w.trouble)<0){
+        w.trouble=null; addScore(500); w.chat=0;
+        radio(w.who,['助かった！　恩に着るよ！','さすが隊長、ナイスショット！','ふぅ…あぶなかった！'][rint(3)],2.6);
+        w.st='form'; w.stT=2; w.cool=1.4;
+      } else w.st='evade';
+    } else if(w.st==='evade'){ w.st='form'; w.stT=1.2; w.cool=1.0; }
+    if(w.st==='engage'){
+      const gone = !w.tg || (FO.indexOf(w.tg)<0 && w.tg!==BOSS.a);
+      if(gone||w.stT<=0){ w.tg=null; w.st='form'; w.stT=rnd(2.4,1.0); w.cool=rnd(pf.cd[1],pf.cd[0]); }
+    } else if(w.st==='form'&&w.cool<=0){
+      const t=wingPick(w);
+      if(t&&Math.random()<pf.agg){
+        w.tg=t; w.st='engage'; w.stT=rnd(6.5,3.2); w.burst=0;
+        if(Math.random()<0.3) chat(w,ENGLINE[w.who][rint(ENGLINE[w.who].length)],1.9);
+      } else w.cool=rnd(1.6,0.6);
+    }
+    /* --- 目標位置 --- */
+    let tx,ty,tz, spdK=pf.spdK;
+    if(w.st==='engage'&&w.tg){
+      const t=w.tg;
+      tx=t.x+Math.sin(w.ph*1.7)*2.6;
+      ty=t.y+1.2+Math.cos(w.ph*1.3)*2.0;
+      tz=clamp(t.z-46,P.z+18,P.z+215);
+      spdK*=1.25;
+    } else if(w.st==='evade'){
+      const e=w.trouble;
+      tx=w.x+Math.sin(w.ph*5.2)*26+(e?(w.x-e.x)*0.7:0);
+      ty=w.y+Math.cos(w.ph*4.1)*17;
+      tz=clamp(P.z+58+Math.sin(w.ph*2.0)*22,P.z+26,P.z+150);
+      spdK*=1.4;
+    } else {
+      const sl=wingSlot(w); tx=sl[0]; ty=sl[1]; tz=sl[2];
+    }
+    /* --- 自機・僚機との分離（かぶって視界をふさがない） --- */
+    if(Math.abs(w.z-P.z)<28&&Math.abs(w.x-P.x)<12&&Math.abs(w.y-P.y)<9){
+      tx += (w.x>=P.x?1:-1)*18; ty += (w.y>=P.y?1:-1)*9;
+    }
+    for(let j=0;j<WM.length;j++){
+      if(j===i) continue;
+      const u=WM[j]; if(!u.alive) continue;
+      if(Math.abs(w.z-u.z)<16&&Math.abs(w.x-u.x)<10&&Math.abs(w.y-u.y)<8){
+        tx += (w.x>=u.x?1:-1)*13; ty += (w.y>=u.y?1:-1)*7;
+      }
+    }
+    /* --- 操縦（速度を持ってバネ追従。自機への剛結合ではない） --- */
+    const mx=62*spdK;
+    w.vx=lerp(w.vx,clamp((tx-w.x)*2.7,-mx,mx),1-Math.pow(0.02,dt));
+    w.vy=lerp(w.vy,clamp((ty-w.y)*2.4,-mx*0.85,mx*0.85),1-Math.pow(0.02,dt));
+    w.vz=lerp(w.vz,P.spd+clamp((tz-w.z)*2.2,-95,140),1-Math.pow(0.05,dt));
+    w.x+=w.vx*dt; w.y+=w.vy*dt; w.z+=w.vz*dt;
+    w.x=clamp(w.x,-62,62);
+    w.y=clamp(w.y,STAGES[S.stage].ground?GY+5:GY-30,GY+70);
+    w.z=clamp(w.z,P.z+14,P.z+265);
+    w.bank=lerp(w.bank,clamp(-w.vx*0.016,-0.95,0.95),1-Math.pow(0.008,dt));
+    w.pit =lerp(w.pit ,clamp(-w.vy*0.008,-0.34,0.34),1-Math.pow(0.02,dt));
+    /* --- 射撃（狙いが合ったときだけバースト） --- */
+    if(w.st==='engage'&&w.tg&&w.fireT<=0&&!w.trouble){
+      const t=w.tg, dz=t.z-w.z;
+      if(dz>14&&dz<210&&Math.abs(t.x-w.x)<7&&Math.abs(t.y-w.y)<6){
+        allyShot(w); w.burst++;
+        if(w.burst>=pf.burst){ w.burst=0; w.fireT=rnd(1.9,0.9); } else w.fireT=pf.fire;
+      }
+    }
+    if(w.supT<=0) wingSupport(w);
   }
 }
 function troubleWing(){
@@ -1249,7 +1400,7 @@ function troubleWing(){
   if(!alive.length) return;
   const w=alive[rint(alive.length)];
   const f=spawnDart(w.x,w.y+6,'chase',{z:P.z+120,hp:4,score:300});
-  f.tg=w; w.trouble=f;
+  f.tg=w; w.trouble=f; w.st='evade'; w.tg=null;
   radio(w.who,['背後に敵！　振りきれない、助けて！','ちょっと！　こっちに敵が張りついてる！','たすけてー！　うしろ、うしろ！'][rint(3)],3);
   Snd.sfx('warn');
 }
@@ -1943,9 +2094,13 @@ function drawScene(){
   /* 僚機 */
   for(const w of WM){
     if(!w.alive) continue;
-    pushModel(w.mdl,w.x,w.y,w.z,0,0,w.bank,0.40,0);
-    pushDisc(w.x-1.2,w.y-0.1,w.z-2.2,0.75,'#ffb03a',0.8,6,0);
-    pushDisc(w.x+1.2,w.y-0.1,w.z-2.2,0.75,'#ffb03a',0.8,6,0);
+    pushModel(w.mdl,w.x,w.y,w.z,w.pit*0.5,0,w.bank,0.40,0);
+    const wc=Math.cos(w.bank), ws=Math.sin(w.bank);
+    const wf=0.9+Math.min(1.6,Math.abs(w.vz-P.spd)*0.012)+Math.sin(S.t*33+w.ph)*0.1;
+    for(const wo of [-1.16,1.16]){
+      pushDisc(w.x+wo*wc,w.y+wo*ws-0.03,w.z-2.1,0.30*wf,'#ffe6a8',0.92,6,0);
+      pushDisc(w.x+wo*wc,w.y+wo*ws-0.03,w.z-2.4-wf*0.5,0.21*wf,'#ff9a3d',0.7,6,0);
+    }
     shadow(w.x,w.z,2.4);
   }
   /* ボス */
@@ -2010,7 +2165,7 @@ function drawFace(who,x,y,r){
   const cr=CREW[who]||CREW.cmd;
   X.save(); X.translate(x,y);
   X.fillStyle='rgba(6,14,32,.9)'; X.strokeStyle=cr.c; X.lineWidth=2;
-  X.beginPath(); X.roundRect(-r-2,-r-2,r*2+4,r*2+4,6); X.fill(); X.stroke();
+  X.beginPath(); X.roundRect(-2,-2,r*2+4,r*2+4,6); X.fill(); X.stroke();
   X.translate(r,r);
   if(who==='hayato'){
     X.fillStyle='#8a5a30'; X.beginPath(); X.ellipse(0,2,r*0.72,r*0.68,0,0,TAU); X.fill();
@@ -2304,8 +2459,8 @@ function update(dt){
   if(BOSS.a) updBoss(dt);
   /* カメラ */
   const bk=P.bank;
-  cam.x=lerp(cam.x,P.x*0.52,1-Math.pow(0.0009,dt));
-  cam.y=lerp(cam.y,P.y*0.44+5.4,1-Math.pow(0.0009,dt));
+  cam.x=lerp(cam.x,P.x*0.55,1-Math.pow(0.0009,dt));
+  cam.y=lerp(cam.y,P.y*0.70+4.2,1-Math.pow(0.0009,dt));
   cam.z=P.z-34-(P.spd-SPD_N)*0.055;
   cam.roll=lerp(cam.roll,-bk*0.085+(P.rollT>0?Math.sin(P.roll)*0.045:0),1-Math.pow(0.004,dt));
   cam.foc=lerp(cam.foc,780-(P.spd-SPD_N)*0.42,1-Math.pow(0.01,dt));
@@ -2314,7 +2469,7 @@ function attract(dt){
   P.z+=46*dt; P.x=Math.sin(S.t*0.5)*11; P.y=3+Math.cos(S.t*0.37)*4;
   P.bank=lerp(P.bank,-Math.cos(S.t*0.5)*0.5,dt*2);
   P.roll=P.bank*0.5; P.spd=SPD_N; P.dead=0; P.charge=0; P.inv=0;
-  cam.x=lerp(cam.x,P.x*0.52,dt*2); cam.y=lerp(cam.y,P.y*0.44+5.4,dt*2);
+  cam.x=lerp(cam.x,P.x*0.55,dt*2); cam.y=lerp(cam.y,P.y*0.70+4.2,dt*2);
   cam.z=P.z-34; cam.roll=lerp(cam.roll,-P.bank*0.085,dt*2);
   for(const w of WM){ w.alive=1; }
   updWings(dt); updFX(dt);
