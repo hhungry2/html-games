@@ -1,0 +1,2332 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>SPY DESCENT 機密の階をおりろ - HTML5 エレベーターアクション風</title>
+<meta name="description" content="HTML5 Canvasで作ったエレベーターアクション風の潜入アクション。エレベーターとエスカレーターでビルを降り、赤い扉の極秘文書をすべて集めて地下の逃走車へ。しゃがみ撃ち・ジャンプキック・照明を撃って暗闇に。スマホ/PC対応。">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #060812;
+  background-image:
+    radial-gradient(circle at 50% -10%, #17244a 0%, transparent 60%),
+    radial-gradient(circle at 85% 110%, #3a1020 0%, transparent 55%);
+  color: #dce6f5;
+  font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 8px;
+  overflow: hidden;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.wrap { width: 100%; max-width: 460px; display: flex; flex-direction: column; gap: 6px; }
+
+.topbar {
+  display: flex; align-items: center; gap: 8px;
+  font-family: "Consolas", monospace; font-size: 11px; color: #7f90b4;
+}
+.topbar .title { flex: 1; letter-spacing: .12em; color: #5fd8ff; font-weight: 700; }
+.sbtn {
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14);
+  color: #cfe0f5; border-radius: 6px; padding: 4px 9px;
+  font-size: 11px; font-family: inherit; cursor: pointer;
+}
+.sbtn:active { background: rgba(255,255,255,.18); }
+.sbtn.off { color: #5a6683; }
+
+.hud {
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  font-family: "Consolas", monospace; font-size: 11px; color: #c6d6ec;
+  background: rgba(120,170,255,.07); border: 1px solid rgba(140,190,255,.16);
+  border-radius: 6px; padding: 5px 9px;
+}
+.hud b { color: #5fd8ff; }
+.hud .doc { color: #ff7a86; }
+.hud .right { margin-left: auto; }
+
+.screen { position: relative; width: 100%; }
+
+canvas#game {
+  display: block; width: 100%;
+  background: #05070e;
+  border: 2px solid #24304f; border-radius: 4px;
+  image-rendering: pixelated; image-rendering: crisp-edges;
+}
+
+.overlay {
+  position: absolute; inset: 0;
+  background: rgba(5,8,18,.93); border-radius: 4px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  justify-content: safe center;
+  gap: 7px; padding: 10px; text-align: center; overflow-y: auto;
+}
+.overlay > * { flex: none; }
+.overlay.hidden { display: none; }
+
+.logo {
+  font-family: "Consolas", monospace;
+  font-size: clamp(19px, 6.6vw, 29px); font-weight: 700; letter-spacing: .1em;
+  color: #5fd8ff;
+  text-shadow: 0 3px 0 #123a63, 0 0 16px rgba(95,216,255,.4);
+}
+.sub { font-size: 11px; color: #8fa4c6; letter-spacing: .08em; margin-top: -2px; }
+.rules { list-style: none; font-size: 10px; line-height: 1.5; color: #b8cae4; max-width: 356px; text-align: left; }
+.rules li { padding-left: 12px; position: relative; }
+.rules li::before { content: "\25B8"; position: absolute; left: 0; color: #ff5f6d; }
+.rules b { color: #ffe08a; }
+.ic { color: #7fd0ff; }
+.rd { color: #ff7a86; }
+
+.menu { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 2px; }
+.btn {
+  background: linear-gradient(#5fd8ff, #1f7fc4); color: #04203a;
+  border: none; border-radius: 7px; padding: 9px 20px;
+  font-size: 13px; font-weight: 700; font-family: inherit; cursor: pointer;
+  box-shadow: 0 3px 0 #10456f;
+}
+.btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #10456f; }
+.btn.sub2 { background: linear-gradient(#7a89ad, #47536f); color: #eaf2ff; box-shadow: 0 3px 0 #232b3d; }
+.btn.sub2:active { box-shadow: 0 1px 0 #232b3d; }
+.keys { font-size: 10px; color: #728299; line-height: 1.7; }
+
+.diffsel { display: flex; gap: 6px; }
+.diffsel .mbtn {
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.18);
+  color: #c2d2e8; border-radius: 6px; padding: 5px 12px;
+  font-size: 11px; font-family: "Consolas", monospace; cursor: pointer;
+}
+.diffsel .mbtn.on { background: #5fd8ff; color: #04203a; border-color: #5fd8ff; font-weight: 700; }
+.floors { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; }
+.fcard {
+  width: 96px; background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.16); border-radius: 6px;
+  padding: 4px 3px; cursor: pointer; font-family: "Consolas", monospace;
+}
+.fcard:active { background: rgba(255,255,255,.2); }
+.fcard.lock { opacity: .32; }
+.fcard .fn { font-size: 11px; color: #5fd8ff; font-weight: 700; line-height: 1.3; }
+.fcard .fl { font-size: 7.5px; color: #8fa4c6; line-height: 1.25; }
+
+/* ---------- 操作パッド ---------- */
+.pad {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 2px 4px 4px; touch-action: none;
+}
+.dpad { position: relative; width: 118px; height: 118px; flex: none; }
+.dbtn {
+  position: absolute; width: 40px; height: 40px;
+  background: rgba(255,255,255,.09); border: 1px solid rgba(255,255,255,.2);
+  border-radius: 8px; display: flex; align-items: center; justify-content: center;
+  color: #d8e6f8; font-size: 13px;
+}
+.dbtn.on { background: rgba(95,216,255,.5); color: #04203a; }
+.dbtn.up    { left: 39px; top: 0; }
+.dbtn.down  { left: 39px; top: 78px; }
+.dbtn.left  { left: 0;  top: 39px; }
+.dbtn.right { left: 78px; top: 39px; }
+.dpad .hint {
+  position: absolute; left: 39px; top: 39px; width: 40px; height: 40px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; color: #63718c; text-align: center; line-height: 1.1;
+}
+.abtns { display: flex; gap: 10px; align-items: center; }
+.abtn {
+  width: 64px; height: 64px; border-radius: 50%;
+  background: rgba(255,255,255,.09); border: 2px solid rgba(255,255,255,.22);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: #eaf2ff; font-family: "Consolas", monospace;
+  font-size: 14px; font-weight: 700; line-height: 1;
+}
+.abtn small { font-size: 8px; color: #93a6c2; margin-top: 3px; }
+.abtn.s { border-color: rgba(255,120,120,.6); }
+.abtn.j { border-color: rgba(120,200,255,.55); }
+.abtn.on { background: rgba(95,216,255,.45); color: #04203a; }
+.abtn.on small { color: #073047; }
+
+@media (max-width: 480px) {
+  .dpad { width: 104px; height: 104px; }
+  .dbtn { width: 36px; height: 36px; }
+  .dbtn.up { left: 34px; top: 0; }
+  .dbtn.down { left: 34px; top: 68px; }
+  .dbtn.left { left: 0; top: 34px; }
+  .dbtn.right { left: 68px; top: 34px; }
+  .dpad .hint { left: 34px; top: 34px; width: 36px; height: 36px; }
+}
+@media (min-width: 760px) and (min-height: 560px) { .pad { opacity: .55; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <div class="topbar">
+    <span class="title">SPY DESCENT</span>
+    <button class="sbtn" id="soundBtn">SOUND ON</button>
+    <button class="sbtn" id="pauseBtn">PAUSE</button>
+  </div>
+
+  <div class="hud">
+    <span>SCORE <b id="hudScore">0</b></span>
+    <span>HI <b id="hudHi">0</b></span>
+    <span class="right">STAGE <b id="hudStage">1</b></span>
+    <span>DOC <b class="doc" id="hudDoc">0/4</b></span>
+    <span>TIME <b id="hudTime">400</b></span>
+    <span id="hudLives">&#9679;&#9679;</span>
+  </div>
+
+  <div class="screen">
+    <canvas id="game" width="320" height="208"></canvas>
+
+    <div class="overlay" id="titleScreen">
+      <h1 class="logo">SPY DESCENT</h1>
+      <p class="sub">- 機密の階をおりろ -</p>
+      <ul class="rules">
+        <li>屋上から潜入。<b class="rd">赤い扉</b>の<b>極秘文書</b>を全部集めて最下階の逃走車へ</li>
+        <li><b>エレベーター</b>に乗り<span class="ic">↑↓</span>で上下。乗り口のそばで<span class="ic">↑↓</span>なら<b>よび出し</b></li>
+        <li><b>エスカレーター</b>は乗り口で<span class="ic">↑↓</span>。シャフトに2階ぶん落ちると死ぬ</li>
+        <li><span class="ic">↓</span><b>しゃがみ</b>で弾をかわす。ジャンプ中ショットで<b>ジャンプキック</b></li>
+        <li><b>天井の照明</b>を撃つと暗闇に。エレベーターで敵を<b>押しつぶす</b>と高得点</li>
+      </ul>
+      <div class="menu">
+        <button class="btn" id="startBtn">GAME START</button>
+      </div>
+      <p class="keys">PC: ←→ 移動 / ↑↓ エレベーター・しゃがみ / Z ショット / X ジャンプ<br>P: ポーズ　M: サウンド</p>
+    </div>
+
+    <div class="overlay hidden" id="selectScreen">
+      <h2 class="logo" style="font-size:19px">MISSION SELECT</h2>
+      <div class="diffsel" id="diffSel">
+        <div class="mbtn on" data-diff="0">やさしい</div>
+        <div class="mbtn" data-diff="1">ふつう</div>
+        <div class="mbtn" data-diff="2">むずかしい</div>
+      </div>
+      <p class="sub" id="selHint">クリアしたビルから始められる</p>
+      <div class="floors" id="stageList"></div>
+      <p class="keys">HI-SCORE <b id="selHi">0</b>　到達 <b id="selMax">STAGE 1</b></p>
+      <div class="menu"><button class="btn sub2" id="backBtn">BACK</button></div>
+    </div>
+
+    <div class="overlay hidden" id="msgScreen">
+      <h2 class="logo" id="msgTitle">STAGE 1</h2>
+      <p class="sub" id="msgLine"></p>
+      <p class="keys" id="msgSub"></p>
+    </div>
+
+    <div class="overlay hidden" id="resultScreen">
+      <h2 class="logo" id="resultTitle">MISSION FAILED</h2>
+      <p class="sub" id="resultLine"></p>
+      <p class="keys" id="resultDetail"></p>
+      <div class="menu">
+        <button class="btn" id="retryBtn">RETRY</button>
+        <button class="btn sub2" id="titleBtn">TITLE</button>
+      </div>
+    </div>
+
+    <div class="overlay hidden" id="pauseScreen">
+      <h2 class="logo">PAUSE</h2>
+      <div class="menu">
+        <button class="btn" id="resumeBtn">RESUME</button>
+        <button class="btn sub2" id="quitBtn">TITLE</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="pad">
+    <div class="dpad">
+      <div class="dbtn up"    data-dir="up">&#9650;</div>
+      <div class="dbtn left"  data-dir="left">&#9664;</div>
+      <div class="dbtn right" data-dir="right">&#9654;</div>
+      <div class="dbtn down"  data-dir="down">&#9660;</div>
+      <div class="hint">↑↓</div>
+    </div>
+    <div class="abtns">
+      <div class="abtn j" data-btn="j">JUMP<small>とぶ</small></div>
+      <div class="abtn s" data-btn="s">SHOT<small>うつ</small></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ============================================================
+   SPY DESCENT 機密の階をおりろ
+   エレベーターアクション風 潜入アクション
+   stage生成 / 物理 / 敵AI / 描画 / 音 を1ファイルに統合
+   ============================================================ */
+(function (global) {
+'use strict';
+
+/* ============================================================
+   定数
+   ============================================================ */
+var VIEW_W = 320, VIEW_H = 208;
+var FLOOR_H = 60;            // 1階ぶんの高さ
+var SLAB = 8;                // 床スラブの厚み
+var WALLX = 12;              // ビルの左右の外壁
+var PW = 12, PH = 28, PCH = 17;   // 主人公の幅 / 立ち高さ / しゃがみ高さ
+var EW = 12, EH = 28, ECH = 17;
+var WALK = 100;
+var GRAV = 900;
+var JUMP_V = 196;            // 約21pxジャンプ（天井は52px）
+var CAR_W = 38, CAR_H = 34;  // エレベーターのかご
+var ELEV_SPD = 54;
+var BUL_SPD = 260;
+var FATAL_FALL = FLOOR_H * 1.55;   // これ以上落ちると死亡
+var DARK_TIME = 9.5;
+var EXIT_W = 74;
+
+var DIFF = [
+  { name: 'やさしい', spawn: 1.55, espd: 0.82, fire: 1.6,  time: 480, fatal: false },
+  { name: 'ふつう',   spawn: 1.0,  espd: 1.0,  fire: 1.0,  time: 400, fatal: true },
+  { name: 'むずかしい', spawn: 0.72, espd: 1.16, fire: 0.72, time: 340, fatal: true }
+];
+
+var STAGES = [
+  { name: 'ネオ・トーキョー本社ビル', hue: 0,  floors: 8,  docs: 3 },
+  { name: 'グランドホテル 深夜',      hue: 1,  floors: 9,  docs: 4 },
+  { name: '海底研究プラント',         hue: 2,  floors: 10, docs: 4 },
+  { name: '軍事開発タワー',           hue: 3,  floors: 11, docs: 5 },
+  { name: '敵組織 本部ビル',          hue: 4,  floors: 12, docs: 6 }
+];
+
+/* 階層ごとの内装カラー */
+var THEME = [
+  { wall: '#232c46', wall2: '#2c3757', line: '#1a2138', win: '#3d6ea8', slab: '#4d5878', slabT: '#8f9cc4' },
+  { wall: '#3a2b3c', wall2: '#48364b', line: '#2a1f2c', win: '#a8764a', slab: '#5e4a5c', slabT: '#b39ab0' },
+  { wall: '#1f3a3c', wall2: '#274a4c', line: '#16292b', win: '#3fa0a8', slab: '#3d5f61', slabT: '#87b6b8' },
+  { wall: '#2e3325', wall2: '#3a402e', line: '#20241a', win: '#9aa84a', slab: '#4f573c', slabT: '#a3ac82' },
+  { wall: '#331f28', wall2: '#402630', line: '#241419', win: '#c0485a', slab: '#5a3a44', slabT: '#ad8290' }
+];
+
+function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+function rnd(a, b) { return a + Math.random() * (b - a); }
+function sgn(v) { return v < 0 ? -1 : (v > 0 ? 1 : 0); }
+function makeRng(seed) {
+  var s = (seed >>> 0) || 1;
+  return function () { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+}
+function ri(rng, a, b) { return a + Math.floor(rng() * (b - a + 1)); }
+function el(id) { return document.getElementById(id); }
+
+/* ============================================================
+   Sound - Web Audio
+   ============================================================ */
+var Sound = (function () {
+  var ctx = null, master = null, mus = null, enabled = true, ready = false;
+  var bgm = { on: false, next: 0, step: 0, key: 0, tempo: 0.13 };
+
+  function init() {
+    if (ready) return;
+    ready = true;
+    var AC = global.AudioContext || global.webkitAudioContext;
+    if (!AC) { enabled = false; return; }
+    try { ctx = new AC(); } catch (e) { ctx = null; enabled = false; return; }
+    master = ctx.createGain(); master.gain.value = 0.28; master.connect(ctx.destination);
+    mus = ctx.createGain(); mus.gain.value = 0.5; mus.connect(master);
+  }
+  function now() { return ctx ? ctx.currentTime : 0; }
+
+  function tone(o) {
+    if (!ctx || !enabled) return;
+    var t0 = now() + (o.at || 0);
+    var osc = ctx.createOscillator(), g = ctx.createGain();
+    osc.type = o.type || 'square';
+    osc.frequency.setValueAtTime(o.freq, t0);
+    if (o.to) osc.frequency.exponentialRampToValueAtTime(Math.max(20, o.to), t0 + o.dur);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(o.vol || 0.16, t0 + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + o.dur);
+    osc.connect(g); g.connect(o.mus ? mus : master);
+    osc.start(t0); osc.stop(t0 + o.dur + 0.03);
+  }
+  function noise(dur, vol, freq, at, hp) {
+    if (!ctx || !enabled) return;
+    var t0 = now() + (at || 0);
+    var len = Math.max(1, Math.floor(ctx.sampleRate * dur));
+    var buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+    for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    var src = ctx.createBufferSource(); src.buffer = buf;
+    var f = ctx.createBiquadFilter(); f.type = hp ? 'highpass' : 'lowpass'; f.frequency.value = freq || 1600;
+    var g = ctx.createGain(); g.gain.value = vol || 0.18;
+    src.connect(f); f.connect(g); g.connect(master);
+    src.start(t0); src.stop(t0 + dur + 0.02);
+  }
+
+  /* スパイ風のベースリフ */
+  var BASS = [0, 0, 3, 0, 5, 0, 3, -2];
+  var LEAD = [12, 15, 19, 15, 17, 15, 12, 10];
+  function nf(s) { return 220 * Math.pow(2, s / 12); }
+  function musicUpdate() {
+    if (!ctx || !enabled || !bgm.on) return;
+    var t = now();
+    if (bgm.next < t) bgm.next = t + 0.05;
+    while (bgm.next < t + 0.28) {
+      var i = bgm.step % 8, bar = Math.floor(bgm.step / 8) % 4;
+      tone({ freq: nf(BASS[i] - 12 + bgm.key), dur: bgm.tempo * 1.5, vol: 0.11, type: 'triangle', at: bgm.next - t, mus: 1 });
+      if (bar % 2 === 1 && (i === 1 || i === 4 || i === 6)) {
+        tone({ freq: nf(LEAD[i] + bgm.key), dur: bgm.tempo * 0.7, vol: 0.05, type: 'square', at: bgm.next - t, mus: 1 });
+      }
+      if (i % 2 === 0) noise(0.03, 0.035, 5000, bgm.next - t, true);
+      bgm.step++; bgm.next += bgm.tempo;
+    }
+  }
+
+  return {
+    on: function () { init(); enabled = true; },
+    off: function () { enabled = false; bgm.on = false; },
+    isOn: function () { return enabled; },
+    resume: function () { init(); if (ctx && ctx.state === 'suspended') ctx.resume(); },
+    music: function (on, key, tempo) {
+      init(); bgm.on = !!on && enabled; bgm.key = key || 0; bgm.tempo = tempo || 0.13;
+      if (on) { bgm.next = now(); bgm.step = 0; }
+    },
+    hurry: function (f) { bgm.tempo = f ? 0.105 : 0.13; },
+    musicUpdate: musicUpdate,
+    ui: function () { tone({ freq: 700, dur: 0.06, vol: 0.12 }); },
+    shot: function () { tone({ freq: 900, to: 260, dur: 0.06, vol: 0.14, type: 'square' }); noise(0.05, 0.1, 3000, 0, true); },
+    eshot: function () { tone({ freq: 620, to: 200, dur: 0.06, vol: 0.09, type: 'sawtooth' }); },
+    hit: function () { noise(0.1, 0.26, 1300); tone({ freq: 200, to: 70, dur: 0.1, vol: 0.16, type: 'square' }); },
+    kick: function () { noise(0.1, 0.3, 900); tone({ freq: 150, to: 60, dur: 0.12, vol: 0.18, type: 'square' }); },
+    jump: function () { tone({ freq: 260, to: 540, dur: 0.1, vol: 0.1, type: 'square' }); },
+    step: function () { noise(0.035, 0.045, 700); },
+    glass: function () { noise(0.24, 0.2, 4200, 0, true); tone({ freq: 1800, to: 300, dur: 0.2, vol: 0.08, type: 'square' }); },
+    door: function () { tone({ freq: 300, to: 420, dur: 0.16, vol: 0.11, type: 'triangle' }); },
+    doc: function () {
+      var f = [784, 988, 1175, 1568];
+      for (var i = 0; i < 4; i++) tone({ freq: f[i], dur: 0.14, vol: 0.16, at: i * 0.075, type: 'square' });
+    },
+    item: function () { tone({ freq: 880, to: 1400, dur: 0.14, vol: 0.14, type: 'square' }); },
+    elev: function () { tone({ freq: 90, dur: 0.14, vol: 0.05, type: 'sawtooth' }); },
+    ding: function () { tone({ freq: 1320, dur: 0.22, vol: 0.13, type: 'sine' }); tone({ freq: 990, dur: 0.3, vol: 0.1, at: 0.11, type: 'sine' }); },
+    crush: function () { noise(0.3, 0.36, 500); tone({ freq: 110, to: 40, dur: 0.28, vol: 0.2, type: 'square' }); },
+    fall: function () { tone({ freq: 700, to: 90, dur: 0.55, vol: 0.14, type: 'sawtooth' }); },
+    dead: function () {
+      tone({ freq: 420, to: 110, dur: 0.5, vol: 0.2, type: 'sawtooth' });
+      noise(0.3, 0.22, 900);
+    },
+    car: function () { noise(0.7, 0.16, 480); tone({ freq: 120, to: 300, dur: 0.6, vol: 0.12, type: 'sawtooth' }); },
+    clear: function () {
+      var f = [523, 659, 784, 1047, 988, 1175, 1568];
+      for (var i = 0; i < f.length; i++) tone({ freq: f[i], dur: 0.18, vol: 0.18, at: i * 0.13, type: 'square' });
+    },
+    over: function () {
+      var f = [392, 349, 311, 262, 196];
+      for (var i = 0; i < f.length; i++) tone({ freq: f[i], dur: 0.34, vol: 0.18, at: i * 0.26, type: 'triangle' });
+    }
+  };
+})();
+
+/* ============================================================
+   ステージ生成
+   ============================================================ */
+function surfY(i) { return (i + 1) * FLOOR_H; }
+function ceilY(i) { return i * FLOOR_H + SLAB; }
+
+function buildStage(n) {
+  var def = STAGES[n % STAGES.length];
+  var lap = Math.floor(n / STAGES.length);
+  var rng = makeRng(90210 + n * 104729);
+  var S = {
+    idx: n, W: 600, floors: Math.min(14, def.floors + lap),
+    name: def.name, theme: THEME[def.hue % THEME.length],
+    shafts: [], stairs: [], doors: [], lamps: [], dark: [], docNeed: 0
+  };
+  var F = S.floors, i, j;
+  for (i = 0; i < F; i++) S.dark.push(0);
+
+  /* --- エレベーターシャフト：全階をカバーする鎖状に配置 --- */
+  var nsh = F <= 9 ? 2 : 3;
+  var lanes = [70, 165, 262, 358, 450];
+  var pool = lanes.slice(), pick = [];
+  for (i = 0; i < nsh; i++) pick.push(pool.splice(Math.floor(rng() * pool.length), 1)[0]);
+  if (rng() < 0.5) pick.sort(function (a, b) { return a - b; });
+  else pick.sort(function (a, b) { return b - a; });
+  var stp = (F - 1) / nsh;
+  for (i = 0; i < nsh; i++) {
+    var t = Math.round(i * stp), b = Math.round((i + 1) * stp);
+    if (i > 0) t = Math.max(0, t - 1);
+    if (b <= t) b = t + 1;
+    if (b > F - 1) b = F - 1;
+    var startFl = i === 0 ? t : ri(rng, t, b);
+    S.shafts.push({
+      x: pick[i], top: t, bot: b, y: surfY(startFl),
+      cmd: 0, call: -1, moving: 0, ding: 0
+    });
+  }
+
+  /* --- エスカレーター --- */
+  function shaftGapAt(fl, x0, x1) {
+    for (var k = 0; k < S.shafts.length; k++) {
+      var sh = S.shafts[k];
+      if (fl >= sh.top && fl <= sh.bot) {
+        if (x1 > sh.x - 26 && x0 < sh.x + CAR_W + 26) return true;
+      }
+    }
+    return false;
+  }
+  var RAMP = 74;
+  for (i = 0; i < F - 1; i++) {
+    if (rng() > 0.68) continue;
+    for (j = 0; j < 12; j++) {
+      var right = rng() < 0.5;
+      var x0 = ri(rng, 50, S.W - 60 - RAMP);
+      var x1 = right ? x0 + RAMP : x0;
+      var xa = right ? x0 : x0 + RAMP;
+      var lo = Math.min(xa, x1), hi = Math.max(xa, x1);
+      if (shaftGapAt(i, lo, hi) || shaftGapAt(i + 1, lo, hi)) continue;
+      if (i + 1 === F - 1 && hi > S.W - EXIT_W - 40) continue;
+      var bad = false;
+      for (var k = 0; k < S.stairs.length; k++) {
+        var st = S.stairs[k];
+        if ((st.u === i || st.u === i - 1 || st.u === i + 1) && hi > st.lo - 24 && lo < st.hi + 24) { bad = true; break; }
+      }
+      if (bad) continue;
+      S.stairs.push({ u: i, x0: xa, x1: x1, lo: lo, hi: hi });
+      break;
+    }
+  }
+
+  /* --- 扉 --- */
+  function freeSpot(fl, w) {
+    for (var tries = 0; tries < 30; tries++) {
+      var x = ri(rng, 34, S.W - 34 - w);
+      var c = x + w / 2, ok = true, k;
+      for (k = 0; k < S.shafts.length; k++) {
+        var sh = S.shafts[k];
+        if (fl >= sh.top && fl <= sh.bot && x < sh.x + CAR_W + 12 && x + w > sh.x - 12) { ok = false; break; }
+      }
+      if (!ok) continue;
+      for (k = 0; k < S.stairs.length; k++) {
+        var st = S.stairs[k];
+        if ((st.u === fl || st.u === fl - 1) && x < st.hi + 12 && x + w > st.lo - 12) { ok = false; break; }
+      }
+      if (!ok) continue;
+      if (fl === F - 1 && x + w > S.W - EXIT_W - 16) continue;
+      for (k = 0; k < S.doors.length; k++) {
+        var d = S.doors[k];
+        if (d.fl === fl && x < d.x + d.w + 10 && x + w > d.x - 10) { ok = false; break; }
+      }
+      if (!ok) continue;
+      for (k = 0; k < S.lamps.length; k++) {
+        if (S.lamps[k].fl === fl && Math.abs(S.lamps[k].x - c) < 20) { ok = false; break; }
+      }
+      if (ok) return x;
+    }
+    return -1;
+  }
+
+  var redFloors = [];
+  var cand = [];
+  for (i = 1; i < F - 1; i++) cand.push(i);
+  var need = Math.min(cand.length, def.docs + Math.min(2, lap));
+  for (i = 0; i < need; i++) redFloors.push(cand.splice(Math.floor(rng() * cand.length), 1)[0]);
+  S.docNeed = redFloors.length;
+
+  for (i = 1; i < F; i++) {
+    var cnt = ri(rng, 2, 3);
+    for (j = 0; j < cnt; j++) {
+      var dw = 20, dx = freeSpot(i, dw);
+      if (dx < 0) continue;
+      S.doors.push({ fl: i, x: dx, w: dw, type: 'blue', mode: 0, done: false, spawn: false, open: 0, t: 0, cd: rnd(1.5, 6) });
+    }
+  }
+  for (i = 0; i < redFloors.length; i++) {
+    var rf = redFloors[i], rx = freeSpot(rf, 20);
+    if (rx < 0) {
+      /* 場所がなければ青扉を1つ赤に変える */
+      for (j = 0; j < S.doors.length; j++) {
+        if (S.doors[j].fl === rf && S.doors[j].type === 'blue') { S.doors[j].type = 'red'; rx = 0; break; }
+      }
+      if (rx < 0) { S.docNeed--; }
+      continue;
+    }
+    S.doors.push({ fl: rf, x: rx, w: 20, type: 'red', mode: 0, done: false, spawn: false, open: 0, t: 0, cd: 999 });
+  }
+
+  /* --- 天井の照明（屋上をのぞく） --- */
+  for (i = 1; i < F; i++) {
+    var lc = ri(rng, 2, 3);
+    for (j = 0; j < lc; j++) {
+     for (var tri = 0; tri < 22; tri++) {
+      var lx = ri(rng, 40, S.W - 40), ok2 = true, k2;
+      for (k2 = 0; k2 < S.shafts.length; k2++) {
+        var sh2 = S.shafts[k2];
+        if (i >= sh2.top && i <= sh2.bot && lx > sh2.x - 14 && lx < sh2.x + CAR_W + 14) { ok2 = false; break; }
+      }
+      for (k2 = 0; k2 < S.lamps.length; k2++) {
+        if (S.lamps[k2].fl === i && Math.abs(S.lamps[k2].x - lx) < 78) { ok2 = false; break; }
+      }
+      for (k2 = 0; k2 < S.doors.length; k2++) {
+        var dd = S.doors[k2];
+        if (dd.fl === i && lx > dd.x - 8 && lx < dd.x + dd.w + 8) { ok2 = false; break; }
+      }
+      for (k2 = 0; k2 < S.stairs.length; k2++) {
+        var ss = S.stairs[k2];
+        if ((ss.u === i - 1 || ss.u === i) && lx > ss.lo - 12 && lx < ss.hi + 12) { ok2 = false; break; }
+      }
+      if (ok2) { S.lamps.push({ fl: i, x: lx, alive: true }); break; }
+     }
+    }
+  }
+
+  /* --- 窓のパターン（見た目用） --- */
+  S.win = [];
+  for (i = 0; i < F; i++) {
+    var row = [];
+    for (j = 0; j < 14; j++) row.push(rng() < 0.42 ? 1 : 0);
+    S.win.push(row);
+  }
+  S.exitX = S.W - EXIT_W - 16;
+  S.starSeed = ri(rng, 1, 99999);
+  return S;
+}
+
+/* ============================================================
+   ジオメトリ / 当たり判定
+   ============================================================ */
+function slabSolid(S, fl, x) {
+  if (fl < 0 || fl >= S.floors) return false;
+  var i;
+  for (i = 0; i < S.shafts.length; i++) {
+    var sh = S.shafts[i];
+    if (fl >= sh.top && fl <= sh.bot - 1 && x > sh.x - 1 && x < sh.x + CAR_W + 1) return false;
+  }
+  return true;
+}
+
+var sfY = [], sfC = [], sfN = 0;
+function collectSurf(S, x) {
+  sfN = 0;
+  var i;
+  for (i = 0; i < S.floors; i++) {
+    if (slabSolid(S, i, x)) { sfY[sfN] = surfY(i); sfC[sfN] = null; sfN++; }
+  }
+  for (i = 0; i < S.shafts.length; i++) {
+    var sh = S.shafts[i];
+    if (x > sh.x - 2 && x < sh.x + CAR_W + 2) { sfY[sfN] = sh.y; sfC[sfN] = sh; sfN++; }
+  }
+}
+function snapGround(S, x, y, up, dn) {
+  collectSurf(S, x);
+  var best = -1;
+  for (var i = 0; i < sfN; i++) {
+    var sy = sfY[i];
+    if (sy >= y - up && sy <= y + dn) { if (best < 0 || sy < sfY[best]) best = i; }
+  }
+  return best;
+}
+function landCheck(S, x, py, ny) {
+  collectSurf(S, x);
+  var best = -1;
+  for (var i = 0; i < sfN; i++) {
+    var sy = sfY[i];
+    if (sy >= py - 1 && sy <= ny) { if (best < 0 || sy < sfY[best]) best = i; }
+  }
+  return best;
+}
+function hasGround(S, x, y) { return snapGround(S, x, y, 8, 12) >= 0; }
+function floorOf(y) { return Math.round(y / FLOOR_H) - 1; }
+
+/* ---- エスカレーター ---- */
+var STAIR_T = 0.8;
+function stairAt(S, ent, want) {
+  var fl = floorOf(ent.y);
+  if (Math.abs(ent.y - surfY(fl)) > 3) return null;
+  for (var i = 0; i < S.stairs.length; i++) {
+    var st = S.stairs[i];
+    if (want > 0 && st.u === fl && Math.abs(ent.x - st.x0) < 12) return st;
+    if (want < 0 && st.u === fl - 1 && Math.abs(ent.x - st.x1) < 12) return st;
+  }
+  return null;
+}
+function enterStair(ent, st, dir) {
+  ent.stair = st;
+  ent.stairT = dir > 0 ? 0 : 1;
+  ent.stairD = dir;
+  ent.ride = null; ent.onGround = true; ent.vx = 0; ent.vy = 0;
+}
+function updateStair(ent, dt, up, down) {
+  var st = ent.stair;
+  if (up && !down) ent.stairD = -1;
+  else if (down && !up) ent.stairD = 1;
+  ent.stairT += ent.stairD * dt / STAIR_T;
+  var fin = ent.stairT >= 1 || ent.stairT <= 0;
+  ent.stairT = clamp(ent.stairT, 0, 1);
+  ent.x = st.x0 + (st.x1 - st.x0) * ent.stairT;
+  ent.y = surfY(st.u) + FLOOR_H * ent.stairT;
+  ent.onGround = true; ent.ride = null; ent.vx = 0; ent.vy = 0;
+  ent.fall0 = ent.y; ent.landDrop = 0;
+  ent.anim += dt * 7;
+  ent.dir = (st.x1 > st.x0 ? 1 : -1) * (ent.stairD > 0 ? 1 : -1);
+  if (fin) ent.stair = null;
+}
+
+/* 汎用の移動処理 */
+function moveEnt(S, e, dt) {
+  var nx = e.x + e.vx * dt;
+  nx = clamp(nx, WALLX + 5, S.W - WALLX - 5);
+  e.x = nx;
+
+  if (e.ride) {
+    var c = e.ride;
+    if (e.x < c.x - 3 || e.x > c.x + CAR_W + 3) { e.ride = null; e.onGround = false; e.fall0 = e.y; }
+    else { e.y = c.y; e.onGround = true; e.vy = 0; e.fall0 = e.y; }
+  }
+  if (!e.ride) {
+    if (e.onGround) {
+      var b = snapGround(S, e.x, e.y, 8, 11);
+      if (b >= 0) { e.y = sfY[b]; e.ride = sfC[b]; e.vy = 0; e.fall0 = e.y; }
+      else { e.onGround = false; e.fall0 = e.y; }
+    }
+    if (!e.onGround) {
+      e.vy += GRAV * dt;
+      var py = e.y, ny = e.y + e.vy * dt;
+      if (e.vy > 0) {
+        var b2 = landCheck(S, e.x, py, ny);
+        if (b2 >= 0) {
+          e.y = sfY[b2]; e.ride = sfC[b2]; e.onGround = true; e.vy = 0;
+          e.landDrop = e.y - e.fall0; e.fall0 = e.y;
+        } else { e.y = ny; e.landDrop = 0; }
+      } else { e.y = ny; e.landDrop = 0; }
+    } else e.landDrop = 0;
+  } else e.landDrop = 0;
+}
+
+/* ============================================================
+   ゲーム状態
+   ============================================================ */
+var CV = el('game'), CTX = CV.getContext('2d');
+CTX.imageSmoothingEnabled = false;
+
+var G = {
+  state: 'title', score: 0, hi: 0, lives: 2, stage: 0, diff: 1, maxStage: 0,
+  docs: 0, S: null, p: null,
+  ens: [], bul: [], parts: [], items: [], pops: [],
+  camX: 0, camY: 0, shake: 0, blink: 0, flash: 0,
+  time: 400, timeAcc: 0, spawnT: 3, heli: 0,
+  msgT: 0, clearT: 0, banner: '', bannerT: 0, bannerCol: '#ffe08a',
+  nextLife: 20000, resultClear: false, hurry: false
+};
+
+function newPlayer() {
+  return {
+    x: 48, y: surfY(0), vx: 0, vy: 0, dir: 1, onGround: true, ride: null,
+    crouch: false, kick: 0, cool: 0, shootT: 0, inv: 2.2, dead: 0, deadT: 0,
+    anim: 0, step: 0, fall0: surfY(0), landDrop: 0, win: 0, stair: null, stairT: 0, stairD: 1
+  };
+}
+function makeEnemy(fl, x, kind) {
+  var d = DIFF[G.diff];
+  return {
+    x: x, y: surfY(fl), vx: 0, vy: 0, dir: -1, kind: kind, st: 'walk', t: 0,
+    crouch: kind === 1, fireCd: rnd(0.5, 1.6) * d.fire, onGround: true, ride: null,
+    fall0: surfY(fl), landDrop: 0, dead: 0, deadT: 0, anim: 0, squash: 0,
+    spd: (kind === 2 ? 82 : kind === 1 ? 40 : 56) * d.espd,
+    aimDur: (kind === 2 ? 0.3 : 0.44) * (kind === 1 ? 1.15 : 1),
+    board: false, home: x, waitT: 0, commitT: 0, commitSh: null, rest: 0, stair: null, stairT: 0, stairD: 1
+  };
+}
+function addPart(x, y, vx, vy, life, col, sz, g) {
+  if (G.parts.length > 190) return;
+  G.parts.push({ x: x, y: y, vx: vx, vy: vy, t: life, mt: life, col: col, sz: sz || 2, g: g === undefined ? 1 : g });
+}
+function burst(x, y, n, col, pw) {
+  for (var i = 0; i < n; i++) {
+    var a = rnd(0, Math.PI * 2), s = rnd(20, pw || 90);
+    addPart(x, y, Math.cos(a) * s, Math.sin(a) * s - 30, rnd(0.3, 0.7), col, rnd(1, 3) | 0);
+  }
+}
+function pop(x, y, txt, col) {
+  G.pops.push({ x: x, y: y, t: 0.95, txt: txt, col: col || '#ffe08a' });
+}
+function addScore(v, x, y, txt) {
+  G.score += v;
+  if (G.score >= G.nextLife) { G.nextLife += 20000; G.lives++; Sound.item(); pop(G.p.x, G.p.y - 40, '1UP', '#7dffa8'); }
+  if (x !== undefined) pop(x, y, txt || ('' + v), '#ffe08a');
+  if (G.score > G.hi) G.hi = G.score;
+}
+
+/* ============================================================
+   ステージ開始
+   ============================================================ */
+function startStage(n) {
+  G.stage = n;
+  G.S = buildStage(n);
+  var S = G.S;
+  G.p = newPlayer();
+  G.ens.length = 0; G.bul.length = 0; G.parts.length = 0;
+  G.items.length = 0; G.pops.length = 0;
+  G.docs = 0;
+  G.time = DIFF[G.diff].time; G.timeAcc = 0;
+  G.spawnT = 3.0; G.heli = 3.4; G.clearT = 0; G.hurry = false;
+  G.banner = ''; G.bannerT = 0;
+  updateCam(0, true);
+  Sound.hurry(false);
+
+  el('msgTitle').textContent = 'STAGE ' + (n + 1);
+  el('msgLine').textContent = S.name;
+  el('msgSub').innerHTML = '極秘文書 <b style="color:#ff7a86">' + S.docNeed + '</b> 件を回収して最下階へ　／　' + S.floors + ' FLOORS';
+  el('msgScreen').classList.remove('hidden');
+  G.state = 'msg'; G.msgT = 2.3;
+  updateHud();
+  Sound.music(true, (n % 5) * 2 - 2, 0.13);
+}
+
+function respawnPlayer() {
+  var S = G.S, p = G.p;
+  var fl = clamp(floorOf(p.y), 0, S.floors - 1);
+  var bx = -1, bd = 1e9;
+  for (var x = 30; x < S.W - 30; x += 4) {
+    if (!slabSolid(S, fl, x)) continue;
+    var d = Math.abs(x - p.x);
+    if (d < bd) { bd = d; bx = x; }
+  }
+  if (bx < 0) { fl = 0; bx = 48; }
+  p.x = bx; p.y = surfY(fl);
+  p.vx = 0; p.vy = 0; p.onGround = true; p.ride = null; p.fall0 = p.y;
+  p.dead = 0; p.deadT = 0; p.inv = 2.6; p.crouch = false; p.kick = 0; p.cool = 0;
+  p.stair = null; p.rest = 0;
+  /* 近くの敵を追い払う */
+  for (var i = G.ens.length - 1; i >= 0; i--) {
+    var e = G.ens[i];
+    if (Math.abs(e.y - p.y) < FLOOR_H && Math.abs(e.x - p.x) < 150) G.ens.splice(i, 1);
+  }
+  G.bul.length = 0;
+  G.spawnT = 2.2;
+}
+
+function killPlayer(reason) {
+  var p = G.p;
+  if (p.dead || p.inv > 0 && reason !== 'time' && reason !== 'fall') return;
+  if (p.dead) return;
+  p.dead = 1; p.deadT = 0; p.vx = 0;
+  p.rest = reason === 'crush' ? 1 : 0;
+  p.vy = reason === 'fall' ? 40 : -120;
+  p.reason = reason;
+  G.shake = 8;
+  Sound.dead();
+  Sound.music(false);
+  burst(p.x, p.y - 14, 14, '#ff5f6d', 130);
+}
+
+function loseLife() {
+  G.lives--;
+  if (G.lives < 0) {
+    G.state = 'result';
+    G.resultClear = false;
+    saveStore();
+    showResult(false);
+  } else {
+    if (G.p.reason === 'time') { G.time = Math.max(90, Math.floor(DIFF[G.diff].time * 0.45)); G.hurry = false; Sound.hurry(false); }
+    respawnPlayer();
+    Sound.music(true, (G.stage % 5) * 2 - 2, G.hurry ? 0.105 : 0.13);
+  }
+  updateHud();
+}
+
+/* ============================================================
+   カメラ
+   ============================================================ */
+function updateCam(dt, snap) {
+  var p = G.p, S = G.S;
+  if (!p || !S) return;
+  var tx = clamp(p.x - VIEW_W / 2, 0, S.W - VIEW_W);
+  var maxY = Math.max(-18, surfY(S.floors - 1) + SLAB + 14 - VIEW_H);
+  var ty = clamp(p.y - VIEW_H * 0.63, -18, maxY);
+  if (snap) { G.camX = tx; G.camY = ty; }
+  else {
+    var k = Math.min(1, dt * 9);
+    G.camX += (tx - G.camX) * k;
+    G.camY += (ty - G.camY) * k;
+  }
+}
+
+/* ============================================================
+   エレベーター
+   ============================================================ */
+function updateCars(dt) {
+  var S = G.S, p = G.p, i, j;
+  for (i = 0; i < S.shafts.length; i++) {
+    var sh = S.shafts[i];
+    var mv = 0;
+    if (sh.cmd !== 0) { mv = sh.cmd; sh.call = -1; }
+    else if (sh.call >= 0) {
+      var d = sh.call - sh.y;
+      if (Math.abs(d) < 1.6) { sh.y = sh.call; sh.call = -1; Sound.ding(); }
+      else mv = sgn(d);
+    }
+    var prev = sh.y;
+    if (mv !== 0) {
+      sh.y = clamp(sh.y + mv * ELEV_SPD * dt, surfY(sh.top), surfY(sh.bot));
+      sh.moving = 1;
+      sh.snd = (sh.snd || 0) - dt;
+      if (sh.snd <= 0) { sh.snd = 0.16; Sound.elev(); }
+    } else sh.moving = 0;
+    sh.cmd = 0;
+
+    var fl = Math.round(sh.y / FLOOR_H) - 1;
+    if (Math.abs(sh.y - surfY(fl)) < 1.2) {
+      if (sh.lastFl !== fl) { sh.lastFl = fl; if (sh.moving) sh.ding = 0.5; }
+    } else sh.lastFl = -99;
+    if (sh.ding > 0) sh.ding -= dt;
+
+    /* 下降中の押しつぶし */
+    if (sh.y > prev + 0.01) {
+      for (j = 0; j < G.ens.length; j++) {
+        var e = G.ens[j];
+        if (e.dead || e.ride === sh) continue;
+        if (e.x < sh.x - 2 || e.x > sh.x + CAR_W + 2) continue;
+        var h = e.crouch ? ECH : EH;
+        if (sh.y < e.y - 1 && sh.y > e.y - h) {
+          e.dead = 2; e.deadT = 0; e.squash = 1; e.vx = 0;
+          addScore(1500, e.x, e.y - 10, '1500');
+          Sound.crush(); G.shake = 6;
+          burst(e.x, e.y - 4, 12, '#ff5f6d', 90);
+        }
+      }
+      if (!p.dead && p.ride !== sh && p.inv <= 0) {
+        if (p.x > sh.x - 2 && p.x < sh.x + CAR_W + 2) {
+          var ph = p.crouch ? PCH : PH;
+          if (sh.y < p.y - 1 && sh.y > p.y - ph) killPlayer('crush');
+        }
+      }
+    }
+  }
+}
+
+/* ============================================================
+   扉
+   ============================================================ */
+function doorOpened(d) {
+  var S = G.S;
+  if (d.type === 'red' && !d.done) {
+    d.done = true; d.mode = 4;
+    G.docs++;
+    addScore(1000, d.x + d.w / 2, surfY(d.fl) - 34, 'SECRET +1000');
+    Sound.doc();
+    G.flash = 0.35;
+    for (var i = 0; i < 16; i++) addPart(d.x + d.w / 2, surfY(d.fl) - 18, rnd(-40, 40), rnd(-90, -20), rnd(0.5, 1.1), '#ffe08a', 2);
+    G.banner = G.docs >= S.docNeed ? '文書ぜんぶ回収！ 最下階の逃走車へ！' : ('極秘文書 ' + G.docs + ' / ' + S.docNeed);
+    G.bannerT = 2.2; G.bannerCol = G.docs >= S.docNeed ? '#7dffa8' : '#ffe08a';
+    updateHud();
+    return;
+  }
+  if (d.spawn) {
+    d.spawn = false;
+    var kind = 0, r = Math.random();
+    if (G.stage >= 1 && r < 0.24) kind = 2;
+    else if (r < 0.42) kind = 1;
+    var e = makeEnemy(d.fl, d.x + d.w / 2, kind);
+    e.dir = G.p.x < e.x ? -1 : 1;
+    G.ens.push(e);
+    d.mode = 3;
+    Sound.door();
+    return;
+  }
+  /* プレイヤーが開けた青い扉 */
+  var r2 = Math.random();
+  if (r2 < 0.30) {
+    G.items.push({ x: d.x + d.w / 2, y: surfY(d.fl) - 30, vy: -40, type: r2 < 0.06 ? 'gem' : 'coin', t: 11 });
+    Sound.item();
+  } else if (r2 < 0.42) {
+    G.items.push({ x: d.x + d.w / 2, y: surfY(d.fl) - 30, vy: -40, type: 'clock', t: 11 });
+    Sound.item();
+  } else if (r2 < 0.66) {
+    var e2 = makeEnemy(d.fl, d.x + d.w / 2, Math.random() < 0.3 ? 2 : 0);
+    e2.dir = G.p.x < e2.x ? -1 : 1;
+    G.ens.push(e2);
+  }
+  d.mode = 2; d.t = 0.55;
+}
+
+function updateDoors(dt) {
+  var S = G.S, p = G.p;
+  var pf = floorOf(p.y), onFloor = p.onGround && Math.abs(p.y - surfY(pf)) < 3 && !p.ride;
+  for (var i = 0; i < S.doors.length; i++) {
+    var d = S.doors[i];
+    if (d.cd > 0) d.cd -= dt;
+    if (d.mode === 1) {
+      d.open += dt * 4.2;
+      if (d.open >= 1) { d.open = 1; doorOpened(d); }
+    } else if (d.mode === 2) {
+      d.t -= dt; if (d.t <= 0) d.mode = 3;
+    } else if (d.mode === 3) {
+      d.open -= dt * 3; if (d.open <= 0) { d.open = 0; d.mode = 0; d.cd = rnd(4, 9); }
+    }
+    /* プレイヤーが扉の前に立つ */
+    if (!d.mode && !d.done && !p.dead && onFloor && d.fl === pf &&
+        p.x > d.x - 3 && p.x < d.x + d.w + 3) {
+      d.mode = 1; d.spawn = false;
+      if (d.type === 'blue') Sound.door();
+    }
+  }
+}
+
+function trySpawnEnemy() {
+  var S = G.S, p = G.p, pf = floorOf(p.y);
+  var cands = [], i;
+  for (i = 0; i < S.doors.length; i++) {
+    var d = S.doors[i];
+    if (d.type !== 'blue' || d.mode !== 0 || d.cd > 0) continue;
+    var df = Math.abs(d.fl - pf);
+    if (df > 2) continue;
+    if (df === 0 && Math.abs(d.x + d.w / 2 - p.x) < 46) continue;
+    cands.push(d);
+  }
+  if (!cands.length) return;
+  var t = cands[Math.floor(Math.random() * cands.length)];
+  t.mode = 1; t.spawn = true; t.cd = rnd(5, 10);
+}
+
+/* ============================================================
+   プレイヤー更新
+   ============================================================ */
+function playerShot(inp, onStair) {
+  var p = G.p;
+  if (!inp.fireEdge) return;
+  if (!p.onGround && !onStair) {
+    if (p.kick <= 0) { p.kick = 0.34; Sound.kick(); }
+    return;
+  }
+  if (p.cool > 0) return;
+  var by = p.y - (p.crouch ? 9 : 21);
+  G.bul.push({ x: p.x + p.dir * 8, y: by, vx: p.dir * BUL_SPD, own: 0, t: 1.6 });
+  p.cool = 0.24; p.shootT = 0.13;
+  Sound.shot();
+  addPart(p.x + p.dir * 11, by, p.dir * 60, rnd(-20, 20), 0.12, '#ffe9a8', 2, 0);
+}
+
+function updatePlayer(dt, inp) {
+  var S = G.S, p = G.p;
+
+  if (p.dead) {
+    p.deadT += dt;
+    if (!p.rest) {
+      p.vy += GRAV * dt;
+      var ny = p.y + p.vy * dt;
+      var bi = p.vy > 0 ? landCheck(S, p.x, p.y, ny) : -1;
+      if (bi >= 0) { p.y = sfY[bi]; p.vy = 0; p.rest = 1; }
+      else if (ny > surfY(S.floors - 1) + 6) { p.y = surfY(S.floors - 1) + 6; p.rest = 1; }
+      else p.y = ny;
+    }
+    if (p.deadT > 1.7) loseLife();
+    return;
+  }
+  if (p.win) {
+    p.winT += dt;
+    return;
+  }
+  if (p.inv > 0) p.inv -= dt;
+  if (p.cool > 0) p.cool -= dt;
+  if (p.shootT > 0) p.shootT -= dt;
+  if (p.kick > 0) p.kick -= dt;
+
+  if (p.stair) {
+    /* --- エスカレーターに乗っている --- */
+    p.crouch = false;
+    updateStair(p, dt, inp.up, inp.down);
+    if (inp.lx !== 0) p.dir = inp.lx;
+    playerShot(inp, true);
+  } else {
+    p.crouch = !!inp.down && !p.ride && p.onGround;
+
+    /* エスカレーターに乗る */
+    if (p.onGround && !p.ride && (inp.up || inp.down)) {
+      var wantS = inp.down ? 1 : -1;
+      var stn = stairAt(S, p, wantS);
+      if (stn) {
+        enterStair(p, stn, wantS);
+        p.crouch = false;
+        Sound.step();
+        return;
+      }
+    }
+
+    /* エレベーター操作 */
+    if (p.ride) {
+      var mv = (inp.up ? -1 : 0) + (inp.down ? 1 : 0);
+      p.ride.cmd = mv;
+    } else if (p.onGround && (inp.up || inp.down)) {
+      var pf = floorOf(p.y);
+      if (Math.abs(p.y - surfY(pf)) < 3) {
+        for (var i = 0; i < S.shafts.length; i++) {
+          var sh = S.shafts[i];
+          if (pf < sh.top || pf > sh.bot) continue;
+          var inside = p.x > sh.x - 2 && p.x < sh.x + CAR_W + 2;
+          var near = p.x > sh.x - 38 && p.x < sh.x + CAR_W + 38;
+          if (!inside && near) { if (Math.abs(sh.y - surfY(pf)) > 1.5) sh.call = surfY(pf); }
+        }
+      }
+    }
+
+    /* 移動 */
+    var spd = WALK * (p.crouch ? 0.42 : 1) * (p.onGround ? 1 : 0.92);
+    if (inp.lx !== 0) {
+      p.vx = inp.lx * spd;
+      if (p.onGround || !p.kick) p.dir = inp.lx;
+    } else p.vx = 0;
+
+    /* ジャンプ */
+    if (inp.jumpEdge && p.onGround && !p.crouch) {
+      p.vy = -JUMP_V; p.onGround = false; p.ride = null; p.fall0 = p.y;
+      Sound.jump();
+    }
+
+    playerShot(inp, false);
+
+    moveEnt(S, p, dt);
+
+    /* 落下ダメージ */
+    if (p.landDrop > FATAL_FALL && DIFF[G.diff].fatal) { killPlayer('fall'); return; }
+    if (p.landDrop > 20) { G.shake = Math.min(5, p.landDrop / 22); Sound.step(); }
+
+    /* 足音 */
+    if (p.onGround && Math.abs(p.vx) > 10) {
+      p.anim += dt * 9;
+      p.step -= dt;
+      if (p.step <= 0) { p.step = 0.28; Sound.step(); }
+    } else p.anim += dt * 2;
+  }
+
+  /* アイテム回収 */
+  for (var k = G.items.length - 1; k >= 0; k--) {
+    var it = G.items[k];
+    if (Math.abs(it.x - p.x) < 12 && Math.abs(it.y - (p.y - 10)) < 20) {
+      if (it.type === 'coin') addScore(300, it.x, it.y, '300');
+      else if (it.type === 'gem') addScore(2000, it.x, it.y, '2000');
+      else if (it.type === 'clock') { G.time = Math.min(999, G.time + 40); pop(it.x, it.y, 'TIME+40', '#7fd0ff'); }
+      Sound.item();
+      G.items.splice(k, 1);
+    }
+  }
+
+  /* 出口 */
+  var bf = S.floors - 1;
+  if (p.onGround && floorOf(p.y) === bf && p.x > S.exitX + 6) {
+    if (G.docs >= S.docNeed) startEscape();
+    else if (G.bannerT <= 0) {
+      G.banner = '極秘文書が たりない！ のこり ' + (S.docNeed - G.docs);
+      G.bannerT = 2.0; G.bannerCol = '#ff7a86';
+    }
+  }
+}
+
+function startEscape() {
+  var p = G.p;
+  p.win = 1; p.winT = 0; p.vx = 0;
+  G.state = 'clear'; G.clearT = 0;
+  Sound.music(false);
+  Sound.clear();
+  G.bannerT = 0;
+}
+
+/* ============================================================
+   敵の更新
+   ============================================================ */
+function stairTarget(S, e, myFl, want) {
+  var best = null, bd = 1e9;
+  for (var i = 0; i < S.stairs.length; i++) {
+    var st = S.stairs[i], tx = null;
+    if (want > 0 && st.u === myFl) tx = st.x0;
+    else if (want < 0 && st.u === myFl - 1) tx = st.x1;
+    if (tx === null) continue;
+    var d = Math.abs(tx - e.x);
+    if (d < bd) { bd = d; best = tx; }
+  }
+  return best;
+}
+
+function updateEnemy(e, dt, idx) {
+  var S = G.S, p = G.p;
+  if (e.dead) {
+    e.deadT += dt;
+    if (e.dead === 1 && !e.rest) {
+      e.vy += GRAV * dt * 0.7;
+      e.x = clamp(e.x + e.vx * dt, WALLX + 5, S.W - WALLX - 5);
+      var ny = e.y + e.vy * dt;
+      var bi = e.vy > 0 ? landCheck(S, e.x, e.y, ny) : -1;
+      if (bi >= 0) { e.y = sfY[bi]; e.vy = 0; e.vx = 0; e.rest = 1; }
+      else if (ny > surfY(S.floors - 1) + 6) { e.y = surfY(S.floors - 1) + 6; e.rest = 1; }
+      else e.y = ny;
+    }
+    if (e.deadT > 1.1) G.ens.splice(idx, 1);
+    return;
+  }
+  e.t += dt;
+  if (e.fireCd > 0) e.fireCd -= dt;
+  if (e.stair) { updateStair(e, dt, false, false); return; }
+
+  var myFl = floorOf(e.y);
+  var pFl = floorOf(p.y);
+  var dark = S.dark[clamp(myFl, 0, S.floors - 1)] > 0;
+  var sameFl = myFl === pFl && Math.abs(e.y - p.y) < FLOOR_H * 0.75;
+  var d = DIFF[G.diff];
+
+  if (e.st === 'aim') {
+    e.vx = 0;
+    if (e.t > e.aimDur) {
+      var by = e.y - (e.crouch ? 9 : 21);
+      G.bul.push({ x: e.x + e.dir * 8, y: by, vx: e.dir * BUL_SPD * 0.82, own: 1, t: 1.8 });
+      addPart(e.x + e.dir * 11, by, e.dir * 50, 0, 0.12, '#ffb0b0', 2, 0);
+      Sound.eshot();
+      e.st = 'walk'; e.t = 0;
+      e.fireCd = rnd(0.9, 2.1) * d.fire;
+    }
+    moveEnt(S, e, dt);
+    return;
+  }
+
+  var moved = false;
+  e.board = false;
+
+  /* プレイヤーがエレベーターに乗っていたら乗り込む */
+  if (p.ride && !e.ride && !p.dead) {
+    var sh = p.ride;
+    if (myFl >= sh.top && myFl <= sh.bot && Math.abs(sh.y - surfY(myFl)) < 5 &&
+        Math.abs(e.y - surfY(myFl)) < 4 && Math.abs(e.x - (sh.x + CAR_W / 2)) < 90) {
+      e.dir = sgn(sh.x + CAR_W / 2 - e.x) || 1;
+      e.vx = e.dir * e.spd;
+      e.board = true; moved = true;
+      /* 乗り込みを決めた敵は足元を見ない：かごを動かすと穴に落ちる */
+      e.commitT = 2.4; e.commitSh = sh;
+    }
+  }
+  /* かごが行ってしまってもしばらくは突っ込んでくる */
+  if (!moved && e.commitT > 0 && e.commitSh && !e.ride) {
+    e.dir = sgn(e.commitSh.x + CAR_W / 2 - e.x) || 1;
+    e.vx = e.dir * e.spd;
+    moved = true;
+  }
+
+  if (!moved) {
+    if (sameFl && !dark) {
+      var dx = p.x - e.x;
+      e.dir = dx < 0 ? -1 : 1;
+      var ad = Math.abs(dx);
+      if (e.kind === 1) e.crouch = true;
+      if (ad < 160 && e.fireCd <= 0 && e.waitT <= 0) {
+        e.st = 'aim'; e.t = 0;
+        if (e.kind !== 1) e.crouch = Math.random() < 0.26 + G.diff * 0.06;
+        moveEnt(S, e, dt);
+        return;
+      }
+      if (e.kind === 1) {
+        e.vx = ad > 120 ? e.dir * e.spd : 0;
+      } else if (ad > 44) e.vx = e.dir * e.spd;
+      else { e.vx = 0; e.waitT = 0.3; }
+      moved = true;
+    } else {
+      e.crouch = false;
+      var want = pFl > myFl ? 1 : (pFl < myFl ? -1 : 0);
+      if (want !== 0) {
+        var sn = stairAt(S, e, want);
+        if (sn) { enterStair(e, sn, want); return; }
+      }
+      var tx = want !== 0 ? stairTarget(S, e, myFl, want) : null;
+      if (tx !== null) {
+        e.dir = tx > e.x ? 1 : -1;
+        e.vx = e.dir * e.spd * 0.95;
+      } else {
+        /* うろつく */
+        e.vx = e.dir * e.spd * 0.7;
+      }
+      moved = true;
+    }
+  }
+  if (e.waitT > 0) e.waitT -= dt;
+  if (e.commitT > 0) e.commitT -= dt;
+
+  /* 足元チェック（乗り込み中はしない） */
+  if (e.onGround && !e.board && e.commitT <= 0 && e.vx !== 0) {
+    if (!hasGround(S, e.x + sgn(e.vx) * 10, e.y)) { e.vx = 0; e.dir = -e.dir; }
+  }
+  if (dark) e.vx *= 0.55;
+  if (e.x < WALLX + 14 && e.vx < 0) { e.vx = 0; e.dir = 1; }
+  if (e.x > S.W - WALLX - 14 && e.vx > 0) { e.vx = 0; e.dir = -1; }
+
+  e.anim += Math.abs(e.vx) * dt * 0.09;
+  moveEnt(S, e, dt);
+
+  if (e.landDrop > FATAL_FALL) {
+    e.dead = 1; e.deadT = 0; e.vx = 0; e.vy = 0;
+    addScore(1000, e.x, e.y - 12, '1000');
+    Sound.fall();
+    burst(e.x, e.y - 6, 8, '#8fa4c6', 70);
+  }
+}
+
+/* ============================================================
+   弾 / 照明 / 破片
+   ============================================================ */
+function hitLamp(S, lp) {
+  lp.alive = false;
+  S.dark[lp.fl] = DARK_TIME;
+  addScore(200, lp.x, ceilY(lp.fl) + 22, '200');
+  Sound.glass();
+  for (var i = 0; i < 12; i++) {
+    addPart(lp.x, ceilY(lp.fl) + 24, rnd(-70, 70), rnd(-30, 40), rnd(0.4, 0.9), '#ffe9a8', rnd(1, 3) | 0);
+  }
+}
+
+function updateBullets(dt) {
+  var S = G.S, p = G.p, i, j;
+  for (i = G.bul.length - 1; i >= 0; i--) {
+    var b = G.bul[i];
+    var px = b.x;
+    b.x += b.vx * dt; b.t -= dt;
+    var gone = b.t <= 0 || b.x < WALLX || b.x > S.W - WALLX;
+    if (gone) {
+      addPart(b.x, b.y, rnd(-30, 30), rnd(-30, 30), 0.2, '#ffe9a8', 1, 0);
+      G.bul.splice(i, 1); continue;
+    }
+    var hit = false;
+    if (b.own === 0) {
+      for (j = 0; j < G.ens.length; j++) {
+        var e = G.ens[j];
+        if (e.dead) continue;
+        var h = e.crouch ? ECH : EH;
+        if (b.x > e.x - 7 && b.x < e.x + 7 && b.y > e.y - h && b.y < e.y - 2) {
+          e.dead = 1; e.deadT = 0; e.vx = sgn(b.vx) * 46; e.vy = -70; e.onGround = false;
+          addScore(e.kind === 2 ? 500 : 300, e.x, e.y - 20, '' + (e.kind === 2 ? 500 : 300));
+          Sound.hit();
+          burst(b.x, b.y, 7, '#ff5f6d', 80);
+          hit = true; break;
+        }
+      }
+      if (!hit) {
+        var bf = floorOf(b.y + 30);
+        for (j = 0; j < S.lamps.length; j++) {
+          var lp = S.lamps[j];
+          if (!lp.alive || lp.fl !== bf) continue;
+          var ly0 = ceilY(lp.fl) + 8, ly1 = ceilY(lp.fl) + 36;
+          if (b.x > lp.x - 10 && b.x < lp.x + 10 && b.y > ly0 && b.y < ly1) {
+            hitLamp(S, lp); hit = true; break;
+          }
+        }
+      }
+    } else {
+      if (!p.dead && !p.win && p.inv <= 0) {
+        var ph = p.crouch ? PCH : PH;
+        if (b.x > p.x - 6 && b.x < p.x + 6 && b.y > p.y - ph && b.y < p.y - 1) {
+          killPlayer('shot'); hit = true;
+        }
+      }
+    }
+    if (hit) G.bul.splice(i, 1);
+  }
+}
+
+function updateKick() {
+  var p = G.p;
+  if (p.kick <= 0.06 || p.kick >= 0.30) return;
+  var kx = p.x + p.dir * 12, ky = p.y - 14;
+  for (var i = 0; i < G.ens.length; i++) {
+    var e = G.ens[i];
+    if (e.dead) continue;
+    if (Math.abs(e.x - kx) < 12 && Math.abs(e.y - 12 - ky) < 20) {
+      e.dead = 1; e.deadT = 0; e.vx = p.dir * 120; e.vy = -130; e.onGround = false;
+      addScore(800, e.x, e.y - 22, '800');
+      Sound.kick(); G.shake = 4;
+      burst(e.x, e.y - 14, 9, '#ffe08a', 110);
+      p.vy = -110;
+    }
+  }
+}
+
+function updateParts(dt) {
+  var i;
+  for (i = G.parts.length - 1; i >= 0; i--) {
+    var q = G.parts[i];
+    q.t -= dt;
+    if (q.t <= 0) { G.parts.splice(i, 1); continue; }
+    q.x += q.vx * dt; q.y += q.vy * dt;
+    q.vy += GRAV * 0.55 * q.g * dt;
+  }
+  for (i = G.pops.length - 1; i >= 0; i--) {
+    var s = G.pops[i];
+    s.t -= dt; s.y -= dt * 18;
+    if (s.t <= 0) G.pops.splice(i, 1);
+  }
+  for (i = G.items.length - 1; i >= 0; i--) {
+    var it = G.items[i];
+    it.t -= dt;
+    if (it.t <= 0) { G.items.splice(i, 1); continue; }
+    it.vy += GRAV * 0.6 * dt;
+    it.y += it.vy * dt;
+    var fl = floorOf(it.y + 8);
+    var gy = surfY(clamp(fl, 0, G.S.floors - 1)) - 8;
+    if (it.y > gy) { it.y = gy; it.vy = 0; }
+  }
+}
+
+/* ============================================================
+   メイン更新
+   ============================================================ */
+function update(dt, inp) {
+  var S = G.S, p = G.p, i;
+
+  if (G.bannerT > 0) G.bannerT -= dt;
+  if (G.flash > 0) G.flash -= dt;
+  if (G.shake > 0) G.shake = Math.max(0, G.shake - dt * 22);
+  if (G.heli > 0) G.heli -= dt;
+  G.blink += dt;
+
+  if (G.state === 'clear') {
+    G.clearT += dt;
+    updateParts(dt);
+    updateCam(dt);
+    if (G.clearT > 3.4) nextStage();
+    return;
+  }
+
+  /* 時間 */
+  if (!p.dead && !p.win) {
+    G.timeAcc += dt;
+    while (G.timeAcc >= 0.55) {
+      G.timeAcc -= 0.55; G.time--;
+      if (G.time === 60) { G.hurry = true; Sound.hurry(true); G.banner = 'HURRY UP!'; G.bannerT = 2; G.bannerCol = '#ff7a86'; }
+      if (G.time <= 0) { G.time = 0; killPlayer('time'); break; }
+      if ((G.time & 3) === 0) updateHud();
+    }
+  }
+
+  /* 暗闇 */
+  for (i = 0; i < S.floors; i++) if (S.dark[i] > 0) S.dark[i] -= dt;
+
+  updateCars(dt);
+  updatePlayer(dt, inp);
+  if (!p.dead) { updateDoors(dt); updateKick(); }
+
+  for (i = G.ens.length - 1; i >= 0; i--) updateEnemy(G.ens[i], dt, i);
+  updateBullets(dt);
+  updateParts(dt);
+
+  /* 敵の出現 */
+  if (!p.dead && !p.win) {
+    G.spawnT -= dt;
+    var maxE = 3 + Math.min(3, G.stage) + (G.diff === 2 ? 1 : 0);
+    var alive = 0;
+    for (i = 0; i < G.ens.length; i++) if (!G.ens[i].dead) alive++;
+    if (G.spawnT <= 0) {
+      if (alive < maxE) trySpawnEnemy();
+      G.spawnT = rnd(1.6, 3.2) * DIFF[G.diff].spawn * (G.hurry ? 0.6 : 1);
+    }
+  }
+
+  updateCam(dt);
+  Sound.musicUpdate();
+}
+
+function nextStage() {
+  var S = G.S;
+  var bonus = G.time * 20 + G.docs * 1500;
+  G.score += bonus;
+  if (G.score > G.hi) G.hi = G.score;
+  G.maxStage = Math.max(G.maxStage, G.stage + 1);
+  saveStore();
+  if (G.stage + 1 >= STAGES.length && (G.stage + 1) % STAGES.length === 0) {
+    G.state = 'result'; G.resultClear = true;
+    showResult(true, bonus);
+    return;
+  }
+  startStage(G.stage + 1);
+}
+
+/* ============================================================
+   描画
+   ============================================================ */
+var FONT = '"Consolas","Courier New",monospace';
+function px(c, x, y, w, h) { CTX.fillStyle = c; CTX.fillRect(x | 0, y | 0, w, h); }
+function txt(s, x, y, col, size, align) {
+  var ctx = CTX;
+  ctx.font = 'bold ' + (size || 8) + 'px ' + FONT;
+  ctx.textAlign = align || 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = col;
+  ctx.fillText(s, x | 0, y | 0);
+}
+
+var PC = { coat: '#f2f4fa', coat2: '#c9cfdf', hat: '#e8483f', hat2: '#a72f28', skin: '#f4c99c', pants: '#2b3550', shoe: '#151a29' };
+var EC = [
+  { coat: '#33406a', coat2: '#232c4a', hat: '#4e63a0', hat2: '#31406e', skin: '#d8a878', pants: '#1c2438', shoe: '#10141e' },
+  { coat: '#3e5232', coat2: '#2c3b23', hat: '#5c7a49', hat2: '#3c5030', skin: '#d8a878', pants: '#232c1c', shoe: '#12160f' },
+  { coat: '#5f3059', coat2: '#43213e', hat: '#8a4780', hat2: '#5e3057', skin: '#e0b088', pants: '#301a2c', shoe: '#170d15' }
+];
+
+function drawMan(x, y, dir, C, pose, anim, opt) {
+  var ctx = CTX;
+  x = Math.round(x); y = Math.round(y);
+  opt = opt || {};
+  if (opt.alpha !== undefined) ctx.globalAlpha = opt.alpha;
+
+  if (pose === 'dead') {
+    var t = opt.t || 0;
+    px(C.coat, x - 9, y - 7, 18, 5);
+    px(C.coat2, x - 9, y - 3, 18, 2);
+    px(C.pants, x + (dir > 0 ? -11 : 6), y - 5, 5, 3);
+    px(C.skin, x + dir * 7, y - 9, 5, 4);
+    px(C.hat, x + dir * 10 - (dir > 0 ? 0 : 5), y - 12 - Math.min(4, t * 10), 6, 3);
+    px(C.hat2, x + dir * 10 - (dir > 0 ? 1 : 6), y - 9 - Math.min(4, t * 10), 8, 2);
+    ctx.globalAlpha = 1;
+    return;
+  }
+  if (pose === 'squash') {
+    px(C.coat, x - 10, y - 6, 20, 5);
+    px(C.hat, x - 4, y - 9, 8, 3);
+    px(C.skin, x - 12, y - 4, 4, 3);
+    px(C.skin, x + 8, y - 4, 4, 3);
+    ctx.globalAlpha = 1;
+    return;
+  }
+
+  var crouch = pose === 'crouch';
+  var f = ((anim | 0) % 4 + 4) % 4;
+  var legoff = pose === 'walk' ? [0, 2, 0, -2][f] : 0;
+
+  if (crouch) {
+    px(C.pants, x - 5, y - 4, 10, 3);
+    px(C.shoe, x - 6, y - 2, 4, 2); px(C.shoe, x + 3, y - 2, 4, 2);
+    px(C.coat, x - 5, y - 10, 10, 6);
+    px(C.coat2, x - 5, y - 11, 10, 2);
+    px(C.skin, x - 3, y - 15, 6, 4);
+    px(C.hat2, x - 6, y - 17, 12, 2);
+    px(C.hat, x - 3, y - 20, 6, 3);
+    px('#1a1f2e', x + (dir > 0 ? 1 : -2), y - 14, 1, 1);
+    if (opt.shoot) { px(C.coat2, x + (dir > 0 ? 4 : -11), y - 10, 7, 2); px('#3a3f52', x + dir * 11 - (dir > 0 ? 0 : 3), y - 10, 3, 2); }
+    ctx.globalAlpha = 1;
+    return;
+  }
+
+  /* 脚 */
+  if (pose === 'jump') {
+    px(C.pants, x - 4, y - 10, 3, 7); px(C.pants, x + 1, y - 10, 3, 6);
+    px(C.shoe, x - 5, y - 4, 4, 2); px(C.shoe, x + 1, y - 5, 4, 2);
+  } else if (pose === 'kick') {
+    px(C.pants, x - 4, y - 10, 3, 9);
+    px(C.shoe, x - 5, y - 2, 4, 2);
+    px(C.pants, x + (dir > 0 ? 2 : -11), y - 13, 9, 3);
+    px(C.shoe, x + dir * 12 - (dir > 0 ? 0 : 4), y - 14, 4, 3);
+  } else {
+    px(C.pants, x - 4 - legoff, y - 10, 3, 8);
+    px(C.pants, x + 1 + legoff, y - 10, 3, 8);
+    px(C.shoe, x - 5 - legoff, y - 2, 4, 2);
+    px(C.shoe, x + 1 + legoff, y - 2, 4, 2);
+  }
+  /* 胴 */
+  px(C.coat, x - 5, y - 19, 10, 9);
+  px(C.coat2, x - 5, y - 12, 10, 2);
+  px(C.coat2, x - 5, y - 20, 10, 2);
+  px('#1a1f2e', x - 1, y - 18, 2, 6);
+  /* 頭 */
+  px(C.skin, x - 3, y - 25, 6, 5);
+  px('#1a1f2e', x + (dir > 0 ? 1 : -2), y - 23, 1, 1);
+  px(C.hat2, x - 6, y - 27, 12, 2);
+  px(C.hat, x - 3, y - 30, 6, 3);
+  /* 腕 */
+  if (opt.shoot) {
+    px(C.coat2, x + (dir > 0 ? 4 : -11), y - 19, 7, 2);
+    px('#3a3f52', x + dir * 11 - (dir > 0 ? 0 : 3), y - 19, 3, 2);
+  } else if (pose === 'jump' || pose === 'kick') {
+    px(C.coat2, x + (dir > 0 ? 4 : -9), y - 21, 5, 2);
+  } else {
+    px(C.coat2, x + (dir > 0 ? 4 : -8), y - 18, 4, 2);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function skyline(cx) {
+  var ctx = CTX, S = G.S;
+  var g2 = ctx.createLinearGradient(0, -80, 0, surfY(0));
+  g2.addColorStop(0, 'rgba(8,12,26,1)');
+  g2.addColorStop(1, 'rgba(38,52,92,1)');
+  ctx.fillStyle = g2;
+  ctx.fillRect(cx - 10, -80, VIEW_W + 20, surfY(0) + 80);
+  /* 星 */
+  var r = makeRng(S.starSeed);
+  for (var i = 0; i < 60; i++) {
+    var sx = r() * S.W, sy = -75 + r() * (surfY(0) + 40), b = r();
+    if (b > 0.6) px('rgba(255,255,255,' + (0.35 + b * 0.5) + ')', sx, sy, 1, 1);
+  }
+  /* 遠景ビル */
+  var r2 = makeRng(S.starSeed + 7);
+  var bx = -20;
+  while (bx < S.W + 40) {
+    var bw = 18 + Math.floor(r2() * 26), bh = 14 + Math.floor(r2() * 40);
+    px('#101a33', bx, surfY(0) - bh, bw, bh);
+    for (var wy = surfY(0) - bh + 3; wy < surfY(0) - 3; wy += 6) {
+      for (var wx = bx + 3; wx < bx + bw - 3; wx += 6) {
+        if (r2() < 0.35) px('#4a6ea8', wx, wy, 2, 3);
+      }
+    }
+    bx += bw + 4 + Math.floor(r2() * 10);
+  }
+}
+
+function drawBuilding(cx, cy) {
+  var ctx = CTX, S = G.S, T = S.theme, i, j;
+  var f0 = clamp(Math.floor(cy / FLOOR_H) - 1, 0, S.floors - 1);
+  var f1 = clamp(Math.floor((cy + VIEW_H) / FLOOR_H) + 1, 0, S.floors - 1);
+
+  if (cy < surfY(0) + 4) skyline(cx);
+
+  /* 各階の内装 */
+  for (i = Math.max(1, f0); i <= f1; i++) {
+    var y0 = ceilY(i), hh = FLOOR_H - SLAB;
+    px(T.wall, WALLX, y0, S.W - WALLX * 2, hh);
+    px(T.wall2, WALLX, y0, S.W - WALLX * 2, 3);
+    px(T.line, WALLX, y0 + hh - 5, S.W - WALLX * 2, 2);
+    /* 窓 */
+    var row = S.win[i];
+    for (j = 0; j < row.length; j++) {
+      if (!row[j]) continue;
+      var wx = 26 + j * 40;
+      if (wx + 24 > S.W - WALLX) break;
+      px('#101a33', wx, y0 + 10, 24, 18);
+      px(T.win, wx + 2, y0 + 12, 20, 14);
+      px('#8fc4ff', wx + 2, y0 + 12, 20, 3);
+      px('#101a33', wx + 11, y0 + 10, 2, 18);
+      px(T.line, wx - 1, y0 + 9, 26, 1);
+    }
+    /* 壁のパネル線 */
+    for (j = 0; j < S.W; j += 80) px(T.line, WALLX + j, y0 + 4, 1, hh - 9);
+    /* 最下階は EXIT */
+    if (i === S.floors - 1) drawExitZone(i);
+  }
+  /* 外壁 */
+  px('#151b2e', 0, cy - 10, WALLX, VIEW_H + 20);
+  px('#151b2e', S.W - WALLX, cy - 10, WALLX, VIEW_H + 20);
+  px('#2a3350', WALLX - 2, cy - 10, 2, VIEW_H + 20);
+  px('#2a3350', S.W - WALLX, cy - 10, 2, VIEW_H + 20);
+
+  /* エスカレーター本体（床スラブの下をくぐる） */
+  for (i = 0; i < S.stairs.length; i++) drawStair(S.stairs[i], f0, f1);
+
+  /* 床スラブ */
+  for (i = Math.max(0, f0 - 1); i <= f1; i++) {
+    var sy = surfY(i);
+    px(T.slab, WALLX, sy, S.W - WALLX * 2, SLAB);
+    px(T.slabT, WALLX, sy, S.W - WALLX * 2, 1);
+    px('#0d1220', WALLX, sy + SLAB - 1, S.W - WALLX * 2, 1);
+  }
+
+  /* 屋上 */
+  if (f0 <= 1) drawRoof(cx);
+
+  /* シャフト */
+  for (i = 0; i < S.shafts.length; i++) drawShaft(S.shafts[i], cy);
+  /* エスカレーターの乗り口 */
+  for (i = 0; i < S.stairs.length; i++) drawStairEnt(S.stairs[i], f0, f1);
+  /* 扉 */
+  for (i = 0; i < S.doors.length; i++) {
+    var d = S.doors[i];
+    if (d.fl < f0 - 1 || d.fl > f1 + 1) continue;
+    drawDoor(d);
+  }
+  /* 照明 */
+  for (i = 0; i < S.lamps.length; i++) {
+    var lp = S.lamps[i];
+    if (lp.fl < f0 - 1 || lp.fl > f1 + 1) continue;
+    drawLamp(lp);
+  }
+}
+
+function roofFree(x0, x1) {
+  var S = G.S;
+  for (var i = 0; i < S.shafts.length; i++) {
+    var sh = S.shafts[i];
+    if (sh.top !== 0) continue;
+    if (x1 > sh.x - 10 && x0 < sh.x + CAR_W + 10) return false;
+  }
+  return true;
+}
+function drawRoof(cx) {
+  var S = G.S, y = surfY(0);
+  px('#39415e', WALLX, y - 2, S.W - WALLX * 2, 2);
+  /* 給水タンク */
+  if (roofFree(96, 126)) {
+    px('#2b3350', 96, y - 26, 30, 24);
+    px('#3a4468', 96, y - 26, 30, 3);
+    px('#1e2438', 100, y - 2, 4, 2); px('#1e2438', 118, y - 2, 4, 2);
+    px('#4a5578', 108, y - 34, 3, 8);
+  }
+  /* 室外機 */
+  if (roofFree(220, 246)) {
+    px('#333c5c', 220, y - 14, 26, 14);
+    px('#222a44', 224, y - 11, 8, 8); px('#222a44', 234, y - 11, 8, 8);
+  }
+  /* アンテナ */
+  if (roofFree(324, 338)) {
+    px('#4a5578', 330, y - 46, 2, 46);
+    px('#8a96bb', 324, y - 44, 14, 1);
+    px('#8a96bb', 326, y - 38, 10, 1);
+    px('#ff5f6d', 330, y - 50, 2, 3);
+  }
+  /* 塔屋 */
+  if (roofFree(430, 470)) {
+    px('#2b3350', 430, y - 30, 40, 30);
+    px('#3a4468', 430, y - 32, 40, 3);
+    px('#161c2e', 442, y - 22, 14, 22);
+  }
+  /* 手すり */
+  px('#4a5578', WALLX + 2, y - 12, 2, 12);
+  px('#4a5578', S.W - WALLX - 4, y - 12, 2, 12);
+  px('#39415e', WALLX + 2, y - 12, 26, 1);
+  px('#39415e', S.W - WALLX - 28, y - 12, 26, 1);
+  /* ヘリ */
+  if (G.heli > 0) {
+    var t = 1 - G.heli / 3.4;
+    var hx = 60 + t * 320, hy = y - 74 - t * 26;
+    px('#2c3450', hx - 14, hy, 26, 9);
+    px('#1c2338', hx + 10, hy + 2, 16, 3);
+    px('#7fd0ff', hx - 10, hy + 2, 6, 4);
+    px('#2c3450', hx + 24, hy - 4, 2, 8);
+    var bl = (G.blink * 40) % 2 < 1 ? 1 : 0;
+    px('#8a96bb', hx - 20 - bl * 4, hy - 4, 40, 1);
+    px('#ff5f6d', hx - 14, hy + 8, 2, 2);
+  }
+}
+
+function drawExitZone(fl) {
+  var S = G.S, y = surfY(fl);
+  var x = S.exitX;
+  px('#101728', x, y - 44, EXIT_W + 14, 44);
+  px('#1c2743', x, y - 44, EXIT_W + 14, 3);
+  /* 出口の看板 */
+  px('#0f3d24', x + 16, y - 42, 34, 11);
+  txt('EXIT', x + 20, y - 40, '#7dffa8', 8);
+  /* シャッター枠 */
+  for (var i = 0; i < 5; i++) px('#243050', x + 4, y - 38 + i * 7, EXIT_W + 6, 2);
+  /* 逃走車 */
+  var cx2 = x + 26 + (G.state === 'clear' ? Math.max(0, (G.clearT - 1.1)) * 190 : 0);
+  var g = G.docs >= S.docNeed;
+  px(g ? '#c8323f' : '#4a4f66', cx2, y - 20, 44, 10);
+  px(g ? '#e84a58' : '#5a6078', cx2 + 8, y - 27, 26, 8);
+  px('#7fd0ff', cx2 + 11, y - 25, 9, 5);
+  px('#101728', cx2 + 6, y - 11, 8, 8);
+  px('#101728', cx2 + 30, y - 11, 8, 8);
+  px('#3a4468', cx2 + 8, y - 9, 4, 4);
+  px('#3a4468', cx2 + 32, y - 9, 4, 4);
+  if (g && G.state !== 'clear' && (G.blink * 2) % 1 < 0.5) {
+    px('#ffe08a', cx2 + 42, y - 18, 3, 3);
+  }
+}
+
+function drawShaft(sh, cy) {
+  var ctx = CTX;
+  var y0 = ceilY(sh.top), y1 = surfY(sh.bot);
+  if (sh.top === 0) {
+    /* 屋上の塔屋（エレベーター機械室） */
+    y0 = surfY(0) - 46;
+    px('#2b3350', sh.x - 5, y0 - 4, CAR_W + 10, 50);
+    px('#3a4468', sh.x - 5, y0 - 6, CAR_W + 10, 3);
+    px('#4a5578', sh.x - 7, y0 - 8, CAR_W + 14, 2);
+  }
+  px('#080b16', sh.x, y0, CAR_W, y1 - y0);
+  px('#141a2c', sh.x + 2, y0, 2, y1 - y0);
+  px('#141a2c', sh.x + CAR_W - 4, y0, 2, y1 - y0);
+  /* ガイドと階の目印 */
+  for (var f = sh.top; f <= sh.bot; f++) {
+    px('#243050', sh.x, surfY(f) - 1, CAR_W, 1);
+    px('#3d4a72', sh.x + 1, surfY(f) - 4, 2, 3);
+    px('#3d4a72', sh.x + CAR_W - 3, surfY(f) - 4, 2, 3);
+  }
+  /* ケーブル */
+  px('#39415e', sh.x + CAR_W / 2 - 1, y0, 1, Math.max(0, sh.y - CAR_H - y0));
+  px('#39415e', sh.x + 7, y0, 1, Math.max(0, sh.y - CAR_H - y0));
+  /* かご */
+  var cy2 = sh.y;
+  px('#1a2138', sh.x + 2, cy2 - CAR_H, CAR_W - 4, CAR_H);
+  px('#2a3454', sh.x + 4, cy2 - CAR_H + 2, CAR_W - 8, CAR_H - 4);
+  px('#9aa6c8', sh.x, cy2 - 4, CAR_W, 5);
+  px('#c8d2ea', sh.x, cy2 - 4, CAR_W, 1);
+  px('#6b78a0', sh.x + 1, cy2 - CAR_H, 3, CAR_H);
+  px('#6b78a0', sh.x + CAR_W - 4, cy2 - CAR_H, 3, CAR_H);
+  px('#6b78a0', sh.x, cy2 - CAR_H - 3, CAR_W, 4);
+  var lamp = sh.ding > 0 && (G.blink * 8) % 1 < 0.6 ? '#ffe08a' : (sh.moving ? '#7dffa8' : '#4a5578');
+  px(lamp, sh.x + CAR_W / 2 - 2, cy2 - CAR_H - 2, 4, 2);
+  if (sh.call >= 0) {
+    var ay = sh.call - 22, bl = (G.blink * 6) % 1 < 0.5;
+    if (bl) txt(sh.call < sh.y ? '▲' : '▼', sh.x + CAR_W / 2, ay, '#ffe08a', 9, 'center');
+  }
+}
+
+function drawStair(st, f0, f1) {
+  if (st.u < f0 - 2 || st.u > f1 + 1) return;
+  var ctx = CTX;
+  var yA = surfY(st.u), yB = surfY(st.u + 1);
+  var n = 11, i, t, sx, sy;
+  /* ささら桁 */
+  ctx.strokeStyle = '#2b3450'; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(st.x0, yA + 4); ctx.lineTo(st.x1, yB + 4); ctx.stroke();
+  /* 段 */
+  for (i = 0; i <= n; i++) {
+    t = i / n;
+    sx = st.x0 + (st.x1 - st.x0) * t;
+    sy = yA + FLOOR_H * t;
+    px('#1a2038', sx - 6, sy, 12, 5);
+    px('#59648e', sx - 6, sy - 1, 12, 2);
+    px('#9aa6c8', sx - 6, sy - 1, 12, 1);
+  }
+  /* 手すり */
+  ctx.strokeStyle = '#7f8cb4'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(st.x0, yA - 16); ctx.lineTo(st.x1, yB - 16); ctx.stroke();
+  for (i = 0; i <= 5; i++) {
+    t = i / 5;
+    px('#59648e', st.x0 + (st.x1 - st.x0) * t, yA + FLOOR_H * t - 16, 1, 16);
+  }
+}
+
+function drawStairEnt(st, f0, f1) {
+  if (st.u < f0 - 2 || st.u > f1 + 1) return;
+  var p = G.p, dirx = st.x1 > st.x0 ? 1 : -1;
+  entPlate(st.x0, surfY(st.u), dirx, 1, p);
+  entPlate(st.x1, surfY(st.u + 1), -dirx, -1, p);
+}
+function entPlate(x, y, dirx, want, p) {
+  px('#2f3a5c', x - 12, y - 1, 24, 3);
+  px('#5fd8ff', x - 12, y - 2, 24, 1);
+  for (var i = 0; i < 3; i++) px('#3d4a72', x - 8 + i * 7 + dirx * 2, y, 3, 1);
+  if (!p || G.state === 'title' || p.stair) return;
+  if (p.onGround && Math.abs(p.x - x) < 15 && Math.abs(p.y - y) < 6 && (G.blink * 3) % 1 < 0.62) {
+    txt(want > 0 ? '▼' : '▲', x, y - 46, '#5fd8ff', 9, 'center');
+  }
+}
+
+function drawDoor(d) {
+  var y = surfY(d.fl), h = 32, w = d.w;
+  var red = d.type === 'red';
+  px('#0b0f1c', d.x - 2, y - h - 2, w + 4, h + 2);
+  px(red ? '#7a2030' : '#22305a', d.x - 2, y - h - 2, w + 4, 2);
+  var ow = Math.round((w / 2) * (1 - d.open));
+  var body = red ? (d.done ? '#7a2030' : '#c8323f') : '#2f57a8';
+  var body2 = red ? '#8f2636' : '#23428a';
+  if (!d.done) {
+    px(body, d.x, y - h, ow, h);
+    px(body, d.x + w - ow, y - h, ow, h);
+    px(body2, d.x, y - h, ow, 3);
+    px(body2, d.x + w - ow, y - h, ow, 3);
+    if (d.open < 0.2) {
+      px('#ffe08a', d.x + w / 2 - 5, y - h + 8, 10, 1);
+      if (red) {
+        px('#ffe08a', d.x + w / 2 - 4, y - h + 12, 8, 6);
+        px('#c8323f', d.x + w / 2 - 3, y - h + 14, 6, 1);
+        px('#c8323f', d.x + w / 2 - 3, y - h + 16, 4, 1);
+      } else {
+        px('#8fc4ff', d.x + w / 2 - 4, y - h + 13, 8, 5);
+        px('#c8d2ea', d.x + w - 5, y - h + 18, 2, 3);
+      }
+    }
+  } else {
+    px('#161d33', d.x, y - h, w, h);
+    px('#243050', d.x, y - h, w, 2);
+    px('#7a2030', d.x - 2, y - h - 2, w + 4, 2);
+  }
+}
+
+function drawLamp(lp) {
+  var cy = ceilY(lp.fl);
+  if (!lp.alive) {
+    px('#39415e', lp.x, cy, 1, 12);
+    px('#4a5578', lp.x - 4, cy + 12, 8, 3);
+    if (Math.random() < 0.06) addPart(lp.x, cy + 14, rnd(-20, 20), rnd(0, 30), 0.25, '#8fc4ff', 1);
+    return;
+  }
+  px('#39415e', lp.x, cy, 1, 14);
+  var ctx = CTX;
+  ctx.beginPath();
+  ctx.moveTo(lp.x - 9, cy + 25); ctx.lineTo(lp.x + 9, cy + 25);
+  ctx.lineTo(lp.x + 4, cy + 14); ctx.lineTo(lp.x - 4, cy + 14);
+  ctx.closePath();
+  ctx.fillStyle = '#59648e'; ctx.fill();
+  px('#8a96bb', lp.x - 9, cy + 24, 18, 1);
+  px('#ffe9a8', lp.x - 3, cy + 25, 6, 3);
+  var g = ctx.createRadialGradient(lp.x, cy + 27, 2, lp.x, cy + 27, 30);
+  g.addColorStop(0, 'rgba(255,233,168,.34)');
+  g.addColorStop(1, 'rgba(255,233,168,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(lp.x - 30, cy + 4, 60, 46);
+}
+
+function drawItem(it) {
+  var y = it.y;
+  if (it.type === 'coin') {
+    px('#ffe08a', it.x - 4, y - 6, 8, 8);
+    px('#c8952c', it.x - 4, y + 1, 8, 1);
+    px('#fff6d0', it.x - 2, y - 5, 2, 5);
+  } else if (it.type === 'gem') {
+    px('#7dffa8', it.x - 5, y - 7, 10, 9);
+    px('#d8ffe8', it.x - 3, y - 6, 3, 3);
+    px('#2c9a5c', it.x - 5, y + 1, 10, 1);
+  } else {
+    px('#7fd0ff', it.x - 5, y - 7, 10, 9);
+    px('#0b1a2c', it.x - 3, y - 5, 6, 5);
+    px('#7fd0ff', it.x - 1, y - 4, 1, 3);
+  }
+}
+
+function drawDark(cx, cy) {
+  var ctx = CTX, S = G.S, p = G.p;
+  for (var i = 0; i < S.floors; i++) {
+    var d = S.dark[i];
+    if (d <= 0) continue;
+    var a = d < 1 ? d : 1;
+    if (d > DARK_TIME - 0.3) a = (DARK_TIME - d) / 0.3;
+    if (d < 2 && (G.blink * 9) % 1 < 0.25) a *= 0.55;
+    var y0 = ceilY(i), y1 = surfY(i) + SLAB;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(cx - 6, y0, VIEW_W + 12, y1 - y0); ctx.clip();
+    var same = floorOf(p.y) === i && !p.dead;
+    var col = 'rgba(2,3,10,' + (0.92 * a) + ')';
+    if (same) {
+      var lx = Math.round(p.x), ly = Math.round(p.y - 14), R = 56;
+      ctx.fillStyle = col;
+      ctx.fillRect(cx - 6, y0, (lx - R) - (cx - 6), y1 - y0);
+      ctx.fillRect(lx + R, y0, (cx + VIEW_W + 6) - (lx + R), y1 - y0);
+      ctx.fillRect(lx - R, y0, R * 2, Math.max(0, (ly - R) - y0));
+      ctx.fillRect(lx - R, ly + R, R * 2, Math.max(0, y1 - (ly + R)));
+      var g = ctx.createRadialGradient(lx, ly, 5, lx, ly, R);
+      g.addColorStop(0, 'rgba(2,3,10,0)');
+      g.addColorStop(0.5, 'rgba(2,3,10,' + (0.42 * a) + ')');
+      g.addColorStop(1, col);
+      ctx.fillStyle = g;
+      ctx.fillRect(lx - R, ly - R, R * 2, R * 2);
+    } else {
+      ctx.fillStyle = col;
+      ctx.fillRect(cx - 6, y0, VIEW_W + 12, y1 - y0);
+    }
+    ctx.restore();
+  }
+}
+
+function drawMinimap() {
+  var ctx = CTX, S = G.S, p = G.p;
+  var w = 26, rowH = Math.min(7, Math.floor(96 / S.floors));
+  var h = S.floors * rowH + 6;
+  var ox = VIEW_W - w - 4, oy = 4;
+  ctx.globalAlpha = 0.82;
+  px('#080d1a', ox, oy, w, h);
+  ctx.globalAlpha = 1;
+  px('#243050', ox, oy, w, 1);
+  px('#243050', ox, oy + h - 1, w, 1);
+  var i, j;
+  for (i = 0; i < S.floors; i++) {
+    var ry = oy + 3 + i * rowH + rowH - 2;
+    px('#2a3350', ox + 2, ry, w - 4, 1);
+  }
+  for (i = 0; i < S.doors.length; i++) {
+    var d = S.doors[i];
+    if (d.type !== 'red' || d.done) continue;
+    px((G.blink * 3) % 1 < 0.5 ? '#ff5f6d' : '#a02a36',
+      ox + 2 + Math.round((d.x / S.W) * (w - 5)), oy + 2 + d.fl * rowH + rowH - 4, 2, 2);
+  }
+  for (i = 0; i < S.shafts.length; i++) {
+    var sh = S.shafts[i];
+    px('#5a6890', ox + 2 + Math.round((sh.x / S.W) * (w - 5)),
+      oy + 2 + Math.round((sh.y / FLOOR_H - 1)) * rowH + rowH - 4, 2, 2);
+  }
+  for (i = 0; i < G.ens.length; i++) {
+    var e = G.ens[i];
+    if (e.dead) continue;
+    var ef = clamp(floorOf(e.y), 0, S.floors - 1);
+    px('#c8703a', ox + 2 + Math.round((e.x / S.W) * (w - 5)), oy + 2 + ef * rowH + rowH - 4, 2, 2);
+  }
+  px('#7dffa8', ox + 2 + Math.round((S.exitX / S.W) * (w - 5)), oy + 2 + (S.floors - 1) * rowH + rowH - 4, 3, 2);
+  var pf = clamp(floorOf(p.y), 0, S.floors - 1);
+  px('#5fd8ff', ox + 2 + Math.round((p.x / S.W) * (w - 5)), oy + 1 + pf * rowH + rowH - 4, 3, 3);
+}
+
+function render() {
+  var ctx = CTX, S = G.S, p = G.p;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#05070e';
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  if (!S) return;
+
+  var shx = G.shake > 0 ? (Math.random() - 0.5) * G.shake : 0;
+  var shy = G.shake > 0 ? (Math.random() - 0.5) * G.shake : 0;
+  var cx = Math.round(G.camX), cy = Math.round(G.camY);
+  ctx.save();
+  ctx.translate(-cx + Math.round(shx), -cy + Math.round(shy));
+
+  drawBuilding(cx, cy);
+
+  var i;
+  for (i = 0; i < G.items.length; i++) drawItem(G.items[i]);
+
+  /* 敵 */
+  for (i = 0; i < G.ens.length; i++) {
+    var e = G.ens[i];
+    var C = EC[e.kind] || EC[0];
+    if (e.dead) {
+      drawMan(e.x, e.y, e.dir, C, e.squash ? 'squash' : 'dead', 0, { t: e.deadT, alpha: e.deadT > 0.8 ? 1 - (e.deadT - 0.8) / 0.3 : 1 });
+    } else {
+      var pose = e.stair ? 'walk' : (e.crouch ? 'crouch' : (!e.onGround ? 'jump' : (Math.abs(e.vx) > 4 ? 'walk' : 'stand')));
+      drawMan(e.x, e.y, e.dir, C, pose, e.anim, { shoot: e.st === 'aim' });
+      if (e.st === 'aim' && (G.blink * 12) % 1 < 0.5) {
+        px('#ff5f6d', e.x - 1, e.y - (e.crouch ? 24 : 37), 3, 3);
+      }
+    }
+  }
+
+  /* 主人公 */
+  if (G.state !== 'title' && p) {
+    if (p.win) {
+      var t = G.clearT;
+      if (t < 1.0) {
+        drawMan(p.x, p.y, 1, PC, t > 0.2 ? 'walk' : 'stand', t * 10, { alpha: t > 0.8 ? 1 - (t - 0.8) / 0.2 : 1 });
+      }
+    } else if (p.dead) {
+      drawMan(p.x, p.y, p.dir, PC, 'dead', 0, { t: p.deadT });
+    } else if (p.inv <= 0 || (G.blink * 14) % 1 < 0.55) {
+      var ppose = p.stair ? 'walk' : (p.kick > 0 ? 'kick' : (p.crouch ? 'crouch' : (!p.onGround ? 'jump' : (Math.abs(p.vx) > 4 ? 'walk' : 'stand'))));
+      drawMan(p.x, p.y, p.dir, PC, ppose, p.anim, { shoot: p.shootT > 0 });
+    }
+  }
+
+  /* 弾 */
+  for (i = 0; i < G.bul.length; i++) {
+    var b = G.bul[i];
+    px(b.own ? '#ff9a6a' : '#ffe9a8', b.x - (b.vx > 0 ? 4 : 0), b.y - 1, 5, 2);
+    px('#fff6d0', b.x - 1, b.y - 1, 2, 2);
+  }
+  /* 破片 */
+  for (i = 0; i < G.parts.length; i++) {
+    var q = G.parts[i];
+    CTX.globalAlpha = Math.min(1, q.t / (q.mt * 0.6));
+    px(q.col, q.x, q.y, q.sz, q.sz);
+  }
+  CTX.globalAlpha = 1;
+
+  drawDark(cx, cy);
+
+  /* スコア表示 */
+  for (i = 0; i < G.pops.length; i++) {
+    var s = G.pops[i];
+    CTX.globalAlpha = Math.min(1, s.t / 0.4);
+    txt(s.txt, s.x, s.y, '#0a0d18', 8, 'center');
+    txt(s.txt, s.x, s.y - 1, s.col, 8, 'center');
+  }
+  CTX.globalAlpha = 1;
+  ctx.restore();
+
+  /* ---- 画面固定のUI ---- */
+  if (G.state !== 'title') drawMinimap();
+
+  if (G.flash > 0) {
+    ctx.fillStyle = 'rgba(255,255,255,' + (G.flash * 0.5) + ')';
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  }
+  if (G.bannerT > 0) {
+    var a = Math.min(1, G.bannerT / 0.4);
+    ctx.globalAlpha = a;
+    px('rgba(6,9,20,.82)', 0, 78, VIEW_W, 20);
+    px('#243050', 0, 78, VIEW_W, 1);
+    px('#243050', 0, 97, VIEW_W, 1);
+    txt(G.banner, VIEW_W / 2, 84, G.bannerCol, 10, 'center');
+    ctx.globalAlpha = 1;
+  }
+  if (G.state === 'clear') {
+    px('rgba(4,8,18,.8)', 0, 16, VIEW_W, G.clearT > 1.2 ? 60 : 24);
+    px('#2c7a52', 0, 16, VIEW_W, 1);
+    px('#2c7a52', 0, (G.clearT > 1.2 ? 76 : 40), VIEW_W, 1);
+    txt('MISSION COMPLETE', VIEW_W / 2, 22, '#7dffa8', 13, 'center');
+    if (G.clearT > 1.2) {
+      txt('TIME BONUS  ' + (G.time * 20), VIEW_W / 2, 44, '#ffe08a', 9, 'center');
+      txt('DOCUMENT    ' + (G.docs * 1500), VIEW_W / 2, 58, '#ffe08a', 9, 'center');
+    }
+  }
+  if (G.state === 'play' && G.p && G.p.dead && G.p.reason) {
+    var msg = G.p.reason === 'fall' ? 'FELL DOWN THE SHAFT' :
+      G.p.reason === 'crush' ? 'CRUSHED' :
+      G.p.reason === 'time' ? 'TIME UP' : 'AGENT DOWN';
+    txt(msg, VIEW_W / 2, 92, '#ff5f6d', 11, 'center');
+  }
+  /* 暗闇の表示 */
+  if (G.state === 'play' && G.S && G.p && G.S.dark[clamp(floorOf(G.p.y), 0, G.S.floors - 1)] > 0) {
+    txt('BLACKOUT', 6, VIEW_H - 12, '#5fd8ff', 8);
+  }
+}
+
+/* ============================================================
+   セーブ / HUD / 画面遷移
+   ============================================================ */
+var KEY = 'spyDescent.v1';
+function loadStore() {
+  try {
+    var s = JSON.parse(localStorage.getItem(KEY) || '{}');
+    G.hi = s.hi || 0;
+    G.maxStage = s.max || 0;
+    G.diff = s.diff === undefined ? 1 : s.diff;
+  } catch (e) { }
+}
+function saveStore() {
+  try {
+    localStorage.setItem(KEY, JSON.stringify({ hi: G.hi, max: G.maxStage, diff: G.diff }));
+  } catch (e) { }
+}
+
+var hudCache = {};
+function hudSet(id, v) {
+  if (hudCache[id] === v) return;
+  hudCache[id] = v;
+  el(id).textContent = v;
+}
+function updateHud() {
+  hudSet('hudScore', '' + G.score);
+  hudSet('hudHi', '' + G.hi);
+  hudSet('hudStage', '' + (G.stage + 1));
+  hudSet('hudDoc', G.docs + '/' + (G.S ? G.S.docNeed : 0));
+  hudSet('hudTime', '' + G.time);
+  var s = '';
+  for (var i = 0; i < Math.max(0, G.lives); i++) s += '●';
+  hudSet('hudLives', s);
+  var col = G.time <= 60 ? '#ff5f6d' : '';
+  if (hudCache.tcol !== col) { hudCache.tcol = col; el('hudTime').style.color = col; }
+}
+
+function hideAll() {
+  var o = document.querySelectorAll('.overlay');
+  for (var i = 0; i < o.length; i++) o[i].classList.add('hidden');
+}
+
+function showTitle() {
+  hideAll();
+  el('titleScreen').classList.remove('hidden');
+  G.state = 'title';
+  G.S = buildStage(0);
+  G.p = newPlayer();
+  G.ens.length = 0; G.bul.length = 0; G.parts.length = 0; G.items.length = 0; G.pops.length = 0;
+  G.camX = 0; G.camY = -18; G.heli = 0;
+  G.score = 0; G.lives = 2; G.stage = 0; G.docs = 0; G.nextLife = 20000;
+  G.time = DIFF[G.diff].time;
+  Sound.music(false);
+  updateHud();
+}
+
+function showSelect() {
+  hideAll();
+  el('selectScreen').classList.remove('hidden');
+  G.state = 'select';
+  el('selHi').textContent = G.hi;
+  el('selMax').textContent = 'STAGE ' + (Math.min(G.maxStage, STAGES.length - 1) + 1);
+  var list = el('stageList');
+  list.innerHTML = '';
+  for (var i = 0; i < STAGES.length; i++) {
+    (function (n) {
+      var lock = n > G.maxStage;
+      var c = document.createElement('div');
+      c.className = 'fcard' + (lock ? ' lock' : '');
+      c.innerHTML = '<div class="fn">STAGE ' + (n + 1) + '</div><div class="fl">' + STAGES[n].name + '</div>';
+      c.addEventListener('click', function () {
+        if (lock) return;
+        Sound.resume(); Sound.ui();
+        hideAll();
+        G.score = 0; G.lives = 2; G.nextLife = 20000;
+        startStage(n);
+      });
+      list.appendChild(c);
+    })(i);
+  }
+  var b = el('diffSel').querySelectorAll('.mbtn');
+  for (var k = 0; k < b.length; k++) b[k].classList.toggle('on', k === G.diff);
+}
+
+function showResult(clear, bonus) {
+  hideAll();
+  el('resultScreen').classList.remove('hidden');
+  G.resultClear = !!clear;
+  el('resultTitle').textContent = clear ? 'MISSION COMPLETE' : 'MISSION FAILED';
+  el('resultTitle').style.color = clear ? '#7dffa8' : '#ff5f6d';
+  el('resultLine').textContent = clear
+    ? '全ビルの極秘文書を回収した！'
+    : (G.p && G.p.reason === 'time' ? '時間切れ… 脱出できなかった' : 'エージェントは倒れた…');
+  el('resultDetail').innerHTML = 'SCORE ' + G.score + '　HI-SCORE ' + G.hi +
+    (clear && bonus ? '<br>CLEAR BONUS ' + bonus : '') +
+    '<br>' + (clear ? '次の周はさらに手ごわい警備が待つ' : 'STAGE ' + (G.stage + 1) + ' からやり直せる');
+  el('retryBtn').textContent = clear ? 'つぎの周へ' : 'RETRY';
+  if (!clear) Sound.over();
+  Sound.music(false);
+}
+
+function togglePause() {
+  if (G.state === 'play' || G.state === 'msg') {
+    G.pauseFrom = G.state;
+    G.state = 'pause';
+    el('pauseScreen').classList.remove('hidden');
+    Sound.music(false);
+  } else if (G.state === 'pause') {
+    G.state = G.pauseFrom || 'play';
+    el('pauseScreen').classList.add('hidden');
+    if (G.pauseFrom === 'msg') el('msgScreen').classList.remove('hidden');
+    Sound.resume();
+    Sound.music(true, (G.stage % 5) * 2 - 2, G.hurry ? 0.105 : 0.13);
+  }
+}
+
+el('startBtn').onclick = function () { Sound.resume(); Sound.ui(); showSelect(); };
+el('backBtn').onclick = function () { Sound.ui(); showTitle(); };
+el('titleBtn').onclick = function () { Sound.ui(); showTitle(); };
+el('resumeBtn').onclick = function () { Sound.ui(); togglePause(); };
+el('quitBtn').onclick = function () { Sound.ui(); el('pauseScreen').classList.add('hidden'); showTitle(); };
+el('pauseBtn').onclick = function () { togglePause(); };
+el('retryBtn').onclick = function () {
+  Sound.resume(); Sound.ui();
+  hideAll();
+  if (G.resultClear) { G.lives = Math.max(G.lives, 2); startStage(G.stage + 1); }
+  else { G.score = 0; G.lives = 2; G.nextLife = 20000; startStage(G.stage); }
+};
+
+var diffBtns = el('diffSel').querySelectorAll('.mbtn');
+for (var di = 0; di < diffBtns.length; di++) {
+  (function (btn) {
+    btn.addEventListener('click', function () {
+      Sound.resume(); Sound.ui();
+      G.diff = parseInt(btn.getAttribute('data-diff'), 10);
+      for (var k = 0; k < diffBtns.length; k++) diffBtns[k].classList.toggle('on', diffBtns[k] === btn);
+      saveStore();
+    });
+  })(diffBtns[di]);
+}
+
+var soundBtn = el('soundBtn');
+soundBtn.onclick = function () {
+  if (Sound.isOn()) { Sound.off(); soundBtn.textContent = 'SOUND OFF'; soundBtn.classList.add('off'); }
+  else {
+    Sound.on(); Sound.resume();
+    soundBtn.textContent = 'SOUND ON'; soundBtn.classList.remove('off');
+    if (G.state === 'play') Sound.music(true, (G.stage % 5) * 2 - 2, G.hurry ? 0.105 : 0.13);
+  }
+};
+
+/* ============================================================
+   入力
+   ============================================================ */
+var keys = {};
+var pad = { up: false, down: false, left: false, right: false, s: false, j: false };
+var prev = { s: false, j: false };
+
+function readInput() {
+  var left = keys['arrowleft'] || keys['a'] || pad.left;
+  var right = keys['arrowright'] || keys['d'] || pad.right;
+  var up = keys['arrowup'] || keys['w'] || pad.up;
+  var down = keys['arrowdown'] || keys['s'] || pad.down;
+  var F = keys['z'] || keys[' '] || pad.s;
+  var J = keys['x'] || keys['shift'] || pad.j;
+  var inp = {
+    lx: (right ? 1 : 0) + (left ? -1 : 0),
+    up: !!up, down: !!down,
+    fireEdge: !!F && !prev.s, jumpEdge: !!J && !prev.j
+  };
+  prev.s = !!F; prev.j = !!J;
+  return inp;
+}
+
+var PREVENT = { 'arrowup': 1, 'arrowdown': 1, 'arrowleft': 1, 'arrowright': 1, ' ': 1 };
+document.addEventListener('keydown', function (e) {
+  var k = (e.key || '').toLowerCase();
+  if (PREVENT[k]) e.preventDefault();
+  if (keys[k]) return;
+  keys[k] = true;
+  if (k === 'p') togglePause();
+  else if (k === 'm') soundBtn.onclick();
+  if (G.state === 'play') Sound.resume();
+});
+document.addEventListener('keyup', function (e) { keys[(e.key || '').toLowerCase()] = false; });
+window.addEventListener('blur', function () { keys = {}; });
+
+function bindHold(nodes, on, off) {
+  for (var i = 0; i < nodes.length; i++) {
+    (function (n) {
+      var press = function (ev) { ev.preventDefault(); Sound.resume(); n.classList.add('on'); on(n); };
+      var rel = function () { n.classList.remove('on'); off(n); };
+      n.addEventListener('pointerdown', press);
+      n.addEventListener('pointerup', rel);
+      n.addEventListener('pointercancel', rel);
+      n.addEventListener('pointerleave', rel);
+      n.addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
+    })(nodes[i]);
+  }
+}
+bindHold(document.querySelectorAll('.dbtn'),
+  function (n) { pad[n.getAttribute('data-dir')] = true; },
+  function (n) { pad[n.getAttribute('data-dir')] = false; });
+bindHold(document.querySelectorAll('.abtn'),
+  function (n) { pad[n.getAttribute('data-btn')] = true; },
+  function (n) { pad[n.getAttribute('data-btn')] = false; });
+document.addEventListener('pointerup', function () {
+  pad.up = pad.down = pad.left = pad.right = pad.s = pad.j = false;
+  var on = document.querySelectorAll('.dbtn.on, .abtn.on');
+  for (var i = 0; i < on.length; i++) on[i].classList.remove('on');
+});
+
+/* ============================================================
+   メインループ
+   ============================================================ */
+function loop(t) {
+  var dt = (t - loop.last) / 1000;
+  loop.last = t;
+  if (!(dt > 0)) dt = 1 / 60;
+  if (dt > 0.05) dt = 0.05;
+
+  var inp = readInput();
+  if (G.state === 'title' || G.state === 'select') {
+    G.blink += dt;
+    if (G.S) {
+      G.camY += 17 * dt;
+      var maxY = surfY(G.S.floors - 1) + SLAB + 14 - VIEW_H;
+      if (G.camY > maxY) G.camY = -18;
+      G.camX = clamp(150 + Math.sin(t / 3400) * 150, 0, G.S.W - VIEW_W);
+      for (var i = 0; i < G.S.shafts.length; i++) {
+        var sh = G.S.shafts[i];
+        sh.y = clamp(sh.y + Math.sin(t / 2200 + i) * 22 * dt, surfY(sh.top), surfY(sh.bot));
+      }
+    }
+    Sound.musicUpdate();
+  } else if (G.state === 'msg') {
+    G.blink += dt;
+    G.msgT -= dt;
+    if (G.msgT <= 0) { el('msgScreen').classList.add('hidden'); G.state = 'play'; }
+    Sound.musicUpdate();
+  } else if (G.state === 'play' || G.state === 'clear') {
+    update(dt, inp);
+    updateHud();
+  } else if (G.state === 'result' || G.state === 'pause') {
+    G.blink += dt;
+    if (G.shake > 0) G.shake = Math.max(0, G.shake - dt * 22);
+    updateParts(dt);
+  }
+  render();
+  requestAnimationFrame(loop);
+}
+loop.last = (global.performance && performance.now) ? performance.now() : 0;
+
+/* ============================================================
+   起動
+   ============================================================ */
+loadStore();
+if (/[?&]mute\b/.test(location.search)) {
+  Sound.off();
+  soundBtn.textContent = 'SOUND OFF';
+  soundBtn.classList.add('off');
+}
+showTitle();
+updateHud();
+requestAnimationFrame(loop);
+
+global.__SPY = {
+  G: G, Sound: Sound, buildStage: buildStage, startStage: startStage,
+  update: function (dt, inp) { update(dt, inp || { lx: 0, up: 0, down: 0, fireEdge: 0, jumpEdge: 0 }); },
+  render: render, makeEnemy: makeEnemy
+};
+
+})(window);
+</script>
+</body>
+</html>
