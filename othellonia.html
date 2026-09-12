@@ -1,0 +1,1918 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>REVERSI BRAVE 逆転オセロバトル - HTML5 オセロニア風 対戦パズルRPG</title>
+<meta name="description" content="HTML5 Canvasで作ったオセロニア風の対戦パズルRPG。6×6の盤でオセロのように駒をひっくり返し、返した枚数×ATKで相手のHPを削る。神・魔・竜の3属性45キャラからデッキ16枚を組み、回復・毒・バフ・カウンター・貫通などのスキルで逆転をねらう。CPU8人＋デッキ編集・リーダースキルつき。スマホ/PC対応。">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body{
+  background:#070912;
+  background-image:
+    radial-gradient(circle at 50% -10%, #1d2a5e 0%, transparent 55%),
+    radial-gradient(circle at 8% 108%, #3a1348 0%, transparent 50%),
+    radial-gradient(circle at 95% 60%, #05243a 0%, transparent 45%);
+  background-attachment:fixed;
+  color:#e8f0ff;
+  font-family:"Segoe UI","Hiragino Kaku Gothic ProN","Meiryo",sans-serif;
+  min-height:100vh; display:flex; justify-content:center; align-items:flex-start;
+  padding:5px; user-select:none; -webkit-tap-highlight-color:transparent;
+  overflow-x:hidden;
+}
+.wrap{ width:100%; max-width:560px; display:flex; flex-direction:column; gap:5px; }
+
+/* ---------- topbar ---------- */
+.topbar{ display:flex; align-items:center; gap:6px; font-family:"Consolas",monospace; font-size:11px; color:#8fa6cf; }
+.topbar .title{ flex:1; letter-spacing:.16em; color:#ffd76b; font-weight:700; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sbtn{
+  background:rgba(255,255,255,.06); border:1px solid rgba(120,180,255,.3); color:#cfe2ff;
+  border-radius:5px; padding:4px 9px; font-size:11px; font-family:inherit; cursor:pointer;
+}
+.sbtn:active{ background:rgba(255,255,255,.22); }
+.sbtn.off{ color:#5b6a86; border-color:rgba(120,180,255,.12); }
+
+.screen{ display:flex; flex-direction:column; gap:6px; }
+.hidden{ display:none !important; }
+
+/* ---------- title ---------- */
+#titleScreen{ align-items:center; padding:14px 4px 10px; }
+.logo{ text-align:center; line-height:1.1; }
+.logo .en{
+  font-family:"Impact","Arial Black",sans-serif; font-size:40px; letter-spacing:.05em;
+  background:linear-gradient(180deg,#fff3c4 0%,#ffd045 45%,#c5811a 100%);
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+  filter:drop-shadow(0 3px 0 rgba(0,0,0,.55));
+}
+.logo .jp{ margin-top:2px; font-size:16px; font-weight:700; letter-spacing:.3em; color:#bfe0ff; text-shadow:0 0 12px rgba(90,170,255,.6); }
+.logo .cap{ margin-top:6px; font-size:11px; color:#8fa6cf; letter-spacing:.08em; }
+.titleDiscs{ display:flex; gap:10px; margin:12px 0 6px; }
+.tdisc{ width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:20px; font-weight:700;
+  box-shadow:0 4px 14px rgba(0,0,0,.6), inset 0 2px 6px rgba(255,255,255,.25); animation:spin 3.4s linear infinite; }
+.tdisc.g{ background:linear-gradient(160deg,#8fe3ff,#1f6fd0); color:#06233f; }
+.tdisc.d{ background:linear-gradient(160deg,#e3a8ff,#6a1fb0); color:#22063a; animation-delay:-1.1s; }
+.tdisc.r{ background:linear-gradient(160deg,#ffb083,#c22a1c); color:#3a0a05; animation-delay:-2.2s; }
+@keyframes spin{ 0%,70%{ transform:rotateY(0deg);} 85%{ transform:rotateY(180deg);} 100%{ transform:rotateY(360deg);} }
+
+.mbtn{
+  width:100%; max-width:300px; padding:12px 10px; margin:4px 0; cursor:pointer;
+  background:linear-gradient(180deg,rgba(70,120,220,.36),rgba(30,50,110,.5));
+  border:1px solid rgba(140,200,255,.45); border-radius:9px;
+  color:#eaf3ff; font-size:15px; font-weight:700; letter-spacing:.08em; font-family:inherit;
+  box-shadow:0 3px 0 rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.22);
+}
+.mbtn:active{ transform:translateY(2px); box-shadow:0 1px 0 rgba(0,0,0,.45); }
+.mbtn.sec{ background:linear-gradient(180deg,rgba(150,110,220,.3),rgba(60,30,100,.5)); border-color:rgba(200,160,255,.4); }
+.mbtn.small{ max-width:150px; padding:8px; font-size:12px; }
+.recBox{ margin-top:10px; font-family:"Consolas",monospace; font-size:11px; color:#8fa6cf; text-align:center; line-height:1.7; }
+.recBox b{ color:#ffd76b; }
+
+/* ---------- generic panel ---------- */
+.panel{ background:rgba(12,20,44,.72); border:1px solid rgba(120,180,255,.22); border-radius:8px; padding:8px; }
+.headline{ font-size:13px; font-weight:700; color:#ffd76b; letter-spacing:.1em; margin-bottom:4px; }
+.note{ font-size:11px; color:#93a9d0; line-height:1.6; }
+.rowbtns{ display:flex; gap:6px; justify-content:center; flex-wrap:wrap; }
+
+/* ---------- opponent select ---------- */
+.oppList{ display:flex; flex-direction:column; gap:6px; max-height:calc(100vh - 150px); overflow-y:auto; padding-right:2px; }
+.oppCard{
+  display:flex; align-items:center; gap:8px; padding:7px 8px; cursor:pointer;
+  background:linear-gradient(100deg,rgba(20,30,64,.9),rgba(30,20,60,.8));
+  border:1px solid rgba(130,180,255,.25); border-radius:8px;
+}
+.oppCard:active{ background:rgba(60,90,170,.55); }
+.oppFace{ width:42px; height:42px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; font-size:20px;
+  box-shadow:inset 0 2px 6px rgba(255,255,255,.25), 0 2px 8px rgba(0,0,0,.5); }
+.oppInfo{ flex:1; min-width:0; }
+.oppInfo .nm{ font-size:13px; font-weight:700; color:#eaf3ff; }
+.oppInfo .ds{ font-size:10px; color:#93a9d0; line-height:1.45; }
+.oppMeta{ text-align:right; font-family:"Consolas",monospace; font-size:10px; color:#8fa6cf; flex:none; }
+.oppMeta .lv{ color:#ffd76b; font-size:11px; }
+.star{ color:#ffd76b; letter-spacing:-1px; }
+.clear{ color:#8ef0c0; font-size:10px; }
+
+/* ---------- battle ---------- */
+.side{ display:flex; align-items:center; gap:7px; padding:5px 7px; border-radius:7px; border:1px solid rgba(120,180,255,.2); background:rgba(10,16,38,.74); }
+.side.turnOn{ border-color:rgba(255,215,107,.75); box-shadow:0 0 12px rgba(255,215,107,.25); }
+.avatar{ width:34px; height:34px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; font-size:17px;
+  box-shadow:inset 0 2px 5px rgba(255,255,255,.25), 0 2px 6px rgba(0,0,0,.5); }
+.sideMain{ flex:1; min-width:0; }
+.sideTop{ display:flex; align-items:baseline; gap:6px; font-size:11px; color:#cfe2ff; }
+.sideTop .nm{ font-weight:700; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sideTop .hpn{ margin-left:auto; font-family:"Consolas",monospace; color:#ffd76b; font-size:11px; }
+.hpbar{ position:relative; height:9px; border-radius:5px; background:rgba(0,0,0,.55); overflow:hidden; border:1px solid rgba(255,255,255,.12); margin-top:2px; }
+.hpGhost{ position:absolute; top:0; bottom:0; left:0; background:rgba(255,255,255,.45); width:100%; transition:width .55s ease .18s; }
+.hpfill{ position:absolute; top:0; bottom:0; left:0; width:100%; border-radius:4px; transition:width .4s cubic-bezier(.2,.9,.3,1); }
+.hpfill.me{ background:linear-gradient(90deg,#39d98a,#8ef0c0); box-shadow:0 0 8px rgba(57,217,138,.6); }
+.hpfill.foe{ background:linear-gradient(90deg,#ff5a72,#ffb08a); box-shadow:0 0 8px rgba(255,90,114,.6); }
+.hpfill.low{ background:linear-gradient(90deg,#ff3b30,#ffd76b) !important; animation:blinkHp .7s infinite; }
+@keyframes blinkHp{ 50%{ opacity:.55; } }
+.statuses{ display:flex; gap:3px; flex-wrap:wrap; margin-top:2px; min-height:12px; }
+.stIcon{ font-size:9px; padding:0 4px; border-radius:3px; font-family:"Consolas",monospace; line-height:14px; }
+.st-poison{ background:rgba(150,60,220,.35); color:#e5b6ff; border:1px solid rgba(200,140,255,.5); }
+.st-regen{ background:rgba(50,190,120,.28); color:#a9ffd4; border:1px solid rgba(120,255,190,.45); }
+.st-atkUp{ background:rgba(255,120,60,.3); color:#ffcda6; border:1px solid rgba(255,170,110,.5); }
+.st-atkDown{ background:rgba(90,120,190,.35); color:#bcd4ff; border:1px solid rgba(150,190,255,.5); }
+.st-barrier{ background:rgba(80,180,255,.28); color:#bfe6ff; border:1px solid rgba(140,220,255,.5); }
+.st-counter{ background:rgba(255,200,60,.25); color:#ffe9a8; border:1px solid rgba(255,220,130,.5); }
+.sideSub{ flex:none; text-align:right; font-family:"Consolas",monospace; font-size:10px; color:#8fa6cf; line-height:1.35; }
+.sideSub b{ color:#cfe2ff; }
+
+.boardWrap{ position:relative; width:100%; }
+canvas#board{ display:block; width:100%; border-radius:10px; touch-action:manipulation; }
+.centerMsg{
+  position:absolute; left:0; right:0; top:42%; text-align:center; pointer-events:none;
+  font-size:24px; font-weight:700; letter-spacing:.14em; color:#fff;
+  text-shadow:0 0 18px rgba(120,200,255,.9), 0 3px 6px rgba(0,0,0,.8); opacity:0;
+}
+.centerMsg.show{ animation:cmsg 1.05s ease-out; }
+@keyframes cmsg{ 0%{ opacity:0; transform:scale(.6);} 20%{ opacity:1; transform:scale(1.05);} 75%{ opacity:1; transform:scale(1);} 100%{ opacity:0; transform:scale(1.12);} }
+.skillBanner{ position:absolute; left:0; right:0; top:33%; pointer-events:none; text-align:center; opacity:0; }
+.skillBanner .inner{
+  display:inline-block; padding:5px 16px; border-radius:6px; font-size:14px; font-weight:700; letter-spacing:.1em;
+  background:linear-gradient(90deg,rgba(0,0,0,0),rgba(20,30,70,.92),rgba(0,0,0,0)); color:#ffe89a;
+  text-shadow:0 0 12px rgba(255,200,80,.9);
+}
+.skillBanner.show{ animation:sban 1.15s ease-out; }
+@keyframes sban{ 0%{ opacity:0; transform:translateX(-40px);} 18%{ opacity:1; transform:translateX(0);} 78%{ opacity:1;} 100%{ opacity:0; transform:translateX(40px);} }
+
+.logBox{ height:32px; overflow:hidden; font-size:10.5px; line-height:15px; color:#a8bee4; font-family:"Consolas",monospace;
+  background:rgba(8,12,30,.6); border:1px solid rgba(120,180,255,.15); border-radius:6px; padding:1px 6px; }
+.logBox div{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.logBox .hi{ color:#ffd76b; }
+.logBox .dm{ color:#ff9a9a; }
+.logBox .he{ color:#8ef0c0; }
+
+/* ---------- hand ---------- */
+.handRow{ display:flex; gap:4px; }
+.card{
+  flex:1 1 0; min-width:0; position:relative; border-radius:7px; padding:3px 3px 4px; cursor:pointer;
+  border:1px solid rgba(255,255,255,.2); box-shadow:0 2px 6px rgba(0,0,0,.5);
+  background:linear-gradient(170deg,rgba(40,60,120,.9),rgba(14,20,44,.95));
+  transition:transform .12s ease, box-shadow .12s ease;
+}
+.card.god{ background:linear-gradient(170deg,rgba(30,110,190,.92),rgba(10,28,60,.96)); border-color:rgba(120,220,255,.5); }
+.card.demon{ background:linear-gradient(170deg,rgba(110,40,180,.92),rgba(30,10,56,.96)); border-color:rgba(220,150,255,.5); }
+.card.dragon{ background:linear-gradient(170deg,rgba(180,50,40,.92),rgba(56,12,10,.96)); border-color:rgba(255,160,120,.5); }
+.card.sel{ transform:translateY(-6px); box-shadow:0 0 0 2px #ffd76b, 0 6px 14px rgba(255,200,80,.4); }
+.card.empty{ background:rgba(255,255,255,.04); border-style:dashed; border-color:rgba(255,255,255,.14); cursor:default; }
+.card .cname{ font-size:9.5px; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-shadow:0 1px 2px rgba(0,0,0,.8); }
+.card .cstars{ font-size:8px; color:#ffd76b; letter-spacing:-1px; height:10px; overflow:hidden; }
+.card .cicon{ text-align:center; font-size:19px; line-height:22px; filter:drop-shadow(0 2px 3px rgba(0,0,0,.7)); }
+.card .cstat{ display:flex; justify-content:space-between; font-family:"Consolas",monospace; font-size:9px; color:#ffe9b0; padding:0 1px; }
+.card .cstat .hp{ color:#a9ffd4; }
+.card .cskill{ font-size:8.5px; color:#dbe8ff; background:rgba(0,0,0,.42); border-radius:3px; padding:1px 2px; margin-top:1px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+.detailBox{ min-height:40px; font-size:11px; line-height:1.55; color:#cfe2ff; padding:5px 8px; border-radius:6px;
+  background:rgba(10,16,38,.7); border:1px solid rgba(120,180,255,.2); }
+.detailBox .dn{ font-weight:700; color:#fff; }
+.detailBox .sk{ color:#ffd76b; }
+.detailBox .tip{ color:#8fa6cf; font-size:10px; }
+
+/* ---------- deck builder ---------- */
+.deckTop{ display:flex; align-items:center; gap:6px; font-size:11px; }
+.costBar{ flex:1; height:12px; border-radius:6px; background:rgba(0,0,0,.5); border:1px solid rgba(255,255,255,.15); overflow:hidden; position:relative; }
+.costFill{ position:absolute; top:0; bottom:0; left:0; background:linear-gradient(90deg,#5ec8ff,#b08bff); transition:width .2s; }
+.costBar span{ position:absolute; inset:0; text-align:center; font-family:"Consolas",monospace; font-size:9px; line-height:11px; color:#fff; text-shadow:0 1px 2px #000; }
+.costBar.over .costFill{ background:linear-gradient(90deg,#ff5a72,#ff9a5a); }
+.slotGrid{ display:grid; grid-template-columns:repeat(8,1fr); gap:3px; }
+.slot{ position:relative; aspect-ratio:1/1.3; border-radius:5px; border:1px solid rgba(255,255,255,.16); background:rgba(255,255,255,.05);
+  display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:13px; cursor:pointer; overflow:hidden; }
+.slot.god{ background:linear-gradient(170deg,rgba(30,110,190,.85),rgba(10,28,60,.9)); border-color:rgba(120,220,255,.45); }
+.slot.demon{ background:linear-gradient(170deg,rgba(110,40,180,.85),rgba(30,10,56,.9)); border-color:rgba(220,150,255,.45); }
+.slot.dragon{ background:linear-gradient(170deg,rgba(180,50,40,.85),rgba(56,12,10,.9)); border-color:rgba(255,160,120,.45); }
+.slot .sn{ font-size:6.5px; color:#fff; max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding:0 1px; }
+.slot .ldr{ position:absolute; top:0; left:0; font-size:7px; background:#ffd76b; color:#331c00; padding:0 2px; border-radius:0 0 4px 0; font-weight:700; }
+.filters{ display:flex; gap:4px; flex-wrap:wrap; align-items:center; }
+.fbtn{ font-size:10px; padding:3px 8px; border-radius:12px; border:1px solid rgba(140,200,255,.3); background:rgba(255,255,255,.05); color:#cfe2ff; cursor:pointer; }
+.fbtn.on{ background:rgba(120,190,255,.35); color:#fff; border-color:#8fd0ff; }
+.poolGrid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(84px,1fr)); gap:4px; max-height:34vh; overflow-y:auto; padding:2px; }
+.pcard{ position:relative; border-radius:6px; padding:3px; cursor:pointer; border:1px solid rgba(255,255,255,.18); }
+.pcard.god{ background:linear-gradient(170deg,rgba(30,110,190,.85),rgba(10,28,60,.92)); }
+.pcard.demon{ background:linear-gradient(170deg,rgba(110,40,180,.85),rgba(30,10,56,.92)); }
+.pcard.dragon{ background:linear-gradient(170deg,rgba(180,50,40,.85),rgba(56,12,10,.92)); }
+.pcard.in{ outline:2px solid #ffd76b; opacity:.5; }
+.pcard .pn{ font-size:8.5px; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pcard .pi{ text-align:center; font-size:15px; line-height:18px; }
+.pcard .ps{ display:flex; justify-content:space-between; font-family:"Consolas",monospace; font-size:8px; color:#ffe9b0; }
+.pcard .ps .hp{ color:#a9ffd4; }
+.pcard .pk{ font-size:7.5px; color:#dbe8ff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pcard .pc{ position:absolute; top:1px; right:2px; font-size:7.5px; color:#ffd76b; }
+
+/* ---------- result ---------- */
+#resultScreen{ align-items:center; padding-top:16px; }
+.bigres{ font-family:"Impact","Arial Black",sans-serif; font-size:48px; letter-spacing:.08em; }
+.bigres.win{ background:linear-gradient(180deg,#fff6c9,#ffcf3e,#c07d10); -webkit-background-clip:text; background-clip:text; color:transparent; filter:drop-shadow(0 3px 0 rgba(0,0,0,.6)); }
+.bigres.lose{ background:linear-gradient(180deg,#dfe9ff,#7f9ac9,#2b3a5c); -webkit-background-clip:text; background-clip:text; color:transparent; filter:drop-shadow(0 3px 0 rgba(0,0,0,.6)); }
+.resStat{ font-family:"Consolas",monospace; font-size:12px; color:#cfe2ff; text-align:center; line-height:1.9; margin:8px 0; }
+.resStat b{ color:#ffd76b; }
+
+/* ---------- modal ---------- */
+.modal{ position:fixed; inset:0; background:rgba(3,6,16,.92); display:flex; align-items:center; justify-content:center; padding:10px; z-index:50; }
+.modalIn{ width:100%; max-width:520px; max-height:88vh; overflow-y:auto; background:rgba(12,18,42,.98);
+  border:1px solid rgba(140,200,255,.35); border-radius:10px; padding:12px; font-size:12px; line-height:1.75; color:#d5e4ff; }
+.modalIn h3{ color:#ffd76b; font-size:14px; margin:10px 0 3px; letter-spacing:.06em; }
+.modalIn h3:first-child{ margin-top:0; }
+.modalIn b{ color:#fff; }
+.modalIn .g{ color:#8fd8ff; } .modalIn .d{ color:#d9a4ff; } .modalIn .r{ color:#ff9f8a; }
+.modalIn ul{ padding-left:18px; }
+.modalIn li{ margin:1px 0; }
+
+@media (max-width:400px){
+  .logo .en{ font-size:32px; }
+  .card .cskill{ font-size:8px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="title">REVERSI BRAVE 逆転オセロバトル</div>
+    <button class="sbtn" id="soundBtn">SOUND</button>
+    <button class="sbtn" id="helpBtn">?</button>
+  </div>
+
+  <!-- ============ TITLE ============ -->
+  <div class="screen" id="titleScreen">
+    <div class="logo">
+      <div class="en">REVERSI BRAVE</div>
+      <div class="jp">逆転オセロバトル</div>
+      <div class="cap">はさんで返した枚数 × ATK が そのままダメージ</div>
+    </div>
+    <div class="titleDiscs">
+      <div class="tdisc g">神</div><div class="tdisc d">魔</div><div class="tdisc r">竜</div>
+    </div>
+    <button class="mbtn" id="btnStart">バトル</button>
+    <button class="mbtn sec" id="btnDeck">デッキ編集</button>
+    <button class="mbtn sec" id="btnHelp2">あそびかた</button>
+    <div class="recBox" id="titleRec"></div>
+  </div>
+
+  <!-- ============ OPPONENT SELECT ============ -->
+  <div class="screen hidden" id="selectScreen">
+    <div class="panel">
+      <div class="headline">たいせん あいて</div>
+      <div class="note" id="myDeckNote"></div>
+    </div>
+    <div class="oppList" id="oppList"></div>
+    <div class="rowbtns"><button class="mbtn small sec" id="btnSelBack">もどる</button></div>
+  </div>
+
+  <!-- ============ DECK BUILDER ============ -->
+  <div class="screen hidden" id="deckScreen">
+    <div class="panel">
+      <div class="deckTop">
+        <span id="deckCount">16/16</span>
+        <div class="costBar" id="costBar"><div class="costFill" id="costFill"></div><span id="costTxt"></span></div>
+      </div>
+      <div class="slotGrid" id="slotGrid"></div>
+      <div class="note" id="deckStat" style="margin-top:4px"></div>
+    </div>
+    <div class="panel">
+      <div class="filters" id="filters">
+        <button class="fbtn on" data-f="all">ぜんぶ</button>
+        <button class="fbtn" data-f="god">神</button>
+        <button class="fbtn" data-f="demon">魔</button>
+        <button class="fbtn" data-f="dragon">竜</button>
+        <button class="fbtn" data-f="preset">おすすめ</button>
+      </div>
+      <div class="poolGrid" id="poolGrid"></div>
+    </div>
+    <div class="detailBox" id="deckDetail">キャラを タップすると デッキに 入る／出る。デッキの キャラを 長おし（PCは右クリック）で リーダーに できる。</div>
+    <div class="rowbtns">
+      <button class="mbtn small" id="btnDeckOk">けってい</button>
+      <button class="mbtn small sec" id="btnDeckClear">クリア</button>
+    </div>
+  </div>
+
+  <!-- ============ BATTLE ============ -->
+  <div class="screen hidden" id="battleScreen">
+    <div class="side" id="foeSide">
+      <div class="avatar" id="foeFace">👑</div>
+      <div class="sideMain">
+        <div class="sideTop"><span class="nm" id="foeName">あいて</span><span class="hpn" id="foeHpN">0/0</span></div>
+        <div class="hpbar"><div class="hpGhost" id="foeGhost"></div><div class="hpfill foe" id="foeHp"></div></div>
+        <div class="statuses" id="foeSt"></div>
+      </div>
+      <div class="sideSub" id="foeSub"></div>
+    </div>
+
+    <div class="boardWrap">
+      <canvas id="board"></canvas>
+      <div class="centerMsg" id="centerMsg"></div>
+      <div class="skillBanner" id="skillBanner"><span class="inner"></span></div>
+    </div>
+
+    <div class="logBox" id="logBox"></div>
+
+    <div class="side turnOn" id="meSide">
+      <div class="avatar" id="meFace">🛡️</div>
+      <div class="sideMain">
+        <div class="sideTop"><span class="nm" id="meName">きみ</span><span class="hpn" id="meHpN">0/0</span></div>
+        <div class="hpbar"><div class="hpGhost" id="meGhost"></div><div class="hpfill me" id="meHp"></div></div>
+        <div class="statuses" id="meSt"></div>
+      </div>
+      <div class="sideSub" id="meSub"></div>
+    </div>
+
+    <div class="handRow" id="handRow"></div>
+    <div class="detailBox" id="detailBox"></div>
+    <div class="rowbtns">
+      <button class="sbtn" id="btnSurrender">とうそう</button>
+      <button class="sbtn" id="btnHelp3">ルール</button>
+    </div>
+  </div>
+
+  <!-- ============ RESULT ============ -->
+  <div class="screen hidden" id="resultScreen">
+    <div class="bigres" id="resTitle">WIN</div>
+    <div class="resStat" id="resStat"></div>
+    <button class="mbtn" id="btnRetry">もういちど</button>
+    <button class="mbtn sec" id="btnToSelect">あいてをかえる</button>
+    <button class="mbtn sec" id="btnToTitle">タイトルへ</button>
+  </div>
+
+</div>
+
+<div class="modal hidden" id="helpModal">
+  <div class="modalIn">
+    <h3>REVERSI BRAVE のルール</h3>
+    <b>6×6のオセロ盤で たたかう カードバトル。</b>おたがい 16枚の デッキを持ち、デッキの キャラのHPの合計が そのまま <b>じぶんのHP</b>。さきに 相手のHPを 0にしたら 勝ち。
+    <h3>1. 駒を置く</h3>
+    <ul>
+      <li>手ごまは 4枚。えらんで 光ったマスに 置くと、はさんだ 相手の駒が ぜんぶ ひっくり返る（オセロと同じ）。</li>
+      <li>置いたら 山札から 1枚 補充。デッキ16枚を 置ききると 打ち止め。</li>
+      <li><b>はさめる場所が 1つも ないとき</b>は、空いている どこにでも 置ける（ダメージ0・スキルも出ない）。</li>
+    </ul>
+    <h3>2. ダメージ</h3>
+    <b>ダメージ ＝ ATK × ひっくり返した枚数 × コンボ倍率</b><br>
+    1枚しか返せない駒より、6枚 まとめて返す駒のほうが 6倍つよい。角をとって 大量返しを ねらおう。<br>
+    コンボは 返すたびに 1つずつ たまり、返せなかった ターンで 0に もどる（最大+75%）。
+    <h3>3. スキル</h3>
+    <ul>
+      <li><span class="g">神</span>… 回復・再生・バリア・カウンター・弱体。ねばって 勝つ。</li>
+      <li><span class="d">魔</span>… 毒・吸収・手ごま破壊・呪い。じわじわ 削る。</li>
+      <li><span class="r">竜</span>… 高火力・貫通・倍化・リベンジ。一気に 削る。</li>
+    </ul>
+    スキルは <b>はさんで置けたとき</b>だけ 発動する。
+    <h3>4. リーダースキル</h3>
+    デッキの リーダー（👑）の 効果が バトル中ずっと かかる。デッキ編集で キャラを 長おし（PCは右クリック）すると リーダーを 変えられる。
+    <h3>5. けっちゃく</h3>
+    どちらかのHPが 0、または 盤が うまって 置けなくなったら 終了。盤が うまった場合は <b>残りHPが多いほう</b>の 勝ち。
+    <h3>6. デッキ編集</h3>
+    45キャラから 16枚。<b>コスト合計52まで</b>。強いキャラ（★5）ばかりでは 組めないので、安くて 硬いキャラや スキルの かみ合いで バランスを とろう。
+    <h3>そうさ</h3>
+    手ごまを タップ → 光ったマスを タップ。マスの 数字は <b>そこに置いたときの ダメージ</b>。もういちど カードを タップすると 選択かいじょ。
+    <div style="text-align:center;margin-top:12px"><button class="mbtn small" id="btnHelpClose">とじる</button></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* =========================================================================
+   REVERSI BRAVE - 逆転オセロバトル
+   6x6リバーシ + デッキ構築バトル（オセロニア風）
+   ========================================================================= */
+
+const N = 6;                 // 盤の大きさ
+const DECK_SIZE = 16;        // デッキ枚数
+const HAND_SIZE = 4;         // 手ごま
+const COST_LIMIT = 52;       // デッキコスト上限
+const COMBO_STEP = 0.15;     // コンボ1つあたりの倍率
+const COMBO_MAX = 5;
+
+const ATTR = {
+  god:    { name:'神', col:'#5ec8ff', col2:'#1f6fd0', glyph:'神' },
+  demon:  { name:'魔', col:'#c88bff', col2:'#6a1fb0', glyph:'魔' },
+  dragon: { name:'竜', col:'#ff8a6b', col2:'#c22a1c', glyph:'竜' }
+};
+const RARE_COST = { 2:2, 3:3, 4:4, 5:5 };
+
+/* ---------------- スキル文言 ---------------- */
+function skillDesc(s){
+  if(!s) return 'スキルなし';
+  const v=s.v, t=s.tn;
+  switch(s.t){
+    case 'dmg':      return `相手に${v}ダメージ`;
+    case 'dmgFlip':  return `返した枚数×${v}の追加ダメージ`;
+    case 'dmgMine':  return `盤上の自分の駒数×${v}ダメージ`;
+    case 'mult':     return `この攻撃のダメージ×${v}`;
+    case 'heal':     return `HPを${v}回復`;
+    case 'healFlip': return `返した枚数×${v}回復`;
+    case 'drain':    return `${v}ダメージを与え、同じだけ回復`;
+    case 'poison':   return `相手に毒${v}／ターンを${t}ターン`;
+    case 'regen':    return `自分に再生${v}／ターンを${t}ターン`;
+    case 'atkUp':    return `${t}ターン 自分のATK+${v}%`;
+    case 'atkDown':  return `${t}ターン 相手のATK-${v}%`;
+    case 'barrier':  return `${t}ターン 受けるダメージ-${v}%`;
+    case 'counter':  return `${t}ターン 受けた攻撃の${v}%を反射`;
+    case 'revenge':  return `${v}ダメージ（自分のHPが減るほど最大3倍）`;
+    case 'handBreak':return `相手の手ごま1枚を破壊し${v}ダメージ`;
+    case 'chain':    return `コンボ数×${v}ダメージ`;
+    case 'pierce':   return `バリアを無視して${v}ダメージ`;
+    case 'curse':    return `相手の強化を解除し${v}ダメージ`;
+    case 'rage':     return `以降ずっと 自分のATK+${v}%（重ねがけ可）`;
+    case 'corner':   return `角に置くと${v}ダメージ（角以外は1/3）`;
+  }
+  return '';
+}
+function skillShort(s){
+  if(!s) return '—';
+  const v=s.v,t=s.tn;
+  switch(s.t){
+    case 'dmg':      return `ダメ${v}`;
+    case 'dmgFlip':  return `返×${v}ダメ`;
+    case 'dmgMine':  return `駒×${v}ダメ`;
+    case 'mult':     return `ダメ×${v}`;
+    case 'heal':     return `回復${v}`;
+    case 'healFlip': return `返×${v}回復`;
+    case 'drain':    return `吸収${v}`;
+    case 'poison':   return `毒${v}×${t}`;
+    case 'regen':    return `再生${v}×${t}`;
+    case 'atkUp':    return `ATK+${v}%`;
+    case 'atkDown':  return `敵ATK-${v}%`;
+    case 'barrier':  return `防御+${v}%`;
+    case 'counter':  return `反射${v}%`;
+    case 'revenge':  return `逆襲${v}`;
+    case 'handBreak':return `手札破壊`;
+    case 'chain':    return `連×${v}ダメ`;
+    case 'pierce':   return `貫通${v}`;
+    case 'curse':    return `呪い${v}`;
+    case 'rage':     return `永続+${v}%`;
+    case 'corner':   return `角${v}ダメ`;
+  }
+  return '';
+}
+function leaderDesc(l){
+  if(!l) return '';
+  switch(l.t){
+    case 'atkAttr': return `${ATTR[l.attr].name}属性の駒のATK+${l.v}%`;
+    case 'atkAll':  return `すべての駒のATK+${l.v}%`;
+    case 'maxhp':   return `最大HP+${l.v}%`;
+    case 'guard':   return `受けるダメージ-${l.v}%`;
+    case 'lregen':  return `自分のターンの始めにHP${l.v}回復`;
+    case 'combo':   return `コンボ倍率アップ（1コンボにつき+${l.v}%）`;
+  }
+  return '';
+}
+
+/* ---------------- キャラ図鑑（45体） ----------------
+   表の数値は 設計値。ATK_SCALE / HP_SCALE で 全体のテンポを 調整する
+   （HPに対して 1ターンの ダメージが 大きすぎると 決着が 早すぎるため）  */
+const ATK_SCALE = 0.62;
+const HP_SCALE  = 1.05;
+const DMG_SKILLS = ['dmg','dmgFlip','dmgMine','chain','revenge','pierce','curse','handBreak','corner','drain'];
+const HP_SKILLS  = ['heal','healFlip','regen','poison'];
+function C(id,name,attr,rare,atk,hp,icon,sk,ls){
+  if(sk){
+    if(DMG_SKILLS.indexOf(sk.t)>=0) sk.v = Math.round(sk.v*ATK_SCALE);
+    else if(HP_SKILLS.indexOf(sk.t)>=0) sk.v = Math.round(sk.v*HP_SCALE);
+  }
+  return { id, name, attr, rare,
+           atk: Math.round(atk*ATK_SCALE), hp: Math.round(hp*HP_SCALE),
+           icon, cost:RARE_COST[rare], skill:sk, ls };
+}
+const CARDS = [
+  /* ===== 神 ===== */
+  C('g1','見習い神官セラ','god',2,50,170,'🕯️',{t:'heal',v:60,n:'いやしの灯'},{t:'lregen',v:14}),
+  C('g2','妖精ピクシー','god',2,46,155,'🧚',{t:'healFlip',v:26,n:'妖精のしずく'},{t:'maxhp',v:5}),
+  C('g3','白鳥の守り手','god',2,56,190,'🦢',{t:'barrier',v:20,tn:2,n:'翼のまもり'},{t:'guard',v:6}),
+  C('g4','聖盾騎士ガレス','god',3,76,250,'🛡️',{t:'barrier',v:30,tn:2,n:'聖盾リフレクト'},{t:'guard',v:10}),
+  C('g5','森の巫女ミレイ','god',3,70,242,'🌿',{t:'regen',v:46,tn:3,n:'森のめぐみ'},{t:'lregen',v:26}),
+  C('g6','光の弓手リディア','god',3,92,202,'🏹',{t:'dmg',v:110,n:'ひかりの矢'},{t:'atkAttr',attr:'god',v:15}),
+  C('g7','鐘守アルマ','god',3,72,256,'🔔',{t:'atkDown',v:25,tn:2,n:'しずめの鐘'},{t:'maxhp',v:8}),
+  C('g8','熾天使ウリエル','god',4,110,300,'😇',{t:'heal',v:255,n:'天翼のいやし'},{t:'maxhp',v:12}),
+  C('g9','聖槍騎士ロンギス','god',4,126,268,'🔱',{t:'dmg',v:205,n:'聖槍ジャッジ'},{t:'atkAttr',attr:'god',v:20}),
+  C('g10','鏡の聖女セシリア','god',4,100,312,'🪞',{t:'counter',v:60,tn:3,n:'ミラーグレイス'},{t:'guard',v:13}),
+  C('g11','曙光のヒーラー','god',4,104,296,'🌅',{t:'regen',v:82,tn:4,n:'あけぼのの光'},{t:'lregen',v:42}),
+  C('g12','大天使ミカエル','god',5,150,332,'👼',{t:'dmg',v:290,n:'ラストジャッジメント'},{t:'atkAttr',attr:'god',v:30}),
+  C('g13','女神アストレア','god',5,130,402,'🌟',{t:'heal',v:420,n:'星天のいのり'},{t:'maxhp',v:18}),
+  C('g14','聖王ソロモン','god',5,138,352,'👑',{t:'atkDown',v:40,tn:3,n:'王の戒律'},{t:'atkAll',v:14}),
+  C('g15','守護神テミス','god',5,134,382,'🏛️',{t:'barrier',v:45,tn:3,n:'絶対防壁'},{t:'guard',v:20}),
+
+  /* ===== 魔 ===== */
+  C('d1','いたずら小悪魔','demon',2,52,160,'😈',{t:'poison',v:30,tn:3,n:'いたずら毒'},{t:'atkAttr',attr:'demon',v:10}),
+  C('d2','毒キノコ','demon',2,44,168,'🍄',{t:'poison',v:26,tn:4,n:'ほうしばらまき'},{t:'maxhp',v:6}),
+  C('d3','コウモリの群れ','demon',2,58,146,'🦇',{t:'drain',v:55,n:'ブラッドシップ'},{t:'lregen',v:12}),
+  C('d4','妖狐タマモ','demon',3,86,216,'🦊',{t:'drain',v:122,n:'たましい喰い'},{t:'atkAttr',attr:'demon',v:15}),
+  C('d5','黒魔女ノワール','demon',3,78,236,'🧙',{t:'poison',v:56,tn:3,n:'漆黒のどく'},{t:'maxhp',v:8}),
+  C('d6','墓守グール','demon',3,80,240,'🪦',{t:'dmgMine',v:23,n:'ぼちのどよめき'},{t:'guard',v:9}),
+  C('d7','蒐集家メフィス','demon',3,74,252,'🎩',{t:'handBreak',v:60,n:'けいやくの強奪'},{t:'atkAll',v:8}),
+  C('d8','吸血姫カーミラ','demon',4,116,286,'🧛',{t:'drain',v:232,n:'真紅のくちづけ'},{t:'atkAttr',attr:'demon',v:20}),
+  C('d9','死神タナトス','demon',4,120,280,'💀',{t:'poison',v:92,tn:4,n:'しのせんこく'},{t:'atkAll',v:11}),
+  C('d10','呪術師ヴードゥ','demon',4,106,302,'🪆',{t:'curse',v:165,n:'のろいの人形'},{t:'maxhp',v:12}),
+  C('d11','深淵の大蛇','demon',4,118,276,'🐍',{t:'chain',v:82,n:'とぐろ連鎖'},{t:'combo',v:5}),
+  C('d12','魔王ベルゼブト','demon',5,146,350,'👿',{t:'drain',v:380,n:'まおうのごちそう'},{t:'atkAttr',attr:'demon',v:30}),
+  C('d13','冥府の女王ヘル','demon',5,134,372,'⚰️',{t:'poison',v:132,tn:5,n:'めいふのしょうたい'},{t:'maxhp',v:17}),
+  C('d14','混沌の魔女リリス','demon',5,140,346,'🔮',{t:'handBreak',v:250,n:'カオスプランダー'},{t:'atkAll',v:15}),
+  C('d15','影喰いノクス','demon',5,152,330,'🌑',{t:'dmgMine',v:46,n:'えいえんのやみ'},{t:'combo',v:8}),
+
+  /* ===== 竜 ===== */
+  C('r1','子竜チビラ','dragon',2,60,152,'🐣',{t:'dmg',v:56,n:'はじめてのブレス'},{t:'atkAttr',attr:'dragon',v:10}),
+  C('r2','火トカゲ','dragon',2,62,146,'🦎',{t:'dmgFlip',v:30,n:'ヒートテイル'},{t:'atkAll',v:6}),
+  C('r3','竜の使いロウ','dragon',2,56,172,'🪶',{t:'atkUp',v:25,tn:2,n:'たかまる闘気'},{t:'maxhp',v:6}),
+  C('r4','紅蓮の翼','dragon',3,96,206,'🔥',{t:'dmg',v:132,n:'ぐれんブレス'},{t:'atkAttr',attr:'dragon',v:15}),
+  C('r5','雷竜ライガ','dragon',3,88,226,'⚡',{t:'dmgFlip',v:56,n:'サンダーチェイン'},{t:'combo',v:5}),
+  C('r6','双頭竜ツイン','dragon',3,82,238,'🐲',{t:'mult',v:1.5,n:'そうとうのきば'},{t:'atkAll',v:9}),
+  C('r7','竜血の戦士','dragon',3,92,212,'🗡️',{t:'revenge',v:120,n:'りゅうけつの怒り'},{t:'guard',v:9}),
+  C('r8','炎帝竜イフリート','dragon',4,132,266,'🌋',{t:'dmg',v:235,n:'えんていほうこう'},{t:'atkAttr',attr:'dragon',v:20}),
+  C('r9','嵐竜テンペスト','dragon',4,122,282,'🌪️',{t:'dmgFlip',v:86,n:'あらしのつばさ'},{t:'combo',v:6}),
+  C('r10','貫き竜ドリュウ','dragon',4,118,288,'🪓',{t:'pierce',v:212,n:'つらぬくきば'},{t:'atkAll',v:11}),
+  C('r11','竜将ガイア','dragon',4,112,302,'🐊',{t:'rage',v:18,n:'りゅうしょうのかまえ'},{t:'maxhp',v:12}),
+  C('r12','覇竜王バハムート','dragon',5,160,340,'🐉',{t:'mult',v:1.8,n:'メガフレア'},{t:'atkAttr',attr:'dragon',v:30}),
+  C('r13','終焉竜ラグナ','dragon',5,150,356,'☄️',{t:'revenge',v:265,n:'しゅうえんのひかり'},{t:'atkAll',v:15}),
+  C('r14','極光竜オーロラ','dragon',5,140,376,'🌈',{t:'dmgFlip',v:132,n:'きょっこうのうねり'},{t:'combo',v:9}),
+  C('r15','神竜ティアマト','dragon',5,156,346,'🦕',{t:'pierce',v:335,n:'げんしのおたけび'},{t:'maxhp',v:16})
+];
+const CARD_BY_ID = {};
+CARDS.forEach(c=>CARD_BY_ID[c.id]=c);
+
+/* ---------------- おすすめデッキ ---------------- */
+const PRESETS = [
+  { name:'バランス', leader:'g13',
+    ids:['g13','r14','d15','d13','d12','g14','g10','g3','r3','r2','r1','d3','d1','d2','g1','g2'] },
+  { name:'神・耐久', leader:'g13',
+    ids:['g13','g15','g10','g8','g11','g14','g12','g5','g4','g1','g3','g2','d1','r3','d3','r2'] },
+  { name:'魔・毒', leader:'d12',
+    ids:['d12','d13','d14','d8','d9','d10','d15','d5','d4','d3','d2','d1','r3','g3','g1','g2'] },
+  { name:'竜・速攻', leader:'r12',
+    ids:['r12','r13','r15','r14','r10','r8','r9','r4','r6','r1','r2','r3','d2','g1','g2','g3'] }
+];
+
+/* ---------------- CPU ---------------- */
+const OPPONENTS = [
+  { id:'o1', name:'みならい オセロン', icon:'🥚', col:'#7fd4a0', diff:0,
+    desc:'ルールを おぼえたばかり。まずは 肩ならし。', attrs:['god','demon','dragon'], budget:42 },
+  { id:'o2', name:'神殿の少女 ミュゼ', icon:'🕊️', col:'#8fd8ff', diff:1,
+    desc:'回復と 再生で ねばる 神デッキ。', attrs:['god'], budget:45 },
+  { id:'o3', name:'炎の兄弟 バラン', icon:'🔥', col:'#ff9f6b', diff:1,
+    desc:'高いATKで 押しきる 竜デッキ。', attrs:['dragon'], budget:47 },
+  { id:'o4', name:'毒使い ヴェノ', icon:'☠️', col:'#c88bff', diff:2,
+    desc:'毒と 吸収で じわじわ 削る 魔デッキ。', attrs:['demon'], budget:49 },
+  { id:'o5', name:'盾の将 ガーラント', icon:'🛡️', col:'#9fe0ff', diff:2,
+    desc:'バリアと カウンターの かたい 神デッキ。', attrs:['god','demon'], budget:50 },
+  { id:'o6', name:'双竜の姫 リンドウ', icon:'🐲', col:'#ff8a7a', diff:3,
+    desc:'倍化と 貫通で 一撃が おもい 竜デッキ。', attrs:['dragon','demon'], budget:52 },
+  { id:'o7', name:'冥府の女王 ヘル', icon:'⚰️', col:'#b07bff', diff:3,
+    desc:'呪い・毒・手ごま破壊。いやらしさの きわみ。', attrs:['demon','god'], budget:53 },
+  { id:'o8', name:'盤上の覇王 グランド', icon:'👑', col:'#ffd76b', diff:4,
+    desc:'三属性を あやつる 最強の 挑戦者。', attrs:['god','demon','dragon'], budget:55 }
+];
+const DIFF_NAME = ['やさしい','ふつう','つよい','かなり強い','覇王'];
+
+/* ---------------- 乱数（シード付き） ---------------- */
+function mulberry(seed){
+  let a = seed >>> 0;
+  return function(){
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = Math.imul(a ^ (a>>>15), 1|a);
+    t = (t + Math.imul(t ^ (t>>>7), 61|t)) ^ t;
+    return ((t ^ (t>>>14)) >>> 0) / 4294967296;
+  };
+}
+function shuffle(arr, rnd){
+  for(let i=arr.length-1;i>0;i--){
+    const j = Math.floor((rnd?rnd():Math.random())*(i+1));
+    [arr[i],arr[j]] = [arr[j],arr[i]];
+  }
+  return arr;
+}
+
+/* CPUのデッキを シードから 自動生成（かならず16枚・予算内） */
+const MIN_COST = 2;
+/* cand を 入れても のこりを 最安で うめて 予算内に おさまるか */
+function fitsBudget(picked, cost, cand, budget){
+  const need = DECK_SIZE - picked.length - 1;
+  const left = [];
+  for(const c of CARDS) if(c!==cand && picked.indexOf(c)<0) left.push(c.cost);
+  if(left.length < need) return false;
+  left.sort((a,b)=>a-b);
+  let sum=0; for(let i=0;i<need;i++) sum += left[i];
+  return cost + cand.cost + sum <= budget;
+}
+function buildCpuDeck(opp){
+  let seed = 0;
+  for(const ch of opp.id+opp.name) seed = (seed*131 + ch.charCodeAt(0))|0;
+  const rnd = mulberry(seed>>>0);
+  const scored = CARDS.map(c=>{
+    let s = c.rare*10 + (c.atk + c.hp/3)/12 + rnd()*9;
+    s += (opp.attrs.indexOf(c.attr)>=0) ? 30 : -10;
+    return { c, s };
+  }).sort((a,b)=>b.s-a.s);
+  const picked=[]; let cost=0;
+  for(const it of scored){
+    if(picked.length>=DECK_SIZE) break;
+    if(fitsBudget(picked, cost, it.c, opp.budget)){ picked.push(it.c); cost += it.c.cost; }
+  }
+  let leader = picked[0];
+  for(const c of picked){
+    const better = c.rare>leader.rare ||
+      (c.rare===leader.rare && opp.attrs.indexOf(c.attr)===0 && opp.attrs.indexOf(leader.attr)!==0);
+    if(better) leader = c;
+  }
+  return { ids: picked.map(c=>c.id), leader: leader.id, cost };
+}
+
+/* =========================================================================
+   ゲーム本体
+   ========================================================================= */
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r=>setTimeout(r, ms));
+const clamp = (v,a,b) => v<a?a:(v>b?b:v);
+const DIRS = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+const CORNERS = [0, N-1, N*(N-1), N*N-1];
+
+const POS_W = [
+  120,-40, 20, 20,-40,120,
+  -40,-55, -5, -5,-55,-40,
+   20, -5,  0,  0, -5, 20,
+   20, -5,  0,  0, -5, 20,
+  -40,-55, -5, -5,-55,-40,
+  120,-40, 20, 20,-40,120
+];
+
+const G = {
+  board: null,        // [{owner, card}] or null
+  players: [null,null],
+  turn: 0,
+  phase: 'title',
+  busy: false,
+  selIdx: -1,
+  legal: {},          // cell -> {flips:[], dmg}
+  freeMode: false,    // はさめる場所がない（どこでも置ける）
+  passCount: 0,
+  turnNo: 0,
+  anims: [],
+  pops: [],
+  lastCell: -1,
+  oppIndex: 0,
+  logLines: []
+};
+
+/* ---------------- プレイヤー生成 ---------------- */
+function makePlayer(human, name, icon, col, deckIds, leaderId, aiDiff){
+  const cards = deckIds.map(id=>CARD_BY_ID[id]).filter(Boolean);
+  const leader = CARD_BY_ID[leaderId] || cards[0];
+  let maxHp = cards.reduce((s,c)=>s+c.hp, 0);
+  if(leader && leader.ls && leader.ls.t==='maxhp') maxHp = Math.round(maxHp * (1+leader.ls.v/100));
+  return {
+    human, name, icon, col, aiDiff: aiDiff||0,
+    cards, leader,
+    drawPile: null, hand: [], placed: 0, lost: 0,
+    hp: maxHp, maxHp,
+    eff: { poison:null, regen:null, atkUp:null, atkDown:null, barrier:null, counter:null },
+    rage: 0, combo: 0, maxCombo: 0, totalDmg: 0
+  };
+}
+function initDraw(p, rnd){
+  p.drawPile = shuffle(p.cards.slice(), rnd);
+  p.hand = [];
+  for(let i=0;i<HAND_SIZE;i++) if(p.drawPile.length) p.hand.push(p.drawPile.pop());
+}
+
+/* ---------------- 盤の処理 ---------------- */
+function idx(x,y){ return y*N+x; }
+function inside(x,y){ return x>=0 && x<N && y>=0 && y<N; }
+
+function flipsFor(board, cell, owner){
+  if(board[cell]) return [];
+  const x = cell%N, y = (cell/N)|0;
+  const res = [];
+  for(const [dx,dy] of DIRS){
+    const line=[];
+    let cx=x+dx, cy=y+dy;
+    while(inside(cx,cy)){
+      const c = board[idx(cx,cy)];
+      if(!c) { line.length=0; break; }
+      if(c.owner !== owner){ line.push(idx(cx,cy)); }
+      else break;
+      cx+=dx; cy+=dy;
+    }
+    if(!inside(cx,cy)) continue;
+    const end = board[idx(cx,cy)];
+    if(end && end.owner===owner && line.length) res.push(...line);
+  }
+  return res;
+}
+function emptyCells(board){
+  const r=[]; for(let i=0;i<N*N;i++) if(!board[i]) r.push(i);
+  return r;
+}
+function countDiscs(board, owner){
+  let n=0; for(let i=0;i<N*N;i++) if(board[i] && board[i].owner===owner) n++;
+  return n;
+}
+
+/* ---------------- ATK / ダメージ計算 ---------------- */
+function effAtk(p, card){
+  let a = card.atk;
+  const ls = p.leader && p.leader.ls;
+  if(ls){
+    if(ls.t==='atkAttr' && ls.attr===card.attr) a *= (1+ls.v/100);
+    else if(ls.t==='atkAll') a *= (1+ls.v/100);
+  }
+  a *= (1 + p.rage/100);
+  if(p.eff.atkUp)   a *= (1 + p.eff.atkUp.v/100);
+  if(p.eff.atkDown) a *= (1 - p.eff.atkDown.v/100);
+  return a;
+}
+function comboMul(p){
+  const ls = p.leader && p.leader.ls;
+  const bonus = (ls && ls.t==='combo') ? ls.v/100 : 0;
+  return 1 + Math.min(p.combo, COMBO_MAX) * (COMBO_STEP + bonus);
+}
+/* この配置での ダメージ見込み（スキルの固定ダメージ含む） */
+function previewDamage(p, foe, card, cell, flipCount, board){
+  if(flipCount<=0) return 0;
+  let mul = comboMul(p);
+  const sk = card.skill;
+  if(sk && sk.t==='mult') mul *= sk.v;
+  let dmg = effAtk(p, card) * flipCount * mul;
+  let extra = 0;
+  if(sk){
+    switch(sk.t){
+      case 'dmg': case 'pierce': case 'curse': case 'handBreak': extra = sk.v; break;
+      case 'drain': extra = sk.v; break;
+      case 'dmgFlip': extra = sk.v * flipCount; break;
+      case 'dmgMine': extra = sk.v * (countDiscs(board, p===G.players[0]?0:1) + 1 + flipCount); break;
+      case 'chain': extra = sk.v * (Math.min(p.combo,COMBO_MAX)+1); break;
+      case 'revenge': extra = sk.v * (1 + 2*(1 - p.hp/p.maxHp)); break;
+      case 'corner': extra = CORNERS.indexOf(cell)>=0 ? sk.v : sk.v/3; break;
+    }
+  }
+  return Math.round(dmg + extra);
+}
+/* 実ダメージ適用（バリア・リーダー軽減・カウンター蓄積） */
+function applyDamage(target, amount, opt){
+  opt = opt||{};
+  let d = amount;
+  if(!opt.pierce){
+    if(target.eff.barrier) d *= (1 - target.eff.barrier.v/100);
+    const ls = target.leader && target.leader.ls;
+    if(ls && ls.t==='guard') d *= (1 - ls.v/100);
+  }
+  d = Math.max(1, Math.round(d));
+  target.hp = Math.max(0, target.hp - d);
+  return d;
+}
+function healPlayer(p, amount){
+  const before = p.hp;
+  p.hp = Math.min(p.maxHp, p.hp + Math.round(amount));
+  return p.hp - before;
+}
+
+/* ---------------- ログ ---------------- */
+function log(html){
+  G.logLines.push(html);
+  if(G.logLines.length>2) G.logLines.shift();
+  $('logBox').innerHTML = G.logLines.map(l=>'<div>'+l+'</div>').join('');
+}
+
+/* ---------------- バトル開始 ---------------- */
+function startBattle(oppIndex){
+  G.oppIndex = oppIndex;
+  const opp = OPPONENTS[oppIndex];
+  const cpuDeck = buildCpuDeck(opp);
+  const me = makePlayer(true, 'きみ', '🛡️', '#6fd0ff', myDeck.ids, myDeck.leader, 0);
+  const foe = makePlayer(false, opp.name, opp.icon, opp.col, cpuDeck.ids, cpuDeck.leader, opp.diff);
+  G.players = [me, foe];
+  const rnd = Math.random;
+  initDraw(me, rnd); initDraw(foe, rnd);
+
+  G.board = new Array(N*N).fill(null);
+  // 初期配置（中央4マス）
+  const c = N/2;
+  G.board[idx(c-1,c-1)] = { owner:1, card: pickInit(foe,0) };
+  G.board[idx(c,c)]     = { owner:1, card: pickInit(foe,1) };
+  G.board[idx(c,c-1)]   = { owner:0, card: pickInit(me,0) };
+  G.board[idx(c-1,c)]   = { owner:0, card: pickInit(me,1) };
+
+  G.turn = 0; G.phase='battle'; G.busy=false; G.selIdx=-1; G.passCount=0; G.turnNo=1;
+  G.anims=[]; G.pops=[]; G.lastCell=-1; G.logLines=[];
+
+  showScreen('battleScreen');
+  resizeBoard();
+  $('foeFace').textContent = opp.icon;
+  $('foeFace').style.background = 'linear-gradient(160deg,'+opp.col+',rgba(0,0,0,.6))';
+  $('foeName').textContent = opp.name;
+  $('meFace').style.background = 'linear-gradient(160deg,#6fd0ff,#123a6b)';
+  log('<span class="hi">'+opp.name+'</span> との バトル かいし！');
+  updateUI();
+  beginTurn(0, true);
+}
+function pickInit(p, n){
+  // 初期駒は デッキの中の 安いキャラを 見た目に使う（能力は関係なし）
+  const sorted = p.cards.slice().sort((a,b)=>a.rare-b.rare || a.atk-b.atk);
+  return sorted[Math.min(n, sorted.length-1)];
+}
+
+/* ---------------- ターン処理 ---------------- */
+async function beginTurn(pi, first){
+  G.turn = pi;
+  G.selIdx = -1;
+  const p = G.players[pi], foe = G.players[1-pi];
+  updateUI();
+  if(!first){
+    // 状態異常・リーダー回復
+    let msg = [];
+    if(p.eff.poison){
+      const d = applyDamage(p, p.eff.poison.v, {pierce:true});
+      addPop(-1, '-'+d, '#d38bff', true, pi);
+      msg.push('<span class="dm">毒 '+d+'</span>');
+      if(--p.eff.poison.t<=0) p.eff.poison=null;
+    }
+    if(p.eff.regen){
+      const h = healPlayer(p, p.eff.regen.v);
+      if(h>0){ addPop(-1, '+'+h, '#8ef0c0', true, pi); msg.push('<span class="he">再生 '+h+'</span>'); }
+      if(--p.eff.regen.t<=0) p.eff.regen=null;
+    }
+    const ls = p.leader && p.leader.ls;
+    if(ls && ls.t==='lregen'){
+      const h = healPlayer(p, ls.v);
+      if(h>0) msg.push('<span class="he">リーダー回復 '+h+'</span>');
+    }
+    for(const k of ['atkUp','atkDown','barrier','counter']){
+      if(p.eff[k] && --p.eff[k].t<=0) p.eff[k]=null;
+    }
+    if(msg.length) log(nameTag(p)+' '+msg.join(' / '));
+    updateUI();
+    if(p.hp<=0){ await sleep(500); return endGame(); }
+    if(msg.length) await sleep(480);
+  }
+  // 手ごまが なければ パス
+  if(p.hand.length===0){
+    log(nameTag(p)+' は 手ごまが なくなった…（パス）');
+    G.passCount++;
+    if(G.passCount>=2 || emptyCells(G.board).length===0) return endGame();
+    await sleep(700);
+    return beginTurn(1-pi, false);
+  }
+  if(emptyCells(G.board).length===0) return endGame();
+  G.passCount = 0;
+  computeLegal(pi);
+  updateUI();
+  if(p.human){
+    G.busy = false;
+    updateUI();
+    showCenter(G.freeMode ? 'はさめない！ どこでもOK' : 'きみの ターン');
+  }else{
+    G.busy = true;
+    await sleep(620);
+    aiTurn();
+  }
+}
+
+function computeLegal(pi){
+  const p = G.players[pi];
+  G.legal = {}; G.freeMode = false;
+  let any = false;
+  const cells = emptyCells(G.board);
+  for(const cell of cells){
+    const f = flipsFor(G.board, cell, pi);
+    if(f.length){ G.legal[cell] = { flips:f }; any = true; }
+  }
+  if(!any){
+    G.freeMode = true;
+    for(const cell of cells) G.legal[cell] = { flips:[] };
+  }
+}
+
+function nameTag(p){
+  return '<span class="hi">'+(p.human?'きみ':p.name)+'</span>';
+}
+
+/* ---------------- 駒を置く ---------------- */
+async function placePiece(pi, handIdx, cell){
+  if(G.busy && G.players[pi].human) return;
+  const p = G.players[pi], foe = G.players[1-pi];
+  const card = p.hand[handIdx];
+  const info = G.legal[cell];
+  if(!card || !info) return;
+  G.busy = true; G.selIdx = -1;
+  const flips = info.flips;
+
+  // 配置
+  G.board[cell] = { owner:pi, card, born:performance.now() };
+  G.lastCell = cell;
+  p.hand.splice(handIdx,1);
+  p.placed++;
+  sfxPlace();
+  addAnim({ type:'place', cell, t:0, dur:220 });
+  updateUI();
+  await sleep(190);
+
+  // ひっくり返す
+  if(flips.length){
+    flips.forEach((c,i)=>{
+      addAnim({ type:'flip', cell:c, t:-i*45, dur:260, from:1-pi, to:pi });
+      setTimeout(()=>{ if(G.board[c]) G.board[c].owner = pi; sfxFlip(i); }, Math.max(0,i*45)+130);
+    });
+    await sleep(Math.min(700, flips.length*45 + 300));
+  }
+
+  let logMsg = nameTag(p)+' '+card.icon+card.name;
+  let dealt = 0;
+
+  if(flips.length>0){
+    // 通常攻撃
+    let mul = comboMul(p);
+    const sk = card.skill;
+    if(sk && sk.t==='mult'){ mul *= sk.v; }
+    const raw = effAtk(p, card) * flips.length * mul;
+    const d = applyDamage(foe, raw);
+    dealt += d;
+    p.totalDmg += d;
+    addPop(cell, '-'+d, '#ff7a7a', false, 1-pi);
+    sfxHit(flips.length);
+    shake(Math.min(9, 3+flips.length));
+    logMsg += ' <span class="dm">'+flips.length+'枚返し '+d+'ダメージ</span>';
+    if(p.combo>0) logMsg += ' <span class="hi">'+(p.combo+1)+'コンボ</span>';
+    p.combo++; p.maxCombo = Math.max(p.maxCombo, p.combo);
+    updateUI();
+    await sleep(330);
+
+    // スキル
+    if(sk && sk.t!=='mult'){
+      showSkill(card, p);
+      sfxSkill();
+      await sleep(420);
+      const r = await runSkill(card, p, foe, { flips:flips.length, cell, pi });
+      dealt += r.dmg;
+      p.totalDmg += r.dmg;
+      logMsg += ' / <span class="hi">'+sk.n+'</span>'+(r.text?' '+r.text:'');
+      updateUI();
+      await sleep(300);
+    }else if(sk && sk.t==='mult'){
+      showSkill(card, p);
+      logMsg += ' / <span class="hi">'+sk.n+'</span>';
+    }
+
+    // カウンター（反射）
+    if(dealt>0 && foe.eff.counter){
+      const back = applyDamage(p, dealt * foe.eff.counter.v/100, {pierce:true});
+      addPop(-1, '-'+back, '#ffd76b', true, pi);
+      logMsg += ' / <span class="dm">反射 '+back+'</span>';
+      sfxHit(2);
+      updateUI();
+      await sleep(360);
+    }
+  }else{
+    p.combo = 0;
+    logMsg += ' を 置いた（はさめず ダメージなし）';
+  }
+  log(logMsg);
+
+  // 補充
+  if(p.drawPile.length) p.hand.push(p.drawPile.pop());
+  updateUI();
+
+  if(foe.hp<=0 || p.hp<=0){ await sleep(650); return endGame(); }
+  if(emptyCells(G.board).length===0){ await sleep(650); return endGame(); }
+  await sleep(260);
+  G.turnNo++;
+  beginTurn(1-pi, false);
+}
+
+/* ---------------- スキル実行 ---------------- */
+async function runSkill(card, p, foe, ctx){
+  const sk = card.skill;
+  let dmg = 0, text = '';
+  const myIndex = (p===G.players[0])?0:1;
+  const dealNow = (amount, opt) => {
+    const d = applyDamage(foe, amount, opt);
+    dmg += d;
+    addPop(ctx.cell, '-'+d, '#ffb46b', false, 1-myIndex);
+    return d;
+  };
+  switch(sk.t){
+    case 'dmg':
+      text = '<span class="dm">'+dealNow(sk.v)+'ダメージ</span>'; sfxHit(3); break;
+    case 'pierce':
+      text = '<span class="dm">貫通 '+dealNow(sk.v,{pierce:true})+'ダメージ</span>'; sfxHit(3); break;
+    case 'dmgFlip':
+      text = '<span class="dm">'+dealNow(sk.v*ctx.flips)+'ダメージ</span>'; sfxHit(3); break;
+    case 'dmgMine': {
+      const n = countDiscs(G.board, myIndex);
+      text = '<span class="dm">駒'+n+'枚 '+dealNow(sk.v*n)+'ダメージ</span>'; sfxHit(3); break;
+    }
+    case 'chain': {
+      const c = Math.min(p.combo, COMBO_MAX);
+      text = '<span class="dm">'+dealNow(sk.v*c)+'ダメージ</span>'; sfxHit(3); break;
+    }
+    case 'revenge': {
+      const r = 1 + 2*(1 - p.hp/p.maxHp);
+      text = '<span class="dm">'+dealNow(sk.v*r)+'ダメージ</span>'; sfxHit(4); break;
+    }
+    case 'corner': {
+      const v = CORNERS.indexOf(ctx.cell)>=0 ? sk.v : sk.v/3;
+      text = '<span class="dm">'+dealNow(v)+'ダメージ</span>'; sfxHit(3); break;
+    }
+    case 'curse': {
+      let cleared = 0;
+      for(const k of ['atkUp','barrier','counter','regen']) if(foe.eff[k]){ foe.eff[k]=null; cleared++; }
+      text = (cleared?'強化解除 / ':'')+'<span class="dm">'+dealNow(sk.v)+'ダメージ</span>'; sfxSkill(); break;
+    }
+    case 'handBreak': {
+      let brk = '';
+      if(foe.hand.length){
+        const i = Math.floor(Math.random()*foe.hand.length);
+        brk = foe.hand[i].name+'を破壊 / ';
+        foe.hand.splice(i,1); foe.lost++;
+        if(foe.drawPile.length) foe.hand.push(foe.drawPile.pop());
+      }
+      text = brk+'<span class="dm">'+dealNow(sk.v)+'ダメージ</span>'; sfxSkill(); break;
+    }
+    case 'drain': {
+      const d = dealNow(sk.v);
+      const h = healPlayer(p, d);
+      addPop(-1, '+'+h, '#8ef0c0', true, myIndex);
+      text = '<span class="dm">'+d+'ダメージ</span>＋<span class="he">'+h+'回復</span>'; sfxHeal(); break;
+    }
+    case 'heal': {
+      const h = healPlayer(p, sk.v);
+      addPop(-1, '+'+h, '#8ef0c0', true, myIndex);
+      text = '<span class="he">'+h+'回復</span>'; sfxHeal(); break;
+    }
+    case 'healFlip': {
+      const h = healPlayer(p, sk.v*ctx.flips);
+      addPop(-1, '+'+h, '#8ef0c0', true, myIndex);
+      text = '<span class="he">'+h+'回復</span>'; sfxHeal(); break;
+    }
+    case 'poison':
+      foe.eff.poison = { v:sk.v, t:sk.tn };
+      text = '相手に 毒'+sk.v+'×'+sk.tn+'ターン'; sfxSkill(); break;
+    case 'regen':
+      p.eff.regen = { v:sk.v, t:sk.tn };
+      text = '再生'+sk.v+'×'+sk.tn+'ターン'; sfxHeal(); break;
+    case 'atkUp':
+      p.eff.atkUp = { v:sk.v, t:sk.tn };
+      text = 'ATK+'+sk.v+'%'; sfxSkill(); break;
+    case 'atkDown':
+      foe.eff.atkDown = { v:sk.v, t:sk.tn };
+      text = '相手のATK-'+sk.v+'%'; sfxSkill(); break;
+    case 'barrier':
+      p.eff.barrier = { v:sk.v, t:sk.tn };
+      text = '被ダメージ-'+sk.v+'%'; sfxSkill(); break;
+    case 'counter':
+      p.eff.counter = { v:sk.v, t:sk.tn };
+      text = '反射'+sk.v+'%'; sfxSkill(); break;
+    case 'rage':
+      p.rage += sk.v;
+      text = '以降ATK+'+p.rage+'%'; sfxSkill(); break;
+  }
+  return { dmg, text };
+}
+
+/* ---------------- 決着 ---------------- */
+function endGame(){
+  G.phase = 'over';
+  G.busy = true;
+  const me = G.players[0], foe = G.players[1];
+  let win;
+  if(me.hp<=0 && foe.hp<=0) win = me.hp===foe.hp ? null : (me.hp>foe.hp);
+  else if(foe.hp<=0) win = true;
+  else if(me.hp<=0) win = false;
+  else if(me.hp===foe.hp) win = null;
+  else win = me.hp > foe.hp;
+  setTimeout(()=>showResult(win), 700);
+}
+
+/* =========================================================================
+   描画
+   ========================================================================= */
+const cv = $('board'), ctx2d = cv.getContext('2d');
+let BW = 360, CS = 60, DPR = 1;
+let shakeT = 0, shakeP = 0;
+
+function resizeBoard(){
+  // 画面の たてが みじかいときは 盤を 小さくして 手ごままで 見えるように する
+  const w = Math.max(220, Math.min(cv.parentElement.clientWidth, Math.round(window.innerHeight*0.54), 560));
+  DPR = Math.min(2, window.devicePixelRatio||1);
+  BW = w; CS = w / N;
+  cv.width = Math.round(w*DPR); cv.height = Math.round(w*DPR);
+  cv.style.width = w+'px'; cv.style.height = w+'px';
+  cv.style.margin = '0 auto';
+  ctx2d.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize', ()=>{ if(G.phase==='battle') resizeBoard(); });
+
+function addAnim(a){ a.start = performance.now() + (a.t||0); G.anims.push(a); }
+function addPop(cell, text, color, isSide, side){
+  G.pops.push({ cell, text, color, isSide, side, start: performance.now(), dur: 900 });
+}
+function shake(p){ shakeT = performance.now(); shakeP = p; }
+
+function animFor(cell){
+  const now = performance.now();
+  for(let i=G.anims.length-1;i>=0;i--){
+    const a = G.anims[i];
+    if(a.cell===cell && now>=a.start && now<a.start+a.dur) return a;
+  }
+  return null;
+}
+function cleanAnims(){
+  const now = performance.now();
+  G.anims = G.anims.filter(a=>now < a.start + a.dur + 40);
+  G.pops = G.pops.filter(p=>now < p.start + p.dur);
+}
+
+function discColors(owner, attr){
+  const A = ATTR[attr] || ATTR.god;
+  if(owner===0) return { base:'#11203f', edge:'#5fb8ff', ring:A.col, txt:'#dff0ff' };
+  return { base:'#f2e6d8', edge:'#ff7a6a', ring:A.col2, txt:'#3a1f16' };
+}
+
+function drawDisc(x, y, r, owner, card, sx){
+  const c = discColors(owner, card.attr);
+  ctx2d.save();
+  ctx2d.translate(x,y);
+  ctx2d.scale(Math.max(0.04, sx), 1);
+  // 影
+  ctx2d.beginPath(); ctx2d.arc(0, r*0.14, r, 0, 7); ctx2d.fillStyle='rgba(0,0,0,.42)'; ctx2d.fill();
+  // 本体
+  const g = ctx2d.createRadialGradient(-r*0.35,-r*0.4,r*0.1, 0,0,r*1.05);
+  if(owner===0){ g.addColorStop(0,'#2b4a7f'); g.addColorStop(.55,'#12203c'); g.addColorStop(1,'#070d1c'); }
+  else { g.addColorStop(0,'#fffdf8'); g.addColorStop(.6,'#ece0cf'); g.addColorStop(1,'#c3b09a'); }
+  ctx2d.beginPath(); ctx2d.arc(0,0,r,0,7); ctx2d.fillStyle = g; ctx2d.fill();
+  // 属性リング
+  ctx2d.beginPath(); ctx2d.arc(0,0,r*0.93,0,7);
+  ctx2d.lineWidth = Math.max(1.6, r*0.13); ctx2d.strokeStyle = c.ring; ctx2d.stroke();
+  ctx2d.beginPath(); ctx2d.arc(0,0,r,0,7);
+  ctx2d.lineWidth = Math.max(1, r*0.07); ctx2d.strokeStyle = c.edge; ctx2d.stroke();
+  // アイコン
+  if(Math.abs(sx)>0.35){
+    ctx2d.save(); ctx2d.scale(1/Math.max(0.04,sx), 1);
+    ctx2d.font = Math.round(r*1.05)+'px "Segoe UI Emoji","Apple Color Emoji",sans-serif';
+    ctx2d.textAlign='center'; ctx2d.textBaseline='middle';
+    ctx2d.globalAlpha = owner===0 ? 1 : .92;
+    ctx2d.fillText(card.icon, 0, r*0.02);
+    ctx2d.globalAlpha = 1;
+    ctx2d.restore();
+  }
+  ctx2d.restore();
+}
+
+function render(){
+  if(G.phase!=='battle' && G.phase!=='over'){ requestAnimationFrame(render); return; }
+  cleanAnims();
+  const now = performance.now();
+  ctx2d.setTransform(DPR,0,0,DPR,0,0);
+  let ox=0, oy=0;
+  const st = now - shakeT;
+  if(st < 260){
+    const k = (1-st/260)*shakeP;
+    ox = (Math.random()-0.5)*k*2; oy = (Math.random()-0.5)*k*2;
+  }
+  ctx2d.clearRect(0,0,BW,BW);
+  ctx2d.save(); ctx2d.translate(ox,oy);
+
+  // 盤
+  const bg = ctx2d.createRadialGradient(BW*0.5,BW*0.35,BW*0.06, BW*0.5,BW*0.5,BW*0.78);
+  bg.addColorStop(0,'#17603f'); bg.addColorStop(.6,'#0e3f2c'); bg.addColorStop(1,'#07231a');
+  ctx2d.fillStyle = bg;
+  roundRect(0,0,BW,BW,10); ctx2d.fill();
+  // フェルト風ノイズ
+  ctx2d.globalAlpha=.05; ctx2d.fillStyle='#ffffff';
+  for(let i=0;i<40;i++){ const rx=(i*97.3)%BW, ry=(i*53.7)%BW; ctx2d.fillRect(rx,ry,2,2); }
+  ctx2d.globalAlpha=1;
+  // グリッド
+  ctx2d.strokeStyle='rgba(255,215,107,.28)'; ctx2d.lineWidth=1;
+  for(let i=1;i<N;i++){
+    ctx2d.beginPath(); ctx2d.moveTo(i*CS,4); ctx2d.lineTo(i*CS,BW-4); ctx2d.stroke();
+    ctx2d.beginPath(); ctx2d.moveTo(4,i*CS); ctx2d.lineTo(BW-4,i*CS); ctx2d.stroke();
+  }
+  ctx2d.strokeStyle='rgba(255,215,107,.5)'; ctx2d.lineWidth=2;
+  roundRect(1,1,BW-2,BW-2,10); ctx2d.stroke();
+  // 角の印（角どりが だいじ）
+  ctx2d.strokeStyle='rgba(255,215,107,.35)'; ctx2d.lineWidth=1.5;
+  for(const c of CORNERS){
+    const x=(c%N)*CS+CS/2, y=((c/N)|0)*CS+CS/2;
+    ctx2d.beginPath(); ctx2d.arc(x,y,CS*0.36,0,7); ctx2d.stroke();
+    ctx2d.beginPath(); ctx2d.arc(x,y,CS*0.1,0,7); ctx2d.fillStyle='rgba(255,215,107,.3)'; ctx2d.fill();
+  }
+
+  // 合法手ハイライト
+  const meTurn = (G.turn===0 && G.phase==='battle' && !G.busy);
+  if(meTurn && G.selIdx<0){
+    // カード未選択でも 置ける場所を うっすら 示す
+    const pulse = 0.5 + 0.5*Math.sin(now/380);
+    for(const k in G.legal){
+      const cell=+k, x=(cell%N)*CS+CS/2, y=((cell/N)|0)*CS+CS/2;
+      ctx2d.beginPath(); ctx2d.arc(x, y, CS*0.1, 0, 7);
+      ctx2d.fillStyle = 'rgba(255,215,107,'+(0.18+0.22*pulse)+')';
+      ctx2d.fill();
+    }
+  }
+  if(meTurn && G.selIdx>=0){
+    const card = G.players[0].hand[G.selIdx];
+    const pulse = 0.5 + 0.5*Math.sin(now/240);
+    for(const k in G.legal){
+      const cell = +k, x=(cell%N)*CS, y=((cell/N)|0)*CS;
+      const fl = G.legal[cell].flips.length;
+      const d = previewDamage(G.players[0], G.players[1], card, cell, fl, G.board);
+      ctx2d.fillStyle = fl ? 'rgba(255,215,107,'+(0.14+0.13*pulse)+')' : 'rgba(160,180,220,.14)';
+      roundRect(x+3,y+3,CS-6,CS-6,6); ctx2d.fill();
+      ctx2d.strokeStyle = fl ? 'rgba(255,215,107,'+(0.55+0.35*pulse)+')' : 'rgba(180,200,240,.4)';
+      ctx2d.lineWidth=2; roundRect(x+3,y+3,CS-6,CS-6,6); ctx2d.stroke();
+      if(fl){
+        ctx2d.font='bold '+Math.round(CS*0.28)+'px "Consolas",monospace';
+        ctx2d.textAlign='center'; ctx2d.textBaseline='middle';
+        ctx2d.fillStyle='rgba(0,0,0,.55)'; ctx2d.fillText(d, x+CS/2+1, y+CS*0.56+1);
+        ctx2d.fillStyle='#fff3c4'; ctx2d.fillText(d, x+CS/2, y+CS*0.55);
+        ctx2d.font='bold '+Math.round(CS*0.18)+'px sans-serif';
+        ctx2d.fillStyle='rgba(255,255,255,.75)'; ctx2d.fillText(fl+'枚', x+CS/2, y+CS*0.82);
+      }else{
+        ctx2d.font='bold '+Math.round(CS*0.2)+'px sans-serif';
+        ctx2d.textAlign='center'; ctx2d.textBaseline='middle';
+        ctx2d.fillStyle='rgba(220,235,255,.7)'; ctx2d.fillText('0', x+CS/2, y+CS/2);
+      }
+    }
+  }
+
+  // 駒
+  for(let i=0;i<N*N;i++){
+    const b = G.board[i]; if(!b) continue;
+    const x=(i%N)*CS+CS/2, y=((i/N)|0)*CS+CS/2;
+    const a = animFor(i);
+    let r = CS*0.41, sx = 1, owner = b.owner;
+    if(a){
+      const t = clamp((now - a.start)/a.dur, 0, 1);
+      if(a.type==='flip'){
+        sx = Math.abs(Math.cos(t*Math.PI));
+        owner = t<0.5 ? a.from : a.to;
+        r *= 1 + 0.14*Math.sin(t*Math.PI);
+      }else if(a.type==='place'){
+        const e = 1 - Math.pow(1-t, 3);
+        r *= 0.35 + 0.75*e + 0.12*Math.sin(t*Math.PI);
+      }
+    }
+    if(i===G.lastCell && !a){
+      ctx2d.beginPath(); ctx2d.arc(x,y,CS*0.47,0,7);
+      ctx2d.strokeStyle='rgba(255,255,255,'+(0.25+0.2*Math.sin(now/300))+')';
+      ctx2d.lineWidth=2; ctx2d.stroke();
+    }
+    drawDisc(x,y,r,owner,b.card,sx);
+  }
+
+  // ダメージ表示
+  for(const p of G.pops){
+    const t = (now - p.start)/p.dur;
+    if(t<0||t>1) continue;
+    let x,y;
+    if(p.isSide || p.cell<0){
+      x = BW/2; y = p.side===0 ? BW-CS*0.7 : CS*0.7;
+    }else{
+      x = (p.cell%N)*CS+CS/2; y = ((p.cell/N)|0)*CS+CS/2;
+    }
+    const fs = Math.round(CS*(p.isSide?0.34:0.4) * (1 + 0.35*Math.max(0,1-t*6)));
+    ctx2d.font='bold '+fs+'px "Consolas",monospace';
+    ctx2d.textAlign='center'; ctx2d.textBaseline='middle';
+    ctx2d.globalAlpha = t>0.7 ? (1-t)/0.3 : 1;
+    const yy = y - t*CS*0.9;
+    ctx2d.lineWidth=4; ctx2d.strokeStyle='rgba(0,0,0,.8)';
+    ctx2d.strokeText(p.text, x, yy);
+    ctx2d.fillStyle = p.color;
+    ctx2d.fillText(p.text, x, yy);
+    ctx2d.globalAlpha = 1;
+  }
+
+  ctx2d.restore();
+  requestAnimationFrame(render);
+}
+function roundRect(x,y,w,h,r){
+  ctx2d.beginPath();
+  ctx2d.moveTo(x+r,y); ctx2d.lineTo(x+w-r,y); ctx2d.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx2d.lineTo(x+w,y+h-r); ctx2d.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx2d.lineTo(x+r,y+h); ctx2d.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx2d.lineTo(x,y+r); ctx2d.quadraticCurveTo(x,y,x+r,y);
+  ctx2d.closePath();
+}
+
+/* ---------------- 画面演出 ---------------- */
+let cmsgTimer=null;
+function showCenter(txt){
+  const el = $('centerMsg');
+  el.textContent = txt;
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+}
+function showSkill(card, p){
+  const el = $('skillBanner');
+  el.querySelector('.inner').innerHTML = card.icon+' '+card.skill.n;
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+}
+
+/* ---------------- HUD ---------------- */
+function statusHtml(p){
+  const e = p.eff; let h='';
+  if(e.poison)  h += '<span class="stIcon st-poison">毒'+e.poison.v+'×'+e.poison.t+'</span>';
+  if(e.regen)   h += '<span class="stIcon st-regen">再生'+e.regen.v+'×'+e.regen.t+'</span>';
+  if(e.atkUp)   h += '<span class="stIcon st-atkUp">ATK+'+e.atkUp.v+'%</span>';
+  if(e.atkDown) h += '<span class="stIcon st-atkDown">ATK-'+e.atkDown.v+'%</span>';
+  if(e.barrier) h += '<span class="stIcon st-barrier">防'+e.barrier.v+'%</span>';
+  if(e.counter) h += '<span class="stIcon st-counter">反射'+e.counter.v+'%</span>';
+  if(p.rage>0)  h += '<span class="stIcon st-atkUp">永続+'+p.rage+'%</span>';
+  return h;
+}
+function updateUI(){
+  const me=G.players[0], foe=G.players[1];
+  if(!me) return;
+  const setHp=(pre,p)=>{
+    const pct = Math.max(0, p.hp/p.maxHp*100);
+    const fill=$(pre+'Hp'), ghost=$(pre+'Ghost');
+    fill.style.width = pct+'%';
+    ghost.style.width = pct+'%';
+    fill.classList.toggle('low', pct<=25);
+    $(pre+'HpN').textContent = p.hp+'/'+p.maxHp;
+  };
+  setHp('me',me); setHp('foe',foe);
+  $('meSt').innerHTML = statusHtml(me);
+  $('foeSt').innerHTML = statusHtml(foe);
+  $('meSub').innerHTML = '手'+me.hand.length+' 山'+me.drawPile.length+'<br>コンボ<b>×'+comboMul(me).toFixed(2)+'</b>';
+  $('foeSub').innerHTML = '手'+foe.hand.length+' 山'+foe.drawPile.length+'<br>コンボ<b>×'+comboMul(foe).toFixed(2)+'</b>';
+  $('meSide').classList.toggle('turnOn', G.turn===0 && G.phase==='battle');
+  $('foeSide').classList.toggle('turnOn', G.turn===1 && G.phase==='battle');
+  renderHand();
+}
+function renderHand(){
+  const row = $('handRow');
+  const me = G.players[0];
+  let h='';
+  for(let i=0;i<HAND_SIZE;i++){
+    const c = me.hand[i];
+    if(!c){ h += '<div class="card empty"></div>'; continue; }
+    h += '<div class="card '+c.attr+(i===G.selIdx?' sel':'')+'" data-i="'+i+'">'
+      +  '<div class="cstars">'+'★'.repeat(c.rare)+'</div>'
+      +  '<div class="cname">'+c.name+'</div>'
+      +  '<div class="cicon">'+c.icon+'</div>'
+      +  '<div class="cstat"><span>'+Math.round(effAtk(me,c))+'</span><span class="hp">'+c.hp+'</span></div>'
+      +  '<div class="cskill">'+skillShort(c.skill)+'</div>'
+      +  '</div>';
+  }
+  row.innerHTML = h;
+  [...row.querySelectorAll('.card[data-i]')].forEach(el=>{
+    el.onclick = ()=>selectCard(+el.dataset.i);
+  });
+  // 詳細
+  const box = $('detailBox');
+  if(G.phase==='over'){ box.innerHTML=''; return; }
+  if(G.selIdx>=0 && me.hand[G.selIdx]){
+    const c = me.hand[G.selIdx];
+    box.innerHTML = '<span class="dn">'+c.icon+' '+c.name+'</span> <span class="tip">'+ATTR[c.attr].name+'／★'+c.rare+'／ATK'+Math.round(effAtk(me,c))+'</span><br>'
+      + '<span class="sk">'+(c.skill?c.skill.n:'—')+'</span>：'+skillDesc(c.skill)
+      + '<br><span class="tip">光ったマスを タップして 配置（数字＝ダメージ）</span>';
+  }else if(G.turn===0 && !G.busy){
+    box.innerHTML = G.freeMode
+      ? '<span class="sk">はさめる場所が ない！</span> 手ごまを えらんで、空いている どこかに 置こう（ダメージ0）'
+      : '手ごまを えらぼう。<span class="tip">ダメージ＝ATK×返した枚数×コンボ倍率</span>';
+  }else{
+    box.innerHTML = '<span class="tip">'+(G.players[1].name)+' の ターン…</span>';
+  }
+}
+function selectCard(i){
+  if(G.busy || G.turn!==0 || G.phase!=='battle') return;
+  G.selIdx = (G.selIdx===i) ? -1 : i;
+  sfxTap();
+  renderHand();
+}
+
+/* ---------------- 盤クリック ---------------- */
+function boardPos(ev){
+  const r = cv.getBoundingClientRect();
+  const t = ev.changedTouches ? ev.changedTouches[0] : ev;
+  const x = (t.clientX - r.left) / r.width * N;
+  const y = (t.clientY - r.top) / r.height * N;
+  if(x<0||y<0||x>=N||y>=N) return -1;
+  return idx(Math.floor(x), Math.floor(y));
+}
+cv.addEventListener('click', ev=>{
+  if(G.busy || G.turn!==0 || G.phase!=='battle') return;
+  const cell = boardPos(ev);
+  if(cell<0) return;
+  if(G.selIdx<0){ showCenter('カードを えらんで'); sfxNg(); return; }
+  if(!G.legal[cell]){ sfxNg(); return; }
+  placePiece(0, G.selIdx, cell);
+});
+
+/* =========================================================================
+   CPU 思考
+   ========================================================================= */
+function ownersOf(board){
+  const a = new Array(N*N);
+  for(let i=0;i<N*N;i++) a[i] = board[i] ? board[i].owner : -1;
+  return a;
+}
+function flipsOwners(a, cell, owner){
+  if(a[cell]>=0) return [];
+  const x=cell%N, y=(cell/N)|0, res=[];
+  for(const [dx,dy] of DIRS){
+    const line=[]; let cx=x+dx, cy=y+dy, ok=false;
+    while(inside(cx,cy)){
+      const o = a[idx(cx,cy)];
+      if(o<0) break;
+      if(o!==owner) line.push(idx(cx,cy));
+      else { ok = line.length>0; break; }
+      cx+=dx; cy+=dy;
+    }
+    if(ok) res.push(...line);
+  }
+  return res;
+}
+function skillValue(p, foe, card, flips, cell, board, myIdx){
+  const sk = card.skill; if(!sk) return {atk:0, def:0};
+  let atk=0, def=0;
+  switch(sk.t){
+    case 'heal':     def = Math.min(sk.v, p.maxHp - p.hp) * 0.9; break;
+    case 'healFlip': def = Math.min(sk.v*flips, p.maxHp - p.hp) * 0.9; break;
+    case 'drain':    def = Math.min(sk.v, p.maxHp - p.hp) * 0.5; break;
+    case 'regen':    def = Math.min(sk.v*sk.tn, p.maxHp - p.hp) * 0.7; break;
+    case 'barrier':  def = 55 + sk.v*1.4; break;
+    case 'counter':  def = 45 + sk.v*0.9; break;
+    case 'atkDown':  def = 30 + sk.v*1.5; break;
+    case 'atkUp':    atk = 25 + sk.v*1.1; break;
+    case 'rage':     atk = sk.v*5; break;
+    case 'poison':   atk = sk.v*sk.tn*0.85; break;
+    case 'handBreak':atk = 70; break;
+    case 'curse':    atk = (foe.eff.barrier||foe.eff.counter||foe.eff.atkUp||foe.eff.regen) ? 90 : 10; break;
+  }
+  return {atk, def};
+}
+/* 相手の 次の 最大反撃見込み（手ごまは のぞかず 平均ATKで 推定） */
+function replyThreat(a, foe, foeIdx){
+  const rest = foe.hand.concat(foe.drawPile);
+  if(!rest.length) return 0;
+  let avg = 0;
+  for(const c of rest) avg += effAtk(foe, c);
+  avg /= rest.length;
+  let best = 0;
+  for(let i=0;i<N*N;i++){
+    if(a[i]>=0) continue;
+    const f = flipsOwners(a, i, foeIdx).length;
+    if(f>best) best = f;
+  }
+  return avg * best * comboMul(foe);
+}
+
+function aiChoose(pi){
+  const p = G.players[pi], foe = G.players[1-pi];
+  const diff = p.aiDiff;
+  const base = ownersOf(G.board);
+  const moves = [];
+  const cells = Object.keys(G.legal).map(Number);
+  const posW  = [0, .35, .7, 1, 1.15][diff];
+  const repW  = [0, .12, .34, .6, .78][diff];
+  const thinkReply = diff>=2;
+
+  for(let h=0; h<p.hand.length; h++){
+    const card = p.hand[h];
+    for(const cell of cells){
+      const flips = G.legal[cell].flips;
+      const dmg = previewDamage(p, foe, card, cell, flips.length, G.board);
+      const sv  = skillValue(p, foe, card, flips.length, cell, G.board, pi);
+      let score = dmg + (flips.length? sv.atk + sv.def : 0);
+      score += POS_W[cell] * posW;
+      // 角を 相手に わたさない（自分の 手で 角どなりを 埋めすぎない）
+      if(flips.length===0) score -= 40;
+      // 決着
+      if(dmg >= foe.hp) score += 100000;
+      // 自分が 危ないとき 回復重視
+      const danger = p.hp / p.maxHp;
+      if(danger < 0.35) score += sv.def * 1.4;
+      // 強いカードの 温存
+      if(diff>=2) score -= (card.rare-2) * (flips.length<=1 ? 26 : 8);
+      if(thinkReply){
+        const a = base.slice();
+        a[cell] = pi;
+        for(const f of flips) a[f] = pi;
+        score -= replyThreat(a, foe, 1-pi) * repW;
+      }
+      moves.push({ h, cell, score, dmg });
+    }
+  }
+  if(!moves.length) return null;
+  moves.sort((x,y)=>y.score-x.score);
+  if(diff===0){
+    // やさしい: 上位半分から てきとうに
+    const pool = moves.slice(0, Math.max(1, Math.ceil(moves.length*0.55)));
+    return pool[Math.floor(Math.random()*pool.length)];
+  }
+  if(diff===1 && Math.random()<0.28){
+    return moves[Math.min(moves.length-1, 1+Math.floor(Math.random()*2))];
+  }
+  return moves[0];
+}
+async function aiTurn(){
+  const mv = aiChoose(1);
+  if(!mv){ G.busy=false; return beginTurn(0,false); }
+  await sleep(180);
+  placePiece(1, mv.h, mv.cell);
+}
+
+/* =========================================================================
+   サウンド（Web Audio 合成）
+   ========================================================================= */
+let AC=null, masterGain=null, musicGain=null, sfxGain=null, muted=false, bgmTimer=null, bgmStep=0;
+function initAudio(){
+  if(AC) return;
+  try{
+    AC = new (window.AudioContext||window.webkitAudioContext)();
+  }catch(e){ return; }
+  masterGain = AC.createGain(); masterGain.gain.value = muted?0:0.9; masterGain.connect(AC.destination);
+  musicGain = AC.createGain(); musicGain.gain.value = 0.28; musicGain.connect(masterGain);
+  sfxGain   = AC.createGain(); sfxGain.gain.value = 0.5;  sfxGain.connect(masterGain);
+}
+function resumeAudio(){
+  initAudio();
+  if(AC && AC.state==='suspended') AC.resume();
+}
+function tone(freq, dur, type, gain, when, dest, slideTo){
+  if(!AC) return;
+  const t0 = (when||AC.currentTime);
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = type||'square';
+  o.frequency.setValueAtTime(freq, t0);
+  if(slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(20,slideTo), t0+dur);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(Math.max(0.001,gain||0.2), t0+0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+  o.connect(g); g.connect(dest||sfxGain);
+  o.start(t0); o.stop(t0+dur+0.02);
+}
+function noise(dur, gain, when, filterFreq){
+  if(!AC) return;
+  const t0 = when||AC.currentTime;
+  const len = Math.floor(AC.sampleRate*dur);
+  const buf = AC.createBuffer(1, len, AC.sampleRate);
+  const d = buf.getChannelData(0);
+  for(let i=0;i<len;i++) d[i] = (Math.random()*2-1) * (1 - i/len);
+  const src = AC.createBufferSource(); src.buffer = buf;
+  const f = AC.createBiquadFilter(); f.type='lowpass'; f.frequency.value = filterFreq||1800;
+  const g = AC.createGain(); g.gain.value = gain||0.25;
+  src.connect(f); f.connect(g); g.connect(sfxGain);
+  src.start(t0);
+}
+function sfxTap(){ resumeAudio(); tone(660,0.06,'square',0.16); }
+function sfxNg(){ resumeAudio(); tone(180,0.12,'sawtooth',0.16,0,null,120); }
+function sfxPlace(){ resumeAudio(); tone(320,0.09,'triangle',0.3,0,null,180); noise(0.09,0.16,0,900); }
+function sfxFlip(i){ if(!AC) return; tone(520 + i*70, 0.07, 'triangle', 0.16); }
+function sfxHit(n){
+  if(!AC) return;
+  noise(0.16+Math.min(0.2,n*0.02), 0.32, 0, 1200);
+  tone(150,0.18,'sawtooth',0.22,0,null,60);
+  for(let i=0;i<Math.min(4,n);i++) tone(420+i*110, 0.07, 'square', 0.1, AC.currentTime+i*0.04);
+}
+function sfxHeal(){
+  if(!AC) return;
+  const t=AC.currentTime;
+  [523,659,784,1047].forEach((f,i)=>tone(f,0.22,'sine',0.16,t+i*0.06));
+}
+function sfxSkill(){
+  if(!AC) return;
+  const t=AC.currentTime;
+  tone(200,0.4,'sawtooth',0.14,t,null,1400);
+  [392,523,659].forEach((f,i)=>tone(f,0.25,'square',0.12,t+0.06+i*0.05));
+}
+function sfxWin(){
+  if(!AC) return; const t=AC.currentTime;
+  [523,659,784,1047,1319].forEach((f,i)=>tone(f,0.32,'square',0.2,t+i*0.11));
+}
+function sfxLose(){
+  if(!AC) return; const t=AC.currentTime;
+  [392,349,294,220].forEach((f,i)=>tone(f,0.4,'sawtooth',0.18,t+i*0.16));
+}
+
+/* ---- BGM: 暗めの 8bit ループ ---- */
+const BGM_BASS = [55,55,58.27,55, 49,49,51.91,49, 43.65,43.65,46.25,43.65, 49,49,51.91,55];
+const BGM_LEAD = [0,659,784,880, 0,784,659,587, 0,523,587,659, 0,587,523,494];
+function bgmTick(){
+  if(!AC || muted) return;
+  const s = bgmStep % 16;
+  const t = AC.currentTime;
+  // ベース
+  tone(BGM_BASS[s], 0.24, 'triangle', 0.5, t, musicGain);
+  // ハイハット
+  if(s%2===1) noiseMusic(0.05, 0.05, t);
+  // コード（4拍ごと）
+  if(s%4===0){
+    const root = BGM_BASS[s]*4;
+    [1,1.2,1.5].forEach(m=>tone(root*m, 0.5, 'square', 0.08, t, musicGain));
+  }
+  // リード
+  const ld = BGM_LEAD[s];
+  if(ld) tone(ld, 0.18, 'square', 0.09, t, musicGain);
+  bgmStep++;
+}
+function noiseMusic(dur, gain, when){
+  if(!AC) return;
+  const len = Math.floor(AC.sampleRate*dur);
+  const buf = AC.createBuffer(1,len,AC.sampleRate);
+  const d = buf.getChannelData(0);
+  for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*(1-i/len);
+  const src=AC.createBufferSource(); src.buffer=buf;
+  const f=AC.createBiquadFilter(); f.type='highpass'; f.frequency.value=6000;
+  const g=AC.createGain(); g.gain.value=gain;
+  src.connect(f); f.connect(g); g.connect(musicGain);
+  src.start(when||AC.currentTime);
+}
+function startBgm(){
+  resumeAudio();
+  if(bgmTimer) return;
+  bgmStep = 0;
+  bgmTimer = setInterval(bgmTick, 250);
+}
+function stopBgm(){ if(bgmTimer){ clearInterval(bgmTimer); bgmTimer=null; } }
+function setMuted(m){
+  muted = m;
+  if(masterGain) masterGain.gain.value = m?0:0.9;
+  $('soundBtn').classList.toggle('off', m);
+  $('soundBtn').textContent = m ? 'MUTED' : 'SOUND';
+  try{ localStorage.setItem('rb_mute', m?'1':'0'); }catch(e){}
+}
+
+/* =========================================================================
+   画面まわり・デッキ編集・記録
+   ========================================================================= */
+let myDeck = { ids: PRESETS[0].ids.slice(), leader: PRESETS[0].leader };
+let rec = { win:0, lose:0, draw:0, cleared:{} };
+let deckReturn = 'titleScreen';
+let poolFilter = 'all';
+
+function loadSave(){
+  try{
+    const d = JSON.parse(localStorage.getItem('rb_deck')||'null');
+    if(d && Array.isArray(d.ids) && d.ids.length===DECK_SIZE && d.ids.every(i=>CARD_BY_ID[i])){
+      myDeck = { ids:d.ids.slice(), leader: CARD_BY_ID[d.leader] ? d.leader : d.ids[0] };
+    }
+    const r = JSON.parse(localStorage.getItem('rb_rec')||'null');
+    if(r) rec = Object.assign(rec, r);
+  }catch(e){}
+}
+function saveDeck(){
+  try{ localStorage.setItem('rb_deck', JSON.stringify(myDeck)); }catch(e){}
+}
+function saveRec(){
+  try{ localStorage.setItem('rb_rec', JSON.stringify(rec)); }catch(e){}
+}
+function deckCost(ids){ return ids.reduce((s,i)=>s+CARD_BY_ID[i].cost,0); }
+function deckHp(ids, leaderId){
+  let hp = ids.reduce((s,i)=>s+CARD_BY_ID[i].hp,0);
+  const l = CARD_BY_ID[leaderId];
+  if(l && l.ls && l.ls.t==='maxhp') hp = Math.round(hp*(1+l.ls.v/100));
+  return hp;
+}
+function deckValid(){
+  return myDeck.ids.length===DECK_SIZE && deckCost(myDeck.ids)<=COST_LIMIT;
+}
+
+function showScreen(id){
+  ['titleScreen','selectScreen','deckScreen','battleScreen','resultScreen'].forEach(s=>{
+    $(s).classList.toggle('hidden', s!==id);
+  });
+  window.scrollTo(0,0);
+}
+
+/* ---------------- タイトル ---------------- */
+function updateTitleRec(){
+  const cl = Object.keys(rec.cleared).length;
+  $('titleRec').innerHTML =
+    '戦績 <b>'+rec.win+'</b>勝 '+rec.lose+'敗'+(rec.draw?' '+rec.draw+'分':'')+
+    ' ／ 撃破した あいて <b>'+cl+'</b>/'+OPPONENTS.length+
+    '<br>デッキ「'+deckName()+'」 HP<b>'+deckHp(myDeck.ids,myDeck.leader)+'</b> コスト'+deckCost(myDeck.ids)+'/'+COST_LIMIT;
+}
+function deckName(){
+  const cnt = {god:0,demon:0,dragon:0};
+  myDeck.ids.forEach(i=>cnt[CARD_BY_ID[i].attr]++);
+  const top = Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a])[0];
+  if(cnt[top]>=10) return ATTR[top].name+'単';
+  const sorted = Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]);
+  if(cnt[sorted[2]]<=2) return ATTR[sorted[0]].name+ATTR[sorted[1]].name;
+  return '混合';
+}
+
+/* ---------------- あいて選択 ---------------- */
+function buildOppList(){
+  const el = $('oppList');
+  el.innerHTML = OPPONENTS.map((o,i)=>{
+    const d = buildCpuDeck(o);
+    const hp = deckHp(d.ids, d.leader);
+    const done = rec.cleared[o.id] ? '<span class="clear">✓クリア</span>' : '';
+    return '<div class="oppCard" data-i="'+i+'">'
+      + '<div class="oppFace" style="background:linear-gradient(160deg,'+o.col+',rgba(0,0,0,.6))">'+o.icon+'</div>'
+      + '<div class="oppInfo"><div class="nm">'+o.name+' '+done+'</div><div class="ds">'+o.desc+'</div></div>'
+      + '<div class="oppMeta"><div class="lv">'+DIFF_NAME[o.diff]+'</div><div>HP '+hp+'</div><div>'+o.attrs.map(a=>ATTR[a].name).join('')+'</div></div>'
+      + '</div>';
+  }).join('');
+  [...el.querySelectorAll('.oppCard')].forEach(c=>{
+    c.onclick = ()=>{
+      if(!deckValid()){ alert('デッキが ととのっていません。デッキ編集で 16枚／コスト'+COST_LIMIT+'以下に してください。'); return; }
+      sfxTap(); startBgm();
+      startBattle(+c.dataset.i);
+    };
+  });
+  const c = deckCost(myDeck.ids);
+  $('myDeckNote').innerHTML = 'きみのデッキ：<b style="color:#ffd76b">'+deckName()+'</b>　16枚　コスト'+c+'/'+COST_LIMIT
+    +'　最大HP <b style="color:#8ef0c0">'+deckHp(myDeck.ids,myDeck.leader)+'</b>'
+    +'<br>リーダー '+CARD_BY_ID[myDeck.leader].icon+CARD_BY_ID[myDeck.leader].name+'：'+leaderDesc(CARD_BY_ID[myDeck.leader].ls);
+}
+
+/* ---------------- デッキ編集 ---------------- */
+function renderDeckScreen(){
+  const cost = deckCost(myDeck.ids);
+  $('deckCount').innerHTML = myDeck.ids.length+'/'+DECK_SIZE;
+  $('costFill').style.width = Math.min(100, cost/COST_LIMIT*100)+'%';
+  $('costTxt').textContent = 'コスト '+cost+' / '+COST_LIMIT;
+  $('costBar').classList.toggle('over', cost>COST_LIMIT);
+  // スロット
+  let h='';
+  for(let i=0;i<DECK_SIZE;i++){
+    const id = myDeck.ids[i];
+    if(!id){ h += '<div class="slot" data-s="'+i+'">＋</div>'; continue; }
+    const c = CARD_BY_ID[id];
+    h += '<div class="slot '+c.attr+'" data-s="'+i+'" data-id="'+id+'">'
+      + (id===myDeck.leader?'<div class="ldr">L</div>':'')
+      + '<div>'+c.icon+'</div><div class="sn">'+c.name+'</div></div>';
+  }
+  $('slotGrid').innerHTML = h;
+  [...$('slotGrid').querySelectorAll('.slot[data-id]')].forEach(el=>{
+    const id = el.dataset.id;
+    let lp=null, moved=false;
+    const start = ()=>{ moved=false; lp = setTimeout(()=>{ lp=null; setLeader(id); }, 450); };
+    // タイマーが のこっていれば「みじかい タップ」＝ デッキから はずす
+    const isShortTap = ()=>{ if(lp){ clearTimeout(lp); lp=null; return true; } return false; };
+    el.addEventListener('touchstart', start, {passive:true});
+    el.addEventListener('touchmove', ()=>{ moved=true; if(lp){clearTimeout(lp); lp=null;} }, {passive:true});
+    el.addEventListener('touchend', e=>{ e.preventDefault(); if(isShortTap() && !moved) removeFromDeck(id); });
+    el.addEventListener('mousedown', start);
+    el.addEventListener('mouseup', ()=>{ if(isShortTap()) removeFromDeck(id); });
+    el.addEventListener('mouseleave', ()=>{ if(lp){clearTimeout(lp); lp=null;} });
+    el.addEventListener('contextmenu', e=>{ e.preventDefault(); setLeader(id); });
+    el.addEventListener('mouseenter', ()=>showCardInfo(id));
+  });
+  // 統計
+  const cnt={god:0,demon:0,dragon:0};
+  myDeck.ids.forEach(i=>cnt[CARD_BY_ID[i].attr]++);
+  const atkAvg = myDeck.ids.length ? Math.round(myDeck.ids.reduce((s,i)=>s+CARD_BY_ID[i].atk,0)/myDeck.ids.length) : 0;
+  const l = CARD_BY_ID[myDeck.leader];
+  $('deckStat').innerHTML = '最大HP <b style="color:#8ef0c0">'+deckHp(myDeck.ids,myDeck.leader)+'</b>'
+    + '　平均ATK <b style="color:#ffd76b">'+atkAvg+'</b>'
+    + '　<span style="color:#8fd8ff">神'+cnt.god+'</span> <span style="color:#d9a4ff">魔'+cnt.demon+'</span> <span style="color:#ff9f8a">竜'+cnt.dragon+'</span>'
+    + (l?'<br>👑リーダー '+l.icon+l.name+'：<span style="color:#ffd76b">'+leaderDesc(l.ls)+'</span>':'');
+  renderPool();
+}
+function renderPool(){
+  const g = $('poolGrid');
+  if(poolFilter==='preset'){
+    g.innerHTML = PRESETS.map((p,i)=>{
+      return '<div class="pcard" data-p="'+i+'" style="background:linear-gradient(170deg,rgba(60,70,140,.9),rgba(14,20,44,.95))">'
+        + '<div class="pn">'+p.name+'</div><div class="pi">📘</div>'
+        + '<div class="ps"><span>コスト'+deckCost(p.ids)+'</span><span class="hp">HP'+deckHp(p.ids,p.leader)+'</span></div>'
+        + '<div class="pk">タップで よみこみ</div></div>';
+    }).join('');
+    [...g.querySelectorAll('.pcard[data-p]')].forEach(el=>{
+      el.onclick = ()=>{
+        const p = PRESETS[+el.dataset.p];
+        myDeck = { ids:p.ids.slice(), leader:p.leader };
+        sfxTap(); renderDeckScreen();
+      };
+    });
+    return;
+  }
+  const list = CARDS.filter(c=> poolFilter==='all' || c.attr===poolFilter);
+  g.innerHTML = list.map(c=>{
+    const inDeck = myDeck.ids.indexOf(c.id)>=0;
+    return '<div class="pcard '+c.attr+(inDeck?' in':'')+'" data-id="'+c.id+'">'
+      + '<div class="pc">'+'★'.repeat(c.rare)+'</div>'
+      + '<div class="pn">'+c.name+'</div>'
+      + '<div class="pi">'+c.icon+'</div>'
+      + '<div class="ps"><span>'+c.atk+'</span><span class="hp">'+c.hp+'</span></div>'
+      + '<div class="pk">'+skillShort(c.skill)+'</div></div>';
+  }).join('');
+  [...g.querySelectorAll('.pcard[data-id]')].forEach(el=>{
+    el.onclick = ()=>{
+      const id = el.dataset.id;
+      showCardInfo(id);   // さきに 説明を 出す（入らなかった ときの 警告を のこすため）
+      if(myDeck.ids.indexOf(id)>=0) removeFromDeck(id);
+      else addToDeck(id);
+    };
+  });
+}
+function showCardInfo(id){
+  const c = CARD_BY_ID[id]; if(!c) return;
+  $('deckDetail').innerHTML = '<span class="dn">'+c.icon+' '+c.name+'</span> <span class="tip">'+ATTR[c.attr].name+'／★'+c.rare+'／コスト'+c.cost+'／ATK'+c.atk+'／HP'+c.hp+'</span><br>'
+    + '<span class="sk">'+(c.skill?c.skill.n:'—')+'</span>：'+skillDesc(c.skill)
+    + '<br><span class="tip">👑リーダースキル：'+leaderDesc(c.ls)+'</span>';
+}
+function addToDeck(id){
+  if(myDeck.ids.length>=DECK_SIZE){ $('deckDetail').innerHTML = '<span class="sk">デッキは 16枚まで。</span>だれかを はずしてから 入れよう。'; sfxNg(); return; }
+  if(deckCost(myDeck.ids)+CARD_BY_ID[id].cost > COST_LIMIT){
+    $('deckDetail').innerHTML = '<span class="sk">コストが たりない！</span>合計'+COST_LIMIT+'まで。安いキャラと 入れかえよう。'; sfxNg(); return;
+  }
+  myDeck.ids.push(id);
+  if(!myDeck.leader || myDeck.ids.indexOf(myDeck.leader)<0) myDeck.leader = id;
+  sfxTap(); renderDeckScreen();
+}
+function removeFromDeck(id){
+  const i = myDeck.ids.indexOf(id);
+  if(i<0) return;
+  myDeck.ids.splice(i,1);
+  if(myDeck.leader===id) myDeck.leader = myDeck.ids[0]||'';
+  sfxTap(); renderDeckScreen();
+}
+function setLeader(id){
+  if(myDeck.ids.indexOf(id)<0) return;
+  myDeck.leader = id;
+  sfxSkill(); renderDeckScreen(); showCardInfo(id);
+}
+
+/* ---------------- 結果 ---------------- */
+function showResult(win){
+  stopBgm();
+  G.phase='over';
+  const me=G.players[0], foe=G.players[1];
+  const opp = OPPONENTS[G.oppIndex];
+  $('resTitle').className = 'bigres '+(win?'win':'lose');
+  $('resTitle').textContent = win===null ? 'DRAW' : (win?'WIN!':'LOSE');
+  if(win===true){ rec.win++; rec.cleared[opp.id]=true; sfxWin(); }
+  else if(win===false){ rec.lose++; sfxLose(); }
+  else { rec.draw++; }
+  saveRec();
+  $('resStat').innerHTML =
+      'あいて：<b>'+opp.name+'</b>（'+DIFF_NAME[opp.diff]+'）<br>'
+    + 'のこりHP　きみ <b>'+me.hp+'</b> ／ あいて <b>'+foe.hp+'</b><br>'
+    + '与えたダメージ <b>'+me.totalDmg+'</b>　最大コンボ <b>'+me.maxCombo+'</b><br>'
+    + '盤面 きみ '+countDiscs(G.board,0)+'枚 ／ あいて '+countDiscs(G.board,1)+'枚<br>'
+    + '<span style="color:#8fa6cf">通算 '+rec.win+'勝'+rec.lose+'敗</span>';
+  showScreen('resultScreen');
+}
+
+/* =========================================================================
+   初期化
+   ========================================================================= */
+function goTitle(){
+  G.phase='title'; stopBgm();
+  updateTitleRec();
+  showScreen('titleScreen');
+}
+function openHelp(){ $('helpModal').classList.remove('hidden'); }
+
+function init(){
+  loadSave();
+  const q = location.search;
+  let m = false;
+  try{ m = localStorage.getItem('rb_mute')==='1'; }catch(e){}
+  if(q.indexOf('mute')>=0) m = true;
+  setMuted(m);
+
+  $('soundBtn').onclick = ()=>{ resumeAudio(); setMuted(!muted); };
+  $('helpBtn').onclick  = openHelp;
+  $('btnHelp2').onclick = openHelp;
+  $('btnHelp3').onclick = openHelp;
+  $('btnHelpClose').onclick = ()=>$('helpModal').classList.add('hidden');
+  $('helpModal').addEventListener('click', e=>{ if(e.target.id==='helpModal') $('helpModal').classList.add('hidden'); });
+
+  $('btnStart').onclick = ()=>{ resumeAudio(); sfxTap(); buildOppList(); showScreen('selectScreen'); };
+  $('btnDeck').onclick  = ()=>{ resumeAudio(); sfxTap(); deckReturn='titleScreen'; renderDeckScreen(); showScreen('deckScreen'); };
+  $('btnSelBack').onclick = ()=>{ sfxTap(); goTitle(); };
+  $('btnDeckOk').onclick = ()=>{
+    if(myDeck.ids.length!==DECK_SIZE){ $('deckDetail').innerHTML='<span class="sk">16枚に して ください。</span>いま '+myDeck.ids.length+'枚。'; sfxNg(); return; }
+    if(deckCost(myDeck.ids)>COST_LIMIT){ $('deckDetail').innerHTML='<span class="sk">コスト オーバー。</span>'+deckCost(myDeck.ids)+'/'+COST_LIMIT; sfxNg(); return; }
+    saveDeck(); sfxSkill();
+    if(deckReturn==='selectScreen'){ buildOppList(); showScreen('selectScreen'); }
+    else goTitle();
+  };
+  $('btnDeckClear').onclick = ()=>{ myDeck.ids=[]; myDeck.leader=''; sfxNg(); renderDeckScreen(); };
+  [...$('filters').querySelectorAll('.fbtn')].forEach(b=>{
+    b.onclick = ()=>{
+      poolFilter = b.dataset.f;
+      [...$('filters').querySelectorAll('.fbtn')].forEach(x=>x.classList.toggle('on', x===b));
+      renderPool();
+    };
+  });
+
+  $('btnSurrender').onclick = ()=>{
+    if(G.phase!=='battle') return;
+    if(confirm('とうそうしますか？（まけ あつかい）')){ G.phase='over'; G.busy=true; showResult(false); }
+  };
+  $('btnRetry').onclick = ()=>{ sfxTap(); startBgm(); startBattle(G.oppIndex); };
+  $('btnToSelect').onclick = ()=>{ sfxTap(); stopBgm(); buildOppList(); showScreen('selectScreen'); };
+  $('btnToTitle').onclick = ()=>{ sfxTap(); goTitle(); };
+
+  document.addEventListener('keydown', e=>{
+    if(e.key==='m'||e.key==='M'){ resumeAudio(); setMuted(!muted); }
+    if(e.key==='Escape') $('helpModal').classList.add('hidden');
+    if(G.phase==='battle' && G.turn===0 && !G.busy){
+      const n = parseInt(e.key,10);
+      if(n>=1 && n<=HAND_SIZE) selectCard(n-1);
+    }
+  });
+  document.body.addEventListener('pointerdown', ()=>resumeAudio(), {once:true});
+
+  goTitle();
+  requestAnimationFrame(render);
+}
+init();
+</script>
+</body>
+</html>
