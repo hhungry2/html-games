@@ -139,7 +139,7 @@
   <div class="sub">🍬 10分間、モンスターの海を生きのびろ！ 🍬</div>
   <button class="btn" id="startBtn">はじめる ▶</button>
   <div class="help">
-    <kbd>WASD</kbd> / <kbd>←↑↓→</kbd> で移動（スマホは画面ドラッグ）<br>
+    <kbd>WASD</kbd> / <kbd>←↑↓→</kbd> / <kbd>マウスクリック</kbd> で移動（スマホは画面ドラッグ）<br>
     こうげきは<b>ぜんぶ自動</b>！ レベルアップで武器をえらぼう<br>
     🍬キャンディブロックは壊せる ／ 🧊アメ岩は通れない ／ 🫧シロップ沼はみんな遅くなる<br>
     👑<b>1分ごとにボス</b>が出現！ 倒しきれないと次のボスが重なってくるぞ<br>
@@ -250,24 +250,60 @@ addEventListener('keydown', e => {
   if(k === 'm') toggleSound();
 });
 addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
-addEventListener('blur', () => { for(const k in keys) keys[k] = false; });
+addEventListener('blur', () => {
+  for(const k in keys) keys[k] = false;
+  mouse.down = false; mouse.tx = null; mouse.ty = null;
+});
 
+let lastTouch = 0;
 const stick = { on: false, id: null, ox: 0, oy: 0, x: 0, y: 0 };
 function tStart(e){
+  lastTouch = performance.now();
+  mouse.down = false; mouse.tx = null; mouse.ty = null;
   const t = e.changedTouches[0];
   stick.on = true; stick.id = t.identifier;
   stick.ox = stick.x = t.clientX; stick.oy = stick.y = t.clientY;
 }
 function tMove(e){
+  lastTouch = performance.now();
   if(!stick.on) return;
   for(const t of e.changedTouches) if(t.identifier === stick.id){ stick.x = t.clientX; stick.y = t.clientY; }
   e.preventDefault();
 }
-function tEnd(e){ for(const t of e.changedTouches) if(t.identifier === stick.id) stick.on = false; }
+function tEnd(e){
+  lastTouch = performance.now();
+  for(const t of e.changedTouches) if(t.identifier === stick.id) stick.on = false;
+}
 cv.addEventListener('touchstart', tStart, { passive: true });
 cv.addEventListener('touchmove', tMove, { passive: false });
 cv.addEventListener('touchend', tEnd);
 cv.addEventListener('touchcancel', tEnd);
+
+const mouse = { down: false, x: 0, y: 0, tx: null, ty: null };
+addEventListener('mousedown', e => {
+  if(performance.now() - lastTouch < 500) return;
+  if(e.button !== 0) return;
+  if(e.target.closest && (e.target.closest('.ov') || e.target.closest('#snd') || e.target.closest('#slots'))) return;
+  if(state !== 'playing') return;
+  mouse.down = true;
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.tx = cam.x + (e.clientX - W / 2);
+  mouse.ty = cam.y + (e.clientY - H / 2);
+  fx.push({ kind: 'ring', x: mouse.tx, y: mouse.ty, r: 24, life: 0.28, max: 0.28, c: '#ff5fa2' });
+});
+addEventListener('mousemove', e => {
+  if(performance.now() - lastTouch < 500) return;
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  if(mouse.down && state === 'playing'){
+    mouse.tx = cam.x + (e.clientX - W / 2);
+    mouse.ty = cam.y + (e.clientY - H / 2);
+  }
+});
+addEventListener('mouseup', e => {
+  if(e.button === 0) mouse.down = false;
+});
 
 /* ------------------------- definitions ------------------------- */
 const MAXW = 6, MAXP = 6, GOAL = 600; // 10分
@@ -364,6 +400,7 @@ function newGame(){
   enemies = []; shots = []; gems = []; drops = []; fx = []; texts = []; parts = [];
   p = freshPlayer();
   cam = { x: 0, y: 0, sh: 0 };
+  mouse.down = false; mouse.tx = null; mouse.ty = null;
   spawnT = 0; bossIdx = 0; activeBosses = []; pendingLv = 0; eid = 0;
   chunks.clear(); worldSeed = (Math.random() * 4294967295) >>> 0;   // 地形は毎回変わる
   hitstop = 0; banner = null;
@@ -1097,9 +1134,23 @@ function update(dt){
   if(keys['d'] || keys['arrowright']) mx++;
   if(keys['w'] || keys['arrowup'])    my--;
   if(keys['s'] || keys['arrowdown'])  my++;
+
+  if(mx !== 0 || my !== 0){
+    mouse.tx = null; mouse.ty = null;
+  }
+
   if(stick.on){
     const jx = stick.x - stick.ox, jy = stick.y - stick.oy, jd = Math.hypot(jx, jy);
     if(jd > 12){ mx += jx / jd; my += jy / jd; }
+    mouse.tx = null; mouse.ty = null;
+  } else if(mouse.down){
+    const spx = p.x - cam.x + W / 2, spy = p.y - cam.y + H / 2;
+    const dx = mouse.x - spx, dy = mouse.y - spy, d = Math.hypot(dx, dy);
+    if(d > 14){ mx += dx / d; my += dy / d; }
+  } else if(mouse.tx !== null && mouse.ty !== null){
+    const dx = mouse.tx - p.x, dy = mouse.ty - p.y, d = Math.hypot(dx, dy);
+    if(d > 8){ mx += dx / d; my += dy / d; }
+    else { mouse.tx = null; mouse.ty = null; }
   }
   const md = Math.hypot(mx, my);
   p.moving = md > 0.01;
