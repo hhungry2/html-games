@@ -126,6 +126,10 @@ Slay the Spire風 デッキ構築ローグライク「SPIRE ASCENT（尖塔の�
 [**dig_dug.html**](https://hhungry2.github.io/html-games/dig_dug.html) | [Vercel](https://html-games-eight.vercel.app/dig_dug.html)  
 
 
+テトリス風 3D落ちものパズル「TETRA PIT 3D」（上からのぞきこむ**立体の穴**にブロックを落として積み上げ、**たて×よこ ぜんぶ**うまった「段」を消す3Dの落ちものパズル・ブロックは**水平／前後／左右の3つの向き**に回転でき、移動は今見ている視点の向きが基準・落ちる位置がわかるゴースト表示・**ホールド**とNEXT2個・段は高さごとに色分け（ブロック別の色にも切替可）＋**DEPTHゲージ**で各段のうまり具合がひと目でわかる・同時消し（SINGLE〜PENTA）／COMBO／穴を空っぽにする**PERFECT**ボーナス・ドラッグで視点を自由に回転、ボタンで90度ずつ回転・穴の大きさ3×3／4×4／5×5、ブロックはフラット（平らな7種）／スタンダード（立体をふくむ10種）／エクストリーム（5個つながりをふくむ17種）・スタートレベル選択＋設定ごとのハイスコア保存・Three.jsで3D描画・Web Audioでロシア民謡「コロブチカ」のBGMと効果音を合成・スマホは十字キー＋回転3ボタン＋DROP/HOLD、PCは矢印＋Q/A・W/S・E/D＋SPACE/SHIFT/C・スマホ/PC対応）  
+[**tetris3d.html**](https://hhungry2.github.io/html-games/tetris3d.html) | [Vercel](https://html-games-eight.vercel.app/tetris3d.html)  
+
+
 【ツール】  
 
 スマホセンサー測定ダッシュボード（ジャイロ・加速度）  
