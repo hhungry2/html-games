@@ -106,6 +106,14 @@ canvas#game {
   font-size: 14px; font-family: inherit; cursor: pointer; letter-spacing: .08em;
 }
 .btn:hover { background: rgba(255,255,255,.14); }
+.btn.playing { background: rgba(111,232,255,.28); border-color: rgba(111,232,255,.7); color: #fff; }
+.soundBtn {
+  background: rgba(111,232,255,.12); border: 1px solid rgba(111,232,255,.5);
+  color: #dffbff; border-radius: 20px; padding: 6px 18px;
+  font-size: 12.5px; font-family: inherit; font-weight: 700; letter-spacing: .06em; cursor: pointer;
+}
+.soundBtn:hover { background: rgba(111,232,255,.22); }
+.soundBtn.off { background: rgba(255,255,255,.06); border-color: rgba(220,180,255,.28); color: #9c8fbb; }
 .btn.big {
   font-family: "Arial Black", "Segoe UI Black", sans-serif; font-size: 20px; letter-spacing: .16em;
   padding: 9px 44px; border: none;
@@ -140,11 +148,17 @@ canvas#game {
 /* ---- touch controls ---- */
 .pad { display: none; align-items: center; justify-content: space-between; gap: 10px; padding: 0 6px 4px; touch-action: none; }
 body.touch .pad { display: flex; }
-.stick {
-  position: relative; width: 150px; height: 150px; border-radius: 50%; flex: none;
-  background: radial-gradient(circle, rgba(255,255,255,.05) 0%, rgba(255,255,255,.1) 60%, rgba(255,120,200,.14) 100%);
-  border: 2px solid rgba(220,180,255,.3); touch-action: none;
+.stickZone {
+  position: relative; width: 170px; height: 170px; flex: none; touch-action: none;
 }
+.stickBase {
+  position: absolute; left: 50%; top: 50%; width: 150px; height: 150px; margin: -75px 0 0 -75px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,.05) 0%, rgba(255,255,255,.1) 60%, rgba(255,120,200,.14) 100%);
+  border: 2px solid rgba(220,180,255,.3);
+  opacity: .16; transition: opacity .15s ease; pointer-events: none;
+}
+.stickBase.active { opacity: 1; }
 .knob {
   position: absolute; left: 50%; top: 50%; width: 62px; height: 62px; margin: -31px 0 0 -31px;
   border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff 0%, #ffb3dc 30%, #d23b8e 100%);
@@ -152,13 +166,17 @@ body.touch .pad { display: flex; }
 }
 .padhint { font-size: 10.5px; color: #8c7fa8; text-align: center; line-height: 1.5; }
 .bomb {
-  width: 124px; height: 124px; border-radius: 50%; flex: none; border: none;
-  font-family: "Arial Black", sans-serif; font-size: 20px; letter-spacing: .06em; color: #fff;
-  background: radial-gradient(circle at 38% 32%, #fff2b0 0%, #ffb640 25%, #ff4f6e 65%, #a01a55 100%);
-  box-shadow: 0 0 26px rgba(255,120,90,.55), inset 0 -6px 12px rgba(0,0,0,.3);
-  touch-action: none;
+  width: 108px; height: 108px; border-radius: 50%; flex: none;
+  border: 2px solid rgba(255,255,255,.2);
+  font-family: "Arial Black", sans-serif; font-size: 14px; letter-spacing: .08em; color: rgba(255,255,255,.5);
+  background: rgba(255,255,255,.045);
+  box-shadow: inset 0 0 16px rgba(255,255,255,.04);
+  touch-action: none; transition: background .1s, border-color .1s, color .1s;
 }
-.bomb:active, .bomb.on { transform: scale(.94); filter: brightness(1.3); }
+.bomb:active, .bomb.on {
+  background: radial-gradient(circle at 38% 32%, rgba(255,242,176,.55) 0%, rgba(255,120,90,.5) 55%, rgba(160,26,85,.45) 100%);
+  border-color: rgba(255,200,170,.75); color: #fff; transform: scale(.94);
+}
 
 @media (max-width: 560px), (max-height: 560px) {
   .overlay { gap: 4px; padding: 6px; }
@@ -188,9 +206,25 @@ body.touch .pad { display: flex; }
     margin: 0;
   }
   body.touch .pad { display: contents; }
-  body.touch .stick { order: -1; }
+  body.touch .stickZone { order: -1; }
   body.touch .padhint { display: none; }
   body.touch .bomb { order: 3; }
+}
+body.is-fullscreen { background: #07040f; }
+body.is-fullscreen .wrap { max-width: none; }
+body.is-fullscreen .screen {
+  width: min(100%, calc((100vh - 46px) * 1.3333));
+  width: min(100%, calc((100dvh - 46px) * 1.3333));
+}
+body.is-fullscreen.touch .screen {
+  width: min(100%, calc((100vh - 190px) * 1.3333));
+  width: min(100%, calc((100dvh - 190px) * 1.3333));
+}
+@media (orientation: landscape) and (max-height: 560px) {
+  body.is-fullscreen.touch .screen {
+    width: min(100vw - 320px, calc(100vh * 1.3333));
+    width: min(100vw - 320px, calc(100dvh * 1.3333));
+  }
 }
 </style>
 </head>
@@ -199,6 +233,7 @@ body.touch .pad { display: flex; }
   <div class="topbar">
     <span class="title">EVERY BLOOM</span>
     <button class="sbtn" id="btnSound">SOUND ON</button>
+    <button class="sbtn" id="btnFull">⛶ FULL</button>
     <button class="sbtn" id="btnPause">PAUSE</button>
   </div>
   <div class="main">
@@ -209,6 +244,7 @@ body.touch .pad { display: flex; }
         <div class="logo">EVERY BLOOM</div>
         <div class="sub">連鎖爆発エクステンド</div>
         <div class="tag">弾は撃てない。<b>自分から爆発</b>して敵をまきこみ、<br>爆発を<b>つないで大連鎖</b>！ スコアをかせいで <b>EXTEND</b></div>
+        <button class="soundBtn" id="btnSoundTitle">🔊 SOUND ON</button>
         <div class="row"><span class="lbl">MODE</span>
           <div class="seg" id="segMode"><button data-v="arcade">ARCADE</button><button data-v="caravan">CARAVAN 3分</button></div>
         </div>
@@ -259,10 +295,23 @@ body.touch .pad { display: flex; }
         <div class="btns"><button class="btn big" id="btnRetry">RETRY</button></div>
         <div class="btns"><button class="btn" id="btnToTitle">タイトルへ</button></div>
       </div>
+
+      <div class="overlay hidden" id="ovSoundTest">
+        <div class="big-t" style="font-size:24px">SOUND TEST</div>
+        <div class="tag" style="max-width:520px">試作用の非公開ページ。クリックで再生・比較できます（BGM候補はもう一度押すか他を押すと止まります）</div>
+        <div class="howto" style="max-width:560px">
+          <h3>■ ゲームオーバー候補</h3>
+          <div class="btns" id="goCandList"></div>
+          <h3>■ BGM候補（ループ再生）</h3>
+          <div class="btns" id="bgmCandList"></div>
+          <div class="btns" style="margin-top:6px"><button class="btn" id="btnStopAll">全部停止</button></div>
+        </div>
+        <button class="btn" id="btnSoundTestBack">もどる</button>
+      </div>
     </div>
 
     <div class="pad" id="pad">
-      <div class="stick" id="stick"><div class="knob" id="knob"></div></div>
+      <div class="stickZone" id="stickZone"><div class="stickBase" id="stickBase"><div class="knob" id="knob"></div></div></div>
       <div class="padhint">画面をドラッグしても<br>移動できる<br>2本指タップで起爆</div>
       <button class="bomb" id="bombBtn">BOMB</button>
     </div>
@@ -380,6 +429,7 @@ const PLAYER_BLAST = 80, MAX_ENEMIES = 130, MAX_PARTS = 700;
 //  サウンド（Web Audio で全部合成）
 // =====================================================================
 const SND = (function () {
+  const MBUS_G = 0.46;
   let ac = null, master = null, comp = null, mbus = null, sbus = null, dly = null, dlyIn = null, noise = null;
   let muted = false;
   const last = {};
@@ -393,7 +443,7 @@ const SND = (function () {
     comp.attack.value = 0.003; comp.release.value = 0.18;
     master = ac.createGain(); master.gain.value = muted ? 0 : 0.85;
     comp.connect(master); master.connect(ac.destination);
-    mbus = ac.createGain(); mbus.gain.value = 0.46; mbus.connect(comp);
+    mbus = ac.createGain(); mbus.gain.value = MBUS_G; mbus.connect(comp);
     sbus = ac.createGain(); sbus.gain.value = 0.8; sbus.connect(comp);
     dly = ac.createDelay(1.5); dly.delayTime.value = 0.36;
     const fb = ac.createGain(); fb.gain.value = 0.32;
@@ -592,11 +642,98 @@ const SND = (function () {
     nz(t, dur, filt('bandpass', 3000, 1, gn(0.5, g)));
   }
   function setDelay(sec) { if (ac) dly.delayTime.setTargetAtTime(Math.min(1.2, sec), ac.currentTime, 0.05); }
+  function stopMusic(fade) {
+    if (!ac || !mbus) return; const t = ac.currentTime;
+    mbus.gain.cancelScheduledValues(t); mbus.gain.setValueAtTime(mbus.gain.value, t);
+    mbus.gain.linearRampToValueAtTime(0.0001, t + (fade || 0.22));
+  }
+  function startMusic() {
+    if (!ac || !mbus) return; const t = ac.currentTime;
+    mbus.gain.cancelScheduledValues(t); mbus.gain.setValueAtTime(mbus.gain.value, t);
+    mbus.gain.linearRampToValueAtTime(MBUS_G, t + 0.15);
+  }
+  function musicGain() { return mbus ? mbus.gain.value : null; }
+  function gameOverJingle(key) {
+    if (!ok()) return;
+    const seq = [12, 10, 7, 5, 2, 0], t0 = now() + 0.02, step = 0.16;
+    seq.forEach((iv, i) => {
+      const t = t0 + i * step;
+      const g = gn(0, sbus); decay(g, t, 0.24, 0.3, 0.006);
+      osc('sawtooth', mtof(key + iv), t, 0.32, filt('lowpass', 2200 - i * 150, 1.4, g));
+      const g2 = gn(0, sbus); decay(g2, t, 0.12, 0.24);
+      osc('square', mtof(key + iv - 12), t, 0.26, g2);
+    });
+    const tEnd = t0 + seq.length * step;
+    const g = gn(0, sbus); decay(g, tEnd, 0.32, 1.3, 0.02);
+    const o = osc('sawtooth', mtof(key - 12), tEnd, 1.3, filt('lowpass', 700, 1, g));
+    o.frequency.exponentialRampToValueAtTime(mtof(key - 12) * 0.75, tEnd + 1.1);
+  }
+  function finishChime(key) {
+    if (!ok()) return;
+    const t0 = now() + 0.02;
+    [0, 4, 7, 12].forEach((iv, i) => bell(t0 + i * 0.12, key + 24 + iv, 0.22, (i - 1.5) * 0.3));
+  }
+  // ---- ゲームオーバー候補（かわいい系）----
+  function goCuteBell(key) { // A: しょんぼりベル→ぽよん
+    if (!ok()) return;
+    const t0 = now() + 0.02;
+    [7, 4, 0, -3].forEach((iv, i) => bell(t0 + i * 0.15, key + 24 + iv, 0.24, 0));
+    const tb = t0 + 4 * 0.15 + 0.05;
+    const g = gn(0, sbus); decay(g, tb, 0.2, 0.32, 0.01);
+    const o = osc('sine', mtof(key + 24 - 3), tb, 0.34, g);
+    o.frequency.setValueAtTime(mtof(key + 24 - 3), tb);
+    o.frequency.exponentialRampToValueAtTime(mtof(key + 24 - 8), tb + 0.1);
+    o.frequency.exponentialRampToValueAtTime(mtof(key + 24 - 4), tb + 0.28);
+  }
+  function goCuteSlip(key) { // B: コミカルすってんころり
+    if (!ok()) return;
+    const t = now() + 0.02;
+    const g = gn(0, sbus); decay(g, t, 0.2, 0.44, 0.01);
+    const o = osc('triangle', mtof(key + 36), t, 0.44, filt('lowpass', 3200, 1, g));
+    o.frequency.exponentialRampToValueAtTime(mtof(key + 14), t + 0.36);
+    const g2 = gn(0, sbus); decay(g2, t + 0.36, 0.26, 0.16, 0.004);
+    nz(t + 0.36, 0.18, filt('lowpass', 1100, 0, g2));
+    bell(t + 0.52, key + 24 + 7, 0.2, 0);
+  }
+  function goCuteHorn(key) { // C: とぼけラッパ（コミカル・軽め）
+    if (!ok()) return;
+    const t0 = now() + 0.02;
+    [7, 5, 3, 0].forEach((iv, i) => {
+      const t = t0 + i * 0.11;
+      const g = gn(0, sbus); decay(g, t, 0.22, 0.16, 0.004);
+      osc('square', mtof(key + 24 + iv), t, 0.18, filt('lowpass', 2600, 1.4, g));
+    });
+    const tE = t0 + 4 * 0.11;
+    const g = gn(0, sbus); decay(g, tE, 0.24, 0.46, 0.01);
+    const o = osc('square', mtof(key + 24 - 2), tE, 0.5, filt('lowpass', 2400, 1.2, g));
+    for (let i = 0; i < 5; i++) o.frequency.setValueAtTime(mtof(key + 24 - 2) * (1 + 0.018 * Math.sin(i * 2.4)), tE + i * 0.08);
+  }
+  function goCuteBoing(key) { // D: ぽよんぽよんぽよん→てへぺろ
+    if (!ok()) return;
+    const t0 = now() + 0.02;
+    for (let i = 0; i < 3; i++) {
+      const t = t0 + i * 0.16;
+      const g = gn(0, sbus); decay(g, t, 0.2, 0.13, 0.003);
+      const o = osc('sine', mtof(key + 24 - 2), t, 0.15, g);
+      o.frequency.exponentialRampToValueAtTime(mtof(key + 24 + 5), t + 0.09);
+    }
+    const tE = t0 + 3 * 0.16 + 0.06;
+    [0, 4, 7].forEach((iv, i) => bell(tE + i * 0.09, key + 24 + iv, 0.22, 0));
+  }
+  function goCuteMusicBox(key) { // E: オルゴールのきらきら下降
+    if (!ok()) return;
+    const t0 = now() + 0.02;
+    [12, 9, 7, 4, 0].forEach((iv, i) => bell(t0 + i * 0.13, key + 24 + iv, 0.2, (i - 2) * 0.15));
+    const tE = t0 + 5 * 0.13;
+    const g = gn(0, sbus); decay(g, tE, 0.2, 0.9, 0.02);
+    osc('sine', mtof(key + 12), tE, 1, filt('lowpass', 2400, 0.6, g));
+  }
 
   return {
-    init, resume, now, ok, setMuted, get muted() { return muted; }, setDelay,
+    init, resume, now, ok, setMuted, get muted() { return muted; }, setDelay, stopMusic, startMusic, musicGain,
     kick, snare, hat, bass, pad, arp, bell, boom, detonate, crash, pickup, respawn, warn,
-    hit, bossDown, fanfare, tick, shot, chainEnd, laser
+    hit, bossDown, fanfare, tick, shot, chainEnd, laser, gameOverJingle, finishChime,
+    goCuteBell, goCuteSlip, goCuteHorn, goCuteBoing, goCuteMusicBox
   };
 })();
 
@@ -2387,22 +2524,47 @@ function drawPlayer() {
   ctx.globalCompositeOperation = 'lighter';
   for (let i = 0; i < p.trail.length; i++) {
     const tr = p.trail[i];
-    ctx.globalAlpha = (i + 1) / p.trail.length * 0.25;
-    ctx.drawImage(glowCol(col), tr.x - 10, tr.y - 10, 20, 20);
+    ctx.globalAlpha = (i + 1) / p.trail.length * 0.18;
+    ctx.drawImage(glowCol('#ffffff'), tr.x - 9, tr.y - 9, 18, 18);
   }
-  ctx.globalAlpha = blink ? 0.3 : 0.8;
-  const gs = 30 + G.beat * 8;
+  ctx.globalAlpha = blink ? 0.22 : 0.5;
+  const gs = 32 + G.beat * 9;
   ctx.drawImage(glowCol('#ffffff'), p.x - gs, p.y - gs, gs * 2, gs * 2);
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  // どの敵にも似せない、白フチ黒縁のはっきりした自機マーカー
   ctx.save(); ctx.translate(p.x, p.y);
-  if (blink) ctx.globalAlpha = 0.45;
-  const sc = 1 + G.beat * 0.12; ctx.scale(sc, sc);
-  ctx.save(); ctx.rotate(G.t * 2.5); ctx.beginPath(); starPath(4, 14, 3, 0); fillWith(hexA(col, 0.9)); ctx.restore();
-  ctx.save(); ctx.rotate(-G.t * 1.6 + Math.PI / 4); ctx.beginPath(); starPath(4, 10, 2.4, 0); fillWith('rgba(255,255,255,0.8)'); ctx.restore();
-  const g = ctx.createRadialGradient(-2, -2, 0.5, 0, 0, 7.5);
-  g.addColorStop(0, '#ffffff'); g.addColorStop(0.45, col); g.addColorStop(1, '#300a30');
-  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 7, 0, TAU); ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 1.2; ctx.stroke();
+  if (blink) ctx.globalAlpha = 0.5;
+  const sc = 1 + G.beat * 0.1; ctx.scale(sc, sc);
+  // 回転する目印の光条（うすい・敵の花びらとは違う細い線）
+  ctx.save(); ctx.rotate(G.t * 2.2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 1.3; ctx.lineCap = 'round';
+  ctx.beginPath();
+  for (let i = 0; i < 4; i++) {
+    const a = i * Math.PI / 2;
+    ctx.moveTo(Math.cos(a) * 13.5, Math.sin(a) * 13.5); ctx.lineTo(Math.cos(a) * 18, Math.sin(a) * 18);
+  }
+  ctx.stroke(); ctx.restore();
+  // くっきりした白リング＋黒フチ（背景・敵の色に関係なく判別できる）
+  ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(8,4,16,0.8)';
+  ctx.beginPath(); ctx.arc(0, 0, 11.5, 0, TAU); ctx.stroke();
+  ctx.lineWidth = 1.8; ctx.strokeStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(0, 0, 11.5, 0, TAU); ctx.stroke();
+  ctx.lineWidth = 1.4; ctx.strokeStyle = hexA(col, 0.9);
+  ctx.beginPath(); ctx.arc(0, 0, 9.3, 0, TAU); ctx.stroke();
+  // 濃色の爆弾本体（明るい敵のむれの中でも輪郭がうく）
+  const g = ctx.createRadialGradient(-2.6, -3.2, 0.5, 0, 0, 8.2);
+  g.addColorStop(0, '#4c4468'); g.addColorStop(0.55, '#221c38'); g.addColorStop(1, '#08050f');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 7.6, 0, TAU); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.beginPath(); ctx.arc(-2.6, -3, 1.8, 0, TAU); ctx.fill();
+  // 導火線と火花
+  ctx.strokeStyle = '#d9b268'; ctx.lineWidth = 1.3; ctx.beginPath();
+  ctx.moveTo(2, -7.2); ctx.quadraticCurveTo(6.5, -10.5, 4, -14.5); ctx.stroke();
+  const sp = 0.6 + 0.4 * Math.sin(G.t * 22);
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = 'rgba(255,210,120,' + (0.5 + 0.4 * sp) + ')';
+  ctx.beginPath(); ctx.arc(4, -14.5, 2.6 * sp + 1.4, 0, TAU); ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = '#fff8d8'; ctx.beginPath(); ctx.arc(4, -14.5, 1.2, 0, TAU); ctx.fill();
   ctx.restore();
 }
 function drawFx(under) {
@@ -2657,12 +2819,12 @@ function render() {
 //  ゲーム開始・終了
 // =====================================================================
 const $ = id => document.getElementById(id);
-const OVS = ['ovTitle', 'ovHow', 'ovPause', 'ovOver'];
+const OVS = ['ovTitle', 'ovHow', 'ovPause', 'ovOver', 'ovSoundTest'];
 function showOv(id) { for (const o of OVS) $(o).classList.toggle('hidden', o !== id); }
 const howOpen = () => !$('ovHow').classList.contains('hidden');
 
 function startGame() {
-  SND.resume();
+  SND.resume(); SND.startMusic();
   const d = DF();
   Object.assign(G, {
     score: 0, ships: d.ships, time: G.gtype === 'arcade' ? d.time : CARAVAN_TIME, q: 0, loop: 1,
@@ -2693,6 +2855,8 @@ function gameOver(reason) {
   writeSave();
   if (G.boss) G.boss.laser = null;
   G.banner = { type: reason === 'time' ? 'timeup' : reason === 'finish' ? 'finish' : 'over', t: 0, life: 99 };
+  SND.stopMusic();
+  if (reason === 'finish') SND.finishChime(ST().key); else SND.goCuteMusicBox(ST().key);
 }
 function showOver() {
   G.overShown = true;
@@ -2717,6 +2881,7 @@ function goTitle() {
   G.mode = 'title'; G.paused = false; G.phase = 'main';
   G.boss = null; G.bullets.length = 0; G.items.length = 0; G.banner = null;
   G.player.alive = false; G.q = 0; G.loop = 1; G.chain.resT = 0;
+  SND.startMusic();
   $('btnPause').textContent = 'PAUSE';
   showOv('ovTitle');
   refreshTitle();
@@ -2731,7 +2896,36 @@ function setMute(m, persist) {
   SND.setMuted(m);
   $('btnSound').textContent = m ? 'SOUND OFF' : 'SOUND ON';
   $('btnSound').classList.toggle('off', m);
+  $('btnSoundTitle').textContent = m ? '🔇 SOUND OFF' : '🔊 SOUND ON';
+  $('btnSoundTitle').classList.toggle('off', m);
   if (persist) { try { localStorage.setItem('everybloom_mute', m ? '1' : '0'); } catch (e) { /* 無視 */ } }
+}
+// ---- フルスクリーン ----
+function fsEnterFn() {
+  const el = document.documentElement;
+  return el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+}
+function fsExitFn() {
+  return document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
+}
+function isFullscreen() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+}
+function toggleFullscreen() {
+  SND.resume();
+  if (!isFullscreen()) {
+    const f = fsEnterFn();
+    if (f) { try { const r = f.call(document.documentElement); if (r && r.catch) r.catch(() => { /* 無視 */ }); } catch (e) { /* 無視 */ } }
+  } else {
+    const f = fsExitFn();
+    if (f) { try { f.call(document); } catch (e) { /* 無視 */ } }
+  }
+}
+function updateFullBtn() {
+  document.body.classList.toggle('is-fullscreen', isFullscreen());
+  const b = $('btnFull');
+  if (!b) return;
+  b.textContent = isFullscreen() ? '⛶ EXIT' : '⛶ FULL';
 }
 function refreshTitle() {
   for (const b of $('segMode').children) b.classList.toggle('on', b.dataset.v === G.gtype);
@@ -2798,32 +2992,46 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => { const k = KEYMAP[codeOf(e)]; if (k) IN[k] = false; });
 addEventListener('blur', () => { IN.left = IN.right = IN.up = IN.down = false; IN.sx = IN.sy = 0; });
 
-// ---- スティック ----
-const stick = $('stick'), knob = $('knob');
-let stickId = null;
+// ---- スティック（タッチした場所に自由配置）----
+const stickZone = $('stickZone'), stickBase = $('stickBase'), knob = $('knob');
+const STICK_R = 51; // 台座150pxの0.34相当
+let stickId = null, stickAX = 0, stickAY = 0;
+function stickAnchor(e) {
+  const r = stickZone.getBoundingClientRect(), m = 16;
+  stickAX = clamp(e.clientX - r.left, m, r.width - m);
+  stickAY = clamp(e.clientY - r.top, m, r.height - m);
+  stickBase.style.left = stickAX + 'px'; stickBase.style.top = stickAY + 'px';
+  stickBase.style.transition = 'opacity .1s ease';
+  knob.style.transition = 'none';
+  stickBase.classList.add('active');
+}
 function stickMove(e) {
-  const r = stick.getBoundingClientRect();
-  let dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
-  const R = r.width * 0.34, L = Math.hypot(dx, dy);
-  if (L > R) { dx *= R / L; dy *= R / L; }
+  const r = stickZone.getBoundingClientRect();
+  let dx = (e.clientX - r.left) - stickAX, dy = (e.clientY - r.top) - stickAY;
+  const L = Math.hypot(dx, dy);
+  if (L > STICK_R) { dx *= STICK_R / L; dy *= STICK_R / L; }
   knob.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
-  let vx = dx / R, vy = dy / R;
+  let vx = dx / STICK_R, vy = dy / STICK_R;
   if (Math.hypot(vx, vy) < 0.15) { vx = 0; vy = 0; }
   IN.sx = vx; IN.sy = vy;
 }
-stick.addEventListener('pointerdown', e => {
+stickZone.addEventListener('pointerdown', e => {
   e.preventDefault(); SND.resume();
   stickId = e.pointerId;
-  try { stick.setPointerCapture(e.pointerId); } catch (er) { /* 無視 */ }
+  try { stickZone.setPointerCapture(e.pointerId); } catch (er) { /* 無視 */ }
+  stickAnchor(e);
   stickMove(e);
 });
-stick.addEventListener('pointermove', e => { if (e.pointerId === stickId) stickMove(e); });
+stickZone.addEventListener('pointermove', e => { if (e.pointerId === stickId) stickMove(e); });
 function stickEnd(e) {
   if (e.pointerId !== stickId) return;
-  stickId = null; IN.sx = IN.sy = 0; knob.style.transform = '';
+  stickId = null; IN.sx = IN.sy = 0;
+  knob.style.transition = 'transform .12s ease'; knob.style.transform = '';
+  stickBase.style.transition = 'opacity .15s ease';
+  stickBase.classList.remove('active');
 }
-stick.addEventListener('pointerup', stickEnd);
-stick.addEventListener('pointercancel', stickEnd);
+stickZone.addEventListener('pointerup', stickEnd);
+stickZone.addEventListener('pointercancel', stickEnd);
 
 // ---- BOMB ボタン ----
 const bombBtn = $('bombBtn');
@@ -2894,11 +3102,88 @@ $('btnQuit').addEventListener('click', goTitle);
 $('btnRetry').addEventListener('click', startGame);
 $('btnToTitle').addEventListener('click', goTitle);
 $('btnSound').addEventListener('click', () => { SND.resume(); setMute(!SND.muted, true); });
+$('btnSoundTitle').addEventListener('click', () => { SND.resume(); setMute(!SND.muted, true); });
 $('btnPause').addEventListener('click', () => { if (G.mode === 'play') setPause(!G.paused); });
+if (fsEnterFn()) {
+  $('btnFull').addEventListener('click', toggleFullscreen);
+  ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach(ev =>
+    document.addEventListener(ev, () => { updateFullBtn(); setTimeout(resize, 60); }));
+} else { $('btnFull').style.display = 'none'; }
 document.addEventListener('click', e => { SND.resume(); const b = e.target.closest && e.target.closest('button'); if (b) b.blur(); });
 document.addEventListener('touchend', () => SND.resume(), { passive: true });
 document.addEventListener('visibilitychange', () => { if (document.hidden && G.mode === 'play' && !G.paused) setPause(true); });
 addEventListener('resize', resize);
+
+// ---- サウンドテスト（非公開の試作ページ・?soundtest で表示）----
+const GO_CANDIDATES = [
+  { id: 'A', name: 'A：しょんぼりベル', fn: 'goCuteBell' },
+  { id: 'B', name: 'B：すってんころり', fn: 'goCuteSlip' },
+  { id: 'C', name: 'C：とぼけラッパ', fn: 'goCuteHorn' },
+  { id: 'D', name: 'D：ぽよんぽよん', fn: 'goCuteBoing' },
+  { id: 'E', name: 'E：オルゴール', fn: 'goCuteMusicBox' },
+  { id: 'X', name: 'X：（今の音）下降ジングル', fn: 'gameOverJingle' }
+];
+const BGM_CANDIDATES = [
+  {
+    id: 'pop', name: '1：キュートポップ', jp: '元気で明るいポップス', bpm: 128, level: 2, key: 60,
+    chords: [[0, 4, 7], [5, 9, 12], [7, 11, 14], [0, 4, 7]],
+    drums: { k: 'x...x...x...x...', s: '....x.......x...', h: '..x...x...x...x.' },
+    bass: 'x.o.x.o.x.o.x.oo'
+  },
+  {
+    id: 'arcade', name: '2：レトロアーケード', jp: 'キビキビ動く8bit風', bpm: 150, level: 3, key: 57,
+    chords: [[0, 3, 7], [5, 8, 12], [7, 10, 14], [3, 7, 10]],
+    drums: { k: 'x..x..x...x..x..', s: '....x.......x..x', h: 'x.xxx.xxx.xxx.xx' },
+    bass: 'x.xxo.x.x.xxo.x5'
+  },
+  {
+    id: 'chill', name: '3：やさしいチル', jp: 'ゆったりまったり', bpm: 96, level: 1, key: 55,
+    chords: [[0, 4, 7], [-5, 0, 4], [-3, 1, 5], [-5, 0, 4]],
+    drums: { k: 'x.......x.......', s: '........x.......', h: '..x...x...x...x.' },
+    bass: 'x.......x.......'
+  },
+  {
+    id: 'electro', name: '4：きらきらエレクトロ', jp: '未来的でシャイニー', bpm: 140, level: 3, key: 62,
+    chords: [[0, 3, 7], [8, 12, 15], [3, 7, 10], [10, 14, 17]],
+    drums: { k: 'x...x...x...x.x.', s: '....x..x....x...', h: '.xx..xx..xx..xx.' },
+    bass: 'x.o.x.o5x.o.xo5o'
+  }
+];
+let bgmTimer = null, bgmStep = 0, bgmPlayingId = null;
+function stopBgmPreview() {
+  if (bgmTimer) { clearInterval(bgmTimer); bgmTimer = null; }
+  bgmPlayingId = null;
+  document.querySelectorAll('#bgmCandList .btn').forEach(b => b.classList.remove('playing'));
+}
+function toggleBgmPreview(cand, btn) {
+  SND.resume();
+  const was = bgmPlayingId;
+  stopBgmPreview();
+  if (was === cand.id) return;
+  bgmPlayingId = cand.id; btn.classList.add('playing');
+  const sd = 60 / cand.bpm / 4;
+  bgmStep = 0;
+  bgmTimer = setInterval(() => {
+    musicStep(bgmStep, SND.now() + 0.04, cand, cand.level, sd);
+    bgmStep++;
+  }, sd * 1000);
+}
+function buildSoundTest() {
+  $('goCandList').innerHTML = GO_CANDIDATES.map(c => '<button class="btn" data-fn="' + c.fn + '">' + c.name + '</button>').join('');
+  $('bgmCandList').innerHTML = BGM_CANDIDATES.map(c =>
+    '<button class="btn" data-id="' + c.id + '">' + c.name + '<br><small style="opacity:.6">' + c.jp + ' / ' + c.bpm + 'bpm</small></button>').join('');
+  $('goCandList').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    SND.resume(); SND[b.dataset.fn](ST().key);
+  });
+  $('bgmCandList').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    const cand = BGM_CANDIDATES.find(c => c.id === b.dataset.id);
+    if (cand) toggleBgmPreview(cand, b);
+  });
+  $('btnStopAll').addEventListener('click', stopBgmPreview);
+  $('btnSoundTestBack').addEventListener('click', () => { stopBgmPreview(); goTitle(); });
+}
 
 // =====================================================================
 //  メインループ
@@ -2957,6 +3242,7 @@ setStage(0);
 G.bgFade = 0;
 refreshTitle();
 showOv('ovTitle');
+if (/[?&]soundtest\b/.test(location.search)) { buildSoundTest(); showOv('ovSoundTest'); }
 if (/[?&]debug\b/.test(location.search)) window.__EB = { G, SAVE, SND, update, render, spawnWave, startGame, detonate, IN };
 requestAnimationFrame(frame);
 })();
