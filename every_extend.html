@@ -42,15 +42,16 @@ body {
 .main { display: flex; flex-direction: column; gap: 6px; }
 .screen {
   position: relative; margin: 0 auto;
-  width: min(100%, calc((100vh - 52px) * 1.3333));
-  width: min(100%, calc((100dvh - 52px) * 1.3333));
+  width: 100%;
+  height: calc(100vh - 52px);
+  height: calc(100dvh - 52px);
 }
 body.touch .screen {
-  width: min(100%, calc((100vh - 228px) * 1.3333));
-  width: min(100%, calc((100dvh - 228px) * 1.3333));
+  height: calc(100vh - 228px);
+  height: calc(100dvh - 228px);
 }
 canvas#game {
-  display: block; width: 100%; aspect-ratio: 4 / 3;
+  display: block;
   background: #000; border-radius: 6px;
   box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 0 44px rgba(255,90,190,.16);
   touch-action: none;
@@ -159,6 +160,7 @@ body.touch .pad { display: flex; }
   opacity: .16; transition: opacity .15s ease; pointer-events: none;
 }
 .stickBase.active { opacity: 1; }
+body.ctrl-drag .stickZone { display: none; }
 .knob {
   position: absolute; left: 50%; top: 50%; width: 62px; height: 62px; margin: -31px 0 0 -31px;
   border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff 0%, #ffb3dc 30%, #d23b8e 100%);
@@ -201,8 +203,9 @@ body.touch .pad { display: flex; }
   body.touch .topbar .title { display: none; }
   body.touch .main { flex-direction: row; justify-content: center; align-items: center; }
   body.touch .screen {
-    width: min(100vw - 320px, calc((100vh - 12px) * 1.3333));
-    width: min(100vw - 320px, calc((100dvh - 12px) * 1.3333));
+    width: calc(100vw - 320px);
+    height: calc(100vh - 12px);
+    height: calc(100dvh - 12px);
     margin: 0;
   }
   body.touch .pad { display: contents; }
@@ -213,17 +216,18 @@ body.touch .pad { display: flex; }
 body.is-fullscreen { background: #07040f; }
 body.is-fullscreen .wrap { max-width: none; }
 body.is-fullscreen .screen {
-  width: min(100%, calc((100vh - 46px) * 1.3333));
-  width: min(100%, calc((100dvh - 46px) * 1.3333));
+  height: 100vh;
+  height: 100dvh;
 }
 body.is-fullscreen.touch .screen {
-  width: min(100%, calc((100vh - 190px) * 1.3333));
-  width: min(100%, calc((100dvh - 190px) * 1.3333));
+  height: calc(100vh - 190px);
+  height: calc(100dvh - 190px);
 }
 @media (orientation: landscape) and (max-height: 560px) {
   body.is-fullscreen.touch .screen {
-    width: min(100vw - 320px, calc(100vh * 1.3333));
-    width: min(100vw - 320px, calc(100dvh * 1.3333));
+    width: calc(100vw - 320px);
+    height: 100vh;
+    height: 100dvh;
   }
 }
 </style>
@@ -250,6 +254,9 @@ body.is-fullscreen.touch .screen {
         </div>
         <div class="row"><span class="lbl">LEVEL</span>
           <div class="seg" id="segDiff"><button data-v="0">やさしい</button><button data-v="1">ふつう</button><button data-v="2">むずかしい</button></div>
+        </div>
+        <div class="row" id="rowCtrl"><span class="lbl">操作</span>
+          <div class="seg" id="segCtrl"><button data-v="stick">スティック</button><button data-v="drag">タッチ移動</button></div>
         </div>
         <div class="row" id="rowStage"><span class="lbl">STAGE</span>
           <button class="arrow" id="stPrev">◀</button><span id="stName">1 BLOOM</span><button class="arrow" id="stNext">▶</button>
@@ -312,7 +319,7 @@ body.is-fullscreen.touch .screen {
 
     <div class="pad" id="pad">
       <div class="stickZone" id="stickZone"><div class="stickBase" id="stickBase"><div class="knob" id="knob"></div></div></div>
-      <div class="padhint">画面をドラッグしても<br>移動できる<br>2本指タップで起爆</div>
+      <div class="padhint" id="padHint">画面をドラッグしても<br>移動できる<br>2本指タップで起爆</div>
       <button class="bomb" id="bombBtn">BOMB</button>
     </div>
   </div>
@@ -772,7 +779,9 @@ function chainNote(st, step, c) {
 // =====================================================================
 const cv = document.getElementById('game');
 const ctx = cv.getContext('2d');
-let SC = 1;
+let SCX = 1, SCY = 1;
+const CORE_ASPECT = W / H;
+const ASPECT_EXT = 1.6; // 画面比に合わせて広げる上限（4:3の±60%まで）
 
 // =====================================================================
 //  セーブ
@@ -781,7 +790,7 @@ const SAVE_KEY = 'everybloom_v1';
 const SAVE = {
   hi: { arcade: [0, 0, 0], caravan: [0, 0, 0] },
   chain: { arcade: [0, 0, 0], caravan: [0, 0, 0] },
-  maxStage: [0, 0, 0], diff: 1, gtype: 'arcade'
+  maxStage: [0, 0, 0], diff: 1, gtype: 'arcade', ctrl: 'stick'
 };
 function loadSave() {
   try {
@@ -793,6 +802,7 @@ function loadSave() {
     if (Array.isArray(d.maxStage)) SAVE.maxStage = d.maxStage.slice(0, 3).map(v => clamp(+v || 0, 0, 4));
     if (d.diff >= 0 && d.diff <= 2) SAVE.diff = d.diff;
     if (d.gtype === 'caravan' || d.gtype === 'arcade') SAVE.gtype = d.gtype;
+    if (d.ctrl === 'drag' || d.ctrl === 'stick') SAVE.ctrl = d.ctrl;
   } catch (e) { /* 読めなくても遊べる */ }
 }
 function writeSave() {
@@ -804,7 +814,7 @@ function writeSave() {
 // =====================================================================
 const G = {
   mode: 'title', paused: false,
-  gtype: 'arcade', diff: 1, selStage: 0,
+  gtype: 'arcade', diff: 1, selStage: 0, ctrlMode: 'stick',
   score: 0, ships: 3, time: 150, q: 0, loop: 1,
   stage: 0, phase: 'intro', phaseT: 0,
   norma: 0, normaGoal: 1, nextExt: 0, extStep: 0, extInc: 0,
@@ -2783,17 +2793,25 @@ function drawBanner() {
 //  描画メイン
 // =====================================================================
 function resize() {
-  const r = cv.getBoundingClientRect();
-  if (!r.width) return;
-  const dpr = window.devicePixelRatio || 1;
-  const k = clamp(r.width * dpr / W, 1, 2);
-  const w = Math.round(W * k), h = Math.round(H * k);
+  const box = cv.parentElement.getBoundingClientRect();
+  if (!box.width || !box.height) return;
+  const boxAspect = box.width / box.height;
+  // スマホ（タッチ）だけ画面比に合わせて広げる。PCは従来どおり4:3を維持
+  const ta = document.body.classList.contains('touch')
+    ? clamp(boxAspect, CORE_ASPECT / ASPECT_EXT, CORE_ASPECT * ASPECT_EXT)
+    : CORE_ASPECT;
+  let cssW, cssH;
+  if (ta > boxAspect) { cssW = box.width; cssH = cssW / ta; }
+  else { cssH = box.height; cssW = cssH * ta; }
+  cv.style.width = cssW + 'px'; cv.style.height = cssH + 'px';
+  const dpr = clamp(window.devicePixelRatio || 1, 1, 2);
+  const w = Math.round(cssW * dpr), h = Math.round(cssH * dpr);
   if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
-  SC = cv.width / W;
-  HUDK = clamp(560 / r.width, 1, 1.55);
+  SCX = cv.width / W; SCY = cv.height / H;
+  HUDK = clamp(560 / cssW, 1, 1.55);
 }
 function render() {
-  ctx.setTransform(SC, 0, 0, SC, 0, 0);
+  ctx.setTransform(SCX, 0, 0, SCY, 0, 0);
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
   BGS[G.bgStage](ctx, G.t, G.beat, G.dt, G.bgp);
   if (G.bgFade > 0) { ctx.globalAlpha = G.bgFade; ctx.drawImage(bgSnap, 0, 0, W, H); ctx.globalAlpha = 1; }
@@ -2840,7 +2858,7 @@ function startGame() {
   G.lastX = p.x; G.lastY = p.y;
   G.mode = 'play';
   startStage(G.gtype === 'arcade' ? G.selStage : 0);
-  SAVE.diff = G.diff; SAVE.gtype = G.gtype; writeSave();
+  SAVE.diff = G.diff; SAVE.gtype = G.gtype; SAVE.ctrl = G.ctrlMode; writeSave();
   $('btnPause').textContent = 'PAUSE';
   showOv(null);
 }
@@ -2927,9 +2945,18 @@ function updateFullBtn() {
   if (!b) return;
   b.textContent = isFullscreen() ? '⛶ EXIT' : '⛶ FULL';
 }
+function applyCtrlMode() {
+  document.body.classList.toggle('ctrl-drag', G.ctrlMode === 'drag');
+  $('padHint').innerHTML = G.ctrlMode === 'drag'
+    ? '画面をドラッグして移動<br>2本指タップで起爆'
+    : 'スティックで移動<br>2本指タップで起爆';
+}
 function refreshTitle() {
   for (const b of $('segMode').children) b.classList.toggle('on', b.dataset.v === G.gtype);
   for (const b of $('segDiff').children) b.classList.toggle('on', +b.dataset.v === G.diff);
+  for (const b of $('segCtrl').children) b.classList.toggle('on', b.dataset.v === G.ctrlMode);
+  $('rowCtrl').style.display = document.body.classList.contains('touch') ? '' : 'none';
+  applyCtrlMode();
   const max = SAVE.maxStage[G.diff];
   if (G.selStage > max) G.selStage = max;
   $('rowStage').style.display = G.gtype === 'arcade' ? '' : 'none';
@@ -3055,7 +3082,7 @@ cv.addEventListener('pointermove', e => {
   const t = touches.get(e.pointerId);
   if (!t) return;
   const first = touches.keys().next().value;
-  if (e.pointerId === first) {
+  if (e.pointerId === first && G.ctrlMode === 'drag') {
     const r = cv.getBoundingClientRect(), k = W / r.width * 1.3;
     IN.dragX += (e.clientX - t.x) * k; IN.dragY += (e.clientY - t.y) * k;
   }
@@ -3092,6 +3119,7 @@ function pollPad() {
 // ---- UIボタン ----
 $('segMode').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; G.gtype = b.dataset.v; refreshTitle(); });
 $('segDiff').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; G.diff = +b.dataset.v; refreshTitle(); });
+$('segCtrl').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; G.ctrlMode = b.dataset.v; SAVE.ctrl = G.ctrlMode; writeSave(); refreshTitle(); });
 $('stPrev').addEventListener('click', () => { G.selStage = Math.max(0, G.selStage - 1); refreshTitle(); });
 $('stNext').addEventListener('click', () => { G.selStage = Math.min(SAVE.maxStage[G.diff], G.selStage + 1); refreshTitle(); });
 $('btnStart').addEventListener('click', startGame);
@@ -3227,7 +3255,7 @@ function frame(now) {
 //  起動
 // =====================================================================
 loadSave();
-G.diff = SAVE.diff; G.gtype = SAVE.gtype; G.zone = 1;
+G.diff = SAVE.diff; G.gtype = SAVE.gtype; G.ctrlMode = SAVE.ctrl; G.zone = 1;
 if (window.matchMedia && matchMedia('(pointer: coarse)').matches) {
   document.body.classList.add('touch');
   $('keyHint').textContent = 'スティック／画面ドラッグで移動 ・ BOMBボタン／2本指タップで起爆';
